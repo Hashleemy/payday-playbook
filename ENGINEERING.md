@@ -3,9 +3,11 @@
 ## Read first
 
 `soul.md` is the product constitution; `MVP_LAYOUT.md` is the spec. The F-01
-through F-16 feature contract is non-negotiable — never remove, rename, or
+through F-16 feature contract (as amended in `soul.md` for v0.2.0) and the
+V2-01 through V2-18 contract are non-negotiable — never remove, rename, or
 reinterpret a requirement without explicit user approval. The reference PDF
-(*Personal Debt Elimination & Cash Flow Plan*) is the source plan.
+(*Personal Debt Elimination & Cash Flow Plan*) is the source plan for the
+migrated baseline. Versioning rules: `docs/releases/v0.2.0/VERSIONING.md`.
 
 ## Build & test commands
 
