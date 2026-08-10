@@ -1,0 +1,631 @@
+{
+  "schemaVersion": 1,
+  "planName": "Original Plan v1",
+  "firstPayday": "2026-08-20",
+  "payFrequencyDays": 14,
+  "startingChecking1": "900.00",
+  "protectedBuffer": "1000.00",
+  "allowanceCap": "300.00",
+  "firstCheckBufferAdd": "100.00",
+  "carReservePerCheck": "335.08",
+  "trainReservePerCheck": "51.23",
+  "baselinePayoffDate": "2027-06-24",
+  "baselineModeledInterest": "3461.16",
+  "baselineNoSpendCeiling": "7900.00",
+  "startingDebtTotal": "29681.61",
+  "avalancheOrder": [
+    "B",
+    "D",
+    "A",
+    "F",
+    "C",
+    "E"
+  ],
+  "incomeRules": [
+    {
+      "effectiveDate": "2026-08-20",
+      "amount": "2094.00"
+    },
+    {
+      "effectiveDate": "2026-12-10",
+      "amount": "2190.00"
+    }
+  ],
+  "debts": [
+    {
+      "planID": "B",
+      "priority": 1,
+      "startingBalance": "1049.00",
+      "apr": "0.2999",
+      "baselinePayoff": "2026-08-20"
+    },
+    {
+      "planID": "D",
+      "priority": 2,
+      "startingBalance": "4987.00",
+      "apr": "0.2899",
+      "baselinePayoff": "2026-10-15"
+    },
+    {
+      "planID": "A",
+      "priority": 3,
+      "startingBalance": "3787.65",
+      "apr": "0.2724",
+      "baselinePayoff": "2026-11-26"
+    },
+    {
+      "planID": "F",
+      "priority": 4,
+      "startingBalance": "3495.00",
+      "apr": "0.2649",
+      "baselinePayoff": "2027-01-07"
+    },
+    {
+      "planID": "C",
+      "priority": 5,
+      "startingBalance": "11650.40",
+      "apr": "0.2449",
+      "baselinePayoff": "2027-05-13"
+    },
+    {
+      "planID": "E",
+      "priority": 6,
+      "startingBalance": "4712.56",
+      "apr": "0.2199",
+      "baselinePayoff": "2027-06-24"
+    }
+  ],
+  "paydays": [
+    {
+      "seq": 1,
+      "date": "2026-08-20",
+      "income": "2094.00",
+      "c1Keep": "400.00",
+      "bufferAdd": "100.00",
+      "allowance": "300.00",
+      "c2Transfer": "1694.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1307.69",
+      "target": "B",
+      "debtAfter": "28665.71",
+      "noSpendCeiling": "1300.00",
+      "perCard": {
+        "A": "3808.09",
+        "B": "0.00",
+        "C": "11701.04",
+        "D": "4915.18",
+        "E": "4728.55",
+        "F": "3512.86"
+      }
+    },
+    {
+      "seq": 2,
+      "date": "2026-09-03",
+      "income": "2094.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1794.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1407.69",
+      "target": "D",
+      "debtAfter": "27537.95",
+      "noSpendCeiling": "1600.00",
+      "perCard": {
+        "A": "3828.64",
+        "B": "0.00",
+        "C": "11751.90",
+        "D": "3682.02",
+        "E": "4744.59",
+        "F": "3530.81"
+      }
+    },
+    {
+      "seq": 3,
+      "date": "2026-09-17",
+      "income": "2094.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1794.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1407.69",
+      "target": "D",
+      "debtAfter": "26397.48",
+      "noSpendCeiling": "1900.00",
+      "perCard": {
+        "A": "3849.30",
+        "B": "0.00",
+        "C": "11802.98",
+        "D": "2435.68",
+        "E": "4760.68",
+        "F": "3548.85"
+      }
+    },
+    {
+      "seq": 4,
+      "date": "2026-10-01",
+      "income": "2094.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1794.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1407.69",
+      "target": "D",
+      "debtAfter": "25244.17",
+      "noSpendCeiling": "2200.00",
+      "perCard": {
+        "A": "3870.07",
+        "B": "0.00",
+        "C": "11854.28",
+        "D": "1176.01",
+        "E": "4776.83",
+        "F": "3566.98"
+      }
+    },
+    {
+      "seq": 5,
+      "date": "2026-10-15",
+      "income": "2094.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1794.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1407.69",
+      "target": "D",
+      "debtAfter": "24077.88",
+      "noSpendCeiling": "2500.00",
+      "perCard": {
+        "A": "3793.83",
+        "B": "0.00",
+        "C": "11905.80",
+        "D": "0.00",
+        "E": "4793.04",
+        "F": "3585.21"
+      }
+    },
+    {
+      "seq": 6,
+      "date": "2026-10-29",
+      "income": "2094.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1794.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1407.69",
+      "target": "A",
+      "debtAfter": "22898.52",
+      "noSpendCeiling": "2800.00",
+      "perCard": {
+        "A": "2528.14",
+        "B": "0.00",
+        "C": "11957.55",
+        "D": "0.00",
+        "E": "4809.30",
+        "F": "3603.53"
+      }
+    },
+    {
+      "seq": 7,
+      "date": "2026-11-12",
+      "income": "2094.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1794.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1407.69",
+      "target": "A",
+      "debtAfter": "21706.74",
+      "noSpendCeiling": "3100.00",
+      "perCard": {
+        "A": "1249.66",
+        "B": "0.00",
+        "C": "12009.52",
+        "D": "0.00",
+        "E": "4825.61",
+        "F": "3621.94"
+      }
+    },
+    {
+      "seq": 8,
+      "date": "2026-11-26",
+      "income": "2094.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1794.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1407.69",
+      "target": "A",
+      "debtAfter": "20502.42",
+      "noSpendCeiling": "3400.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "12061.72",
+        "D": "0.00",
+        "E": "4841.98",
+        "F": "3598.71"
+      }
+    },
+    {
+      "seq": 9,
+      "date": "2026-12-10",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "F",
+      "debtAfter": "19189.43",
+      "noSpendCeiling": "3700.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "12114.15",
+        "D": "0.00",
+        "E": "4858.41",
+        "F": "2216.88"
+      }
+    },
+    {
+      "seq": 10,
+      "date": "2026-12-24",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "F",
+      "debtAfter": "17863.03",
+      "noSpendCeiling": "4000.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "12166.80",
+        "D": "0.00",
+        "E": "4874.89",
+        "F": "821.34"
+      }
+    },
+    {
+      "seq": 11,
+      "date": "2027-01-07",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "F",
+      "debtAfter": "16523.09",
+      "noSpendCeiling": "4300.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "11631.67",
+        "D": "0.00",
+        "E": "4891.43",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 12,
+      "date": "2027-01-21",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "C",
+      "debtAfter": "15169.92",
+      "noSpendCeiling": "4600.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "10261.90",
+        "D": "0.00",
+        "E": "4908.02",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 13,
+      "date": "2027-02-04",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "C",
+      "debtAfter": "13804.02",
+      "noSpendCeiling": "4900.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "8879.35",
+        "D": "0.00",
+        "E": "4924.67",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 14,
+      "date": "2027-02-18",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "C",
+      "debtAfter": "12425.27",
+      "noSpendCeiling": "5200.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "7483.89",
+        "D": "0.00",
+        "E": "4941.38",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 15,
+      "date": "2027-03-04",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "C",
+      "debtAfter": "11033.55",
+      "noSpendCeiling": "5500.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "6075.41",
+        "D": "0.00",
+        "E": "4958.14",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 16,
+      "date": "2027-03-18",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "C",
+      "debtAfter": "9628.75",
+      "noSpendCeiling": "5800.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "4653.79",
+        "D": "0.00",
+        "E": "4974.96",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 17,
+      "date": "2027-04-01",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "C",
+      "debtAfter": "8210.73",
+      "noSpendCeiling": "6100.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "3218.90",
+        "D": "0.00",
+        "E": "4991.84",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 18,
+      "date": "2027-04-15",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "C",
+      "debtAfter": "6779.38",
+      "noSpendCeiling": "6400.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "1770.61",
+        "D": "0.00",
+        "E": "5008.77",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 19,
+      "date": "2027-04-29",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "C",
+      "debtAfter": "5334.57",
+      "noSpendCeiling": "6700.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "308.81",
+        "D": "0.00",
+        "E": "5025.76",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 20,
+      "date": "2027-05-13",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "C",
+      "debtAfter": "3876.17",
+      "noSpendCeiling": "7000.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "0.00",
+        "D": "0.00",
+        "E": "3876.17",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 21,
+      "date": "2027-05-27",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "E",
+      "debtAfter": "2405.17",
+      "noSpendCeiling": "7300.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "0.00",
+        "D": "0.00",
+        "E": "2405.17",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 22,
+      "date": "2027-06-10",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "1503.69",
+      "target": "E",
+      "debtAfter": "921.76",
+      "noSpendCeiling": "7600.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "0.00",
+        "D": "0.00",
+        "E": "921.76",
+        "F": "0.00"
+      }
+    },
+    {
+      "seq": 23,
+      "date": "2027-06-24",
+      "income": "2190.00",
+      "c1Keep": "300.00",
+      "bufferAdd": "0.00",
+      "allowance": "300.00",
+      "c2Transfer": "1890.00",
+      "carReserve": "335.08",
+      "trainReserve": "51.23",
+      "cardBudget": "929.54",
+      "target": "E",
+      "debtAfter": "0.00",
+      "noSpendCeiling": "7900.00",
+      "perCard": {
+        "A": "0.00",
+        "B": "0.00",
+        "C": "0.00",
+        "D": "0.00",
+        "E": "0.00",
+        "F": "0.00"
+      }
+    }
+  ],
+  "amountMilestones": [
+    {
+      "threshold": "5000.00",
+      "date": "2026-10-15"
+    },
+    {
+      "threshold": "10000.00",
+      "date": "2026-12-10"
+    },
+    {
+      "threshold": "15000.00",
+      "date": "2027-02-04"
+    },
+    {
+      "threshold": "20000.00",
+      "date": "2027-03-18"
+    },
+    {
+      "threshold": "25000.00",
+      "date": "2027-05-13"
+    }
+  ]
+}
