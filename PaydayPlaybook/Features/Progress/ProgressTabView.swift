@@ -6,6 +6,7 @@ import Charts
 struct ProgressTabView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appEnvironment: AppEnvironment
+    @EnvironmentObject private var router: AppRouter
     @Query private var checkIns: [PaydayCheckIn]
     @Query private var ledgerEntries: [LedgerEntry]
     @Query private var balanceSnapshots: [BalanceSnapshot]
@@ -26,6 +27,7 @@ struct ProgressTabView: View {
     }
 
     @State private var track: Track = .actual
+    @State private var highlightedMilestoneID: UUID?
     @State private var debtSeries: [DebtPoint] = []
     @State private var perCardBalances: [AccountBalanceService.DebtBalance] = []
     @State private var forecast: ForecastSnapshot?
@@ -45,6 +47,7 @@ struct ProgressTabView: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 14) {
                     statsGrid
@@ -58,6 +61,17 @@ struct ProgressTabView: View {
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 24)
+            }
+            // A milestone deep link (calendar tap or "milestone ahead"
+            // reminder) scrolls to that milestone and highlights it. A
+            // milestone that no longer exists simply leaves Progress as it
+            // is — the tap still landed somewhere useful.
+            .onChange(of: router.pendingMilestoneID) { _, milestoneID in
+                revealMilestone(milestoneID, proxy: proxy)
+            }
+            .onAppear {
+                revealMilestone(router.pendingMilestoneID, proxy: proxy)
+            }
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Progress")
@@ -305,10 +319,30 @@ struct ProgressTabView: View {
                         }
                         Spacer()
                     }
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(highlightedMilestoneID == milestone.id
+                                  ? Color.accentColor.opacity(0.18)
+                                  : Color.clear)
+                    )
+                    .id(milestone.id)
                     .accessibilityElement(children: .combine)
                 }
             }
         }
+    }
+
+    /// Honors a milestone deep link once, then clears it so returning to
+    /// the tab later does not re-scroll.
+    private func revealMilestone(_ milestoneID: UUID?, proxy: ScrollViewProxy) {
+        guard let milestoneID, milestones.contains(where: { $0.id == milestoneID }) else {
+            router.pendingMilestoneID = nil
+            return
+        }
+        highlightedMilestoneID = milestoneID
+        router.pendingMilestoneID = nil
+        withAnimation { proxy.scrollTo(milestoneID, anchor: .center) }
     }
 
     private func milestoneSubtitle(_ milestone: Milestone) -> String {

@@ -366,19 +366,18 @@ struct TodayView: View {
 
     private var nextCardDueText: String? {
         let today = DateMath.startOfDay(appEnvironment.dateProvider.now)
-        let calendar = DateMath.calendar
         var best: (Date, String)?
         for balance in state.debtBalances {
             guard !balance.isPaidOff, let dueDay = balance.debt.dueDayOfMonth else { continue }
-            for offset in 0...1 {
-                guard let monthDate = calendar.date(byAdding: .month, value: offset, to: today) else { continue }
-                var components = calendar.dateComponents([.year, .month], from: monthDate)
-                components.day = min(dueDay, 28)
-                guard let due = calendar.date(from: components), DateMath.startOfDay(due) >= today else { continue }
-                if best == nil || due < best!.0 {
-                    best = (due, balance.debt.displayName)
-                }
-                break
+            // V2-11: shared due-date rule — 29–31 clamp to the month's last
+            // day, and the user's weekend shift rule applies.
+            let due = DueDateRule.nextOccurrence(
+                dueDay: dueDay,
+                onOrAfter: today,
+                shift: balance.debt.dueDateShiftRule
+            )
+            if best == nil || due < best!.0 {
+                best = (due, balance.debt.displayName)
             }
         }
         return best.map { "\($0.1) due \(DateMath.mediumString($0.0))" }

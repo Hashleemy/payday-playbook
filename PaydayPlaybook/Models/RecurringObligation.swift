@@ -60,6 +60,26 @@ final class RecurringObligation {
     var legacyKey: String?
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+    /// V2-11: user-selected weekend handling for the due date. Nil means
+    /// `.exactDay` — dates never shift unless the user chose a rule.
+    var dueDateShiftRuleRaw: String?
+    /// V2-11 / MVP_LAYOUT §9: newline-separated audit trail of due-date
+    /// edits, appended prospectively; historical rows are never rewritten.
+    var dueDateAuditLog: String?
+    /// V2-11: the date the current due day took effect. Nil means "always"
+    /// — the due day has never been edited, so it describes history too.
+    /// Once edited, occurrences before this date are not rendered: the app
+    /// does not know what the old due day was and will not invent one.
+    var dueDayEffectiveFrom: Date?
+
+    var dueDateShiftRule: DueDateShiftRule {
+        get { dueDateShiftRuleRaw.flatMap(DueDateShiftRule.init(rawValue:)) ?? .exactDay }
+        set { dueDateShiftRuleRaw = newValue == .exactDay ? nil : newValue.rawValue }
+    }
+
+    func appendDueDateAudit(_ note: String) {
+        dueDateAuditLog = dueDateAuditLog.map { $0 + "\n" + note } ?? note
+    }
 
     var cadence: ObligationCadence {
         get { ObligationCadence(rawValue: cadenceRaw) ?? .monthly }

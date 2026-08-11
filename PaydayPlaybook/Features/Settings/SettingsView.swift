@@ -45,6 +45,7 @@ struct SettingsView: View {
             }
             Section("Cards") {
                 NavigationLink("Debt accounts") { SettingsDebtListView() }
+                NavigationLink("Obligation due dates") { ObligationDueDatesView() }
             }
             Section("Notifications") {
                 NavigationLink("Reminders") { NotificationSettingsView() }

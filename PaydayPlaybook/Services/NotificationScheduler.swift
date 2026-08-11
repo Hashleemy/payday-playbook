@@ -2,228 +2,164 @@ import Foundation
 import SwiftData
 import UserNotifications
 
-/// Schedules local notifications with stable identifiers so reschedules
-/// replace rather than duplicate. Content stays generic on the lock screen
-/// unless the user enables detailed previews. Main-actor bound: it reads the
-/// main-actor SwiftData context when rebuilding the schedule.
+/// Owns the app's local notifications (F-11, V2-11).
+///
+/// The desired schedule is computed by the pure `NotificationPlanner` and
+/// reconciled against the pending requests, so rescheduling replaces rather
+/// than duplicates: identifiers are stable and namespaced, changed copy is
+/// re-added, and requests this app owns but no longer wants are cancelled —
+/// including identifiers from earlier app versions.
+///
+/// Permission is requested only after the value explanation in onboarding or
+/// Settings. If it is denied the app stays fully usable and Settings offers a
+/// route to iOS Settings; scheduling simply becomes a no-op.
 @MainActor
 final class NotificationScheduler: ObservableObject {
-    enum Route: String {
-        case checkIn = "checkin"
-        case cardDetail = "card"
-        case today = "today"
-        case progress = "progress"
-        case milestone = "milestone"
-    }
+    /// 0.1.x route spelling kept for the `userInfo` key contract.
+    typealias Route = NotificationRoute
 
     static let routeKey = "route"
     static let referenceKey = "reference"
+    static let fingerprintKey = "fingerprint"
 
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
+    /// Last reconcile outcome, for Settings diagnostics and tests.
+    @Published private(set) var lastReconciliation: NotificationReconciliation?
+    /// Requests the rolling-window cap left unscheduled at the last pass.
+    @Published private(set) var lastDroppedByCap = 0
 
-    private let center = UNUserNotificationCenter.current()
-    /// Rolling scheduling window; iOS caps pending requests at 64.
-    private let windowDays = 45
+    private let center: NotificationCenterProtocol
+
+    init(center: NotificationCenterProtocol = UNUserNotificationCenter.current()) {
+        self.center = center
+    }
+
+    // MARK: - Authorization
 
     func refreshAuthorizationStatus() async {
-        let settings = await center.notificationSettings()
-        authorizationStatus = settings.authorizationStatus
+        authorizationStatus = await center.authorizationStatus()
     }
 
+    /// Requests permission. Callers must have shown the value explanation
+    /// first (onboarding step 9 / Settings → Reminders).
     @discardableResult
     func requestAuthorization() async -> Bool {
-        do {
-            let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
-            await refreshAuthorizationStatus()
-            return granted
-        } catch {
-            await refreshAuthorizationStatus()
-            return false
-        }
+        let granted = await center.requestPermission(options: [.alert, .badge, .sound])
+        await refreshAuthorizationStatus()
+        return granted
     }
 
-    /// Rebuilds every pending request from current data. Safe to call often;
-    /// identifiers are stable so this replaces rather than duplicates. The
-    /// replacement list is built first — existing requests are only cleared
-    /// once a full new set exists, so a failure never leaves zero reminders.
+    /// True when the system will actually deliver what we schedule.
+    /// Provisional authorization counts: quiet delivery is still delivery.
+    static func canSchedule(_ status: UNAuthorizationStatus) -> Bool {
+        status == .authorized || status == .provisional || status == .ephemeral
+    }
+
+    // MARK: - Reconciliation
+
+    /// Recomputes the desired schedule and applies the difference.
+    ///
+    /// Call after launch, plan activation, due-date edits, notification
+    /// setting edits, time-zone changes, and check-in completion.
     func rescheduleAll(context: ModelContext, dateProvider: DateProviding) async {
-        let settings = await center.notificationSettings()
-        authorizationStatus = settings.authorizationStatus
-        guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
+        authorizationStatus = await center.authorizationStatus()
+        guard Self.canSchedule(authorizationStatus) else {
+            // Denied or undetermined: nothing is scheduled, and nothing
+            // pending is touched — the user's data and the app are unaffected.
             return
         }
 
+        let plan: NotificationPlanner.Plan
         do {
-            let requests = try buildRequests(context: context, dateProvider: dateProvider)
-            center.removeAllPendingNotificationRequests()
-            for request in requests {
-                try? await center.add(request)
-            }
+            plan = NotificationPlanner.plan(
+                try NotificationPlanner.makeInput(context: context, dateProvider: dateProvider)
+            )
         } catch {
-            // Notification scheduling must never crash the app; the previous
-            // schedule stays in place and the next trigger point will retry.
+            // Scheduling must never take the app down or wipe a good
+            // schedule; the existing requests stand and the next trigger
+            // point retries.
+            return
         }
+
+        let pending = await center.pendingRequests().map {
+            (identifier: $0.identifier, fingerprint: $0.content.userInfo[Self.fingerprintKey] as? String)
+        }
+        let reconciliation = NotificationPlanner.reconcile(desired: plan.notifications, pending: pending)
+
+        if !reconciliation.toRemove.isEmpty {
+            center.removePending(identifiers: reconciliation.toRemove)
+        }
+        for entry in reconciliation.toAdd {
+            try? await center.add(makeRequest(entry))
+        }
+
+        lastReconciliation = reconciliation
+        lastDroppedByCap = plan.droppedByCap
     }
 
-    private func buildRequests(context: ModelContext, dateProvider: DateProviding) throws -> [UNNotificationRequest] {
-        var requests: [UNNotificationRequest] = []
-        let preferences = try context.fetch(FetchDescriptor<NotificationPreference>())
-        func pref(_ kind: NotificationKind) -> NotificationPreference? {
-            preferences.first { $0.type == kind }
-        }
-
-        let today = DateMath.startOfDay(dateProvider.now)
-        let windowEnd = DateMath.addingDays(windowDays, to: today)
-
-        guard let plan = try PlanSeeder.currentPlan(context: context) else { return requests }
-        let planID = plan.id
-        let planItems = try context.fetch(
-            FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planID })
-        )
-        let checkIns = try context.fetch(FetchDescriptor<PaydayCheckIn>())
-        let completedIDs = Set(
-            checkIns.filter { $0.status == .completed || $0.status == .needsAttention }
-                .map(\.paydayPlanItemID)
-        )
-
-        // Payday morning + evening-if-incomplete.
-        if let morning = pref(.paydayMorning), morning.enabled {
-            for item in planItems where !completedIDs.contains(item.id) {
-                let day = DateMath.startOfDay(item.date)
-                guard day >= today, day <= windowEnd else { continue }
-                requests.append(makeRequest(
-                    id: "payday-morning-\(item.sequenceNumber)",
-                    title: "Today's play",
-                    body: morning.detailedLockScreenContent
-                        ? "Payday #\(item.sequenceNumber): keep \(MoneyFormat.string(item.plannedC1Keep)), move \(MoneyFormat.string(item.plannedC2Transfer)), pay cards \(MoneyFormat.string(item.plannedCardBudget))."
-                        : "Your payday check-in is ready.",
-                    date: day, hour: morning.hour, minute: morning.minute,
-                    route: .checkIn, reference: item.id.uuidString
-                ))
-            }
-        }
-        if let evening = pref(.paydayEveningIncomplete), evening.enabled {
-            for item in planItems where !completedIDs.contains(item.id) {
-                let day = DateMath.startOfDay(item.date)
-                guard day >= today, day <= windowEnd else { continue }
-                requests.append(makeRequest(
-                    id: "payday-evening-\(item.sequenceNumber)",
-                    title: "Payday check-in",
-                    body: "Today's payday check-in is still open.",
-                    date: day, hour: evening.hour, minute: evening.minute,
-                    route: .checkIn, reference: item.id.uuidString
-                ))
-            }
-        }
-
-        // Card due dates within the window.
-        let debts = try context.fetch(FetchDescriptor<DebtAccount>())
-        let calendar = DateMath.calendar
-        let dueSoon = pref(.cardDueSoon)
-        let dueToday = pref(.cardDueToday)
-        for debt in debts where !debt.isArchived {
-            guard let dueDay = debt.dueDayOfMonth else { continue }
-            for monthOffset in 0...2 {
-                guard let monthDate = calendar.date(byAdding: .month, value: monthOffset, to: today) else { continue }
-                var components = calendar.dateComponents([.year, .month], from: monthDate)
-                components.day = min(dueDay, 28)
-                guard let dueDate = calendar.date(from: components) else { continue }
-                let dueDayStart = DateMath.startOfDay(dueDate)
-                let monthTag = String(format: "%04d%02d", components.year ?? 0, components.month ?? 0)
-                if let dueSoon, dueSoon.enabled {
-                    let soonDate = DateMath.addingDays(-max(dueSoon.leadDays, 1), to: dueDayStart)
-                    if soonDate >= today && soonDate <= windowEnd {
-                        requests.append(makeRequest(
-                            id: "due-soon-\(debt.planID)-\(monthTag)",
-                            title: "Card due soon",
-                            body: dueSoon.detailedLockScreenContent
-                                ? "\(debt.displayName) is due on day \(dueDay)."
-                                : "A card payment is due soon.",
-                            date: soonDate, hour: dueSoon.hour, minute: dueSoon.minute,
-                            route: .cardDetail, reference: debt.planID
-                        ))
-                    }
-                }
-                if let dueToday, dueToday.enabled, dueDayStart >= today, dueDayStart <= windowEnd {
-                    requests.append(makeRequest(
-                        id: "due-today-\(debt.planID)-\(monthTag)",
-                        title: "Card due today",
-                        body: dueToday.detailedLockScreenContent
-                            ? "\(debt.displayName) is due today."
-                            : "A card payment is due today.",
-                        date: dueDayStart, hour: dueToday.hour, minute: dueToday.minute,
-                        route: .cardDetail, reference: debt.planID
-                    ))
-                }
-            }
-        }
-
-        // Weekly summary: next Sundays in window.
-        if let weekly = pref(.weeklySummary), weekly.enabled {
-            var cursor = today
-            var count = 0
-            while cursor <= windowEnd && count < 8 {
-                if calendar.component(.weekday, from: cursor) == 1 {
-                    requests.append(makeRequest(
-                        id: "weekly-summary-\(Int(cursor.timeIntervalSince1970))",
-                        title: "Weekly summary",
-                        body: "See this week's progress and the next play.",
-                        date: cursor, hour: weekly.hour, minute: weekly.minute,
-                        route: .progress, reference: ""
-                    ))
-                    count += 1
-                }
-                cursor = DateMath.addingDays(1, to: cursor)
-            }
-        }
-
-        // Milestones approaching (one payday of notice by default).
-        if let milestonePref = pref(.milestoneApproaching), milestonePref.enabled {
-            let milestones = try context.fetch(FetchDescriptor<Milestone>())
-            for milestone in milestones where milestone.achievedDate == nil {
-                guard let target = milestone.forecastDate ?? milestone.baselineDate else { continue }
-                let leadPaydays = max(milestonePref.leadDays, 1)
-                let noticeDate = DateMath.addingDays(-leadPaydays * plan.payFrequencyDays, to: DateMath.startOfDay(target))
-                guard noticeDate >= today, noticeDate <= windowEnd else { continue }
-                requests.append(makeRequest(
-                    id: "milestone-\(milestone.id.uuidString)",
-                    title: "Milestone ahead",
-                    body: milestonePref.detailedLockScreenContent
-                        ? "\(milestone.title) is projected for \(DateMath.mediumString(target))."
-                        : "A payoff milestone is coming up.",
-                    date: noticeDate, hour: milestonePref.hour, minute: milestonePref.minute,
-                    route: .milestone, reference: milestone.id.uuidString
-                ))
-            }
-        }
-
-        return requests
-    }
-
-    private func makeRequest(
-        id: String, title: String, body: String,
-        date: Date, hour: Int, minute: Int,
-        route: Route, reference: String
-    ) -> UNNotificationRequest {
-        var components = DateMath.calendar.dateComponents([.year, .month, .day], from: date)
-        components.hour = hour
-        components.minute = minute
-
+    private func makeRequest(_ entry: PlannedNotification) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
+        content.title = entry.title
+        content.body = entry.body
         content.sound = .default
-        content.userInfo = [Self.routeKey: route.rawValue, Self.referenceKey: reference]
-
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-        return UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        content.userInfo = [
+            Self.routeKey: entry.route.rawValue,
+            Self.referenceKey: entry.reference,
+            Self.fingerprintKey: entry.fingerprint
+        ]
+        // Calendar components, not an absolute instant: the reminder keeps
+        // its intended local time if the user changes time zone or a DST
+        // transition lands in between.
+        let trigger = UNCalendarNotificationTrigger(dateMatching: entry.dateComponents, repeats: false)
+        return UNNotificationRequest(identifier: entry.identifier, content: content, trigger: trigger)
     }
 
-    /// Immediately removes the evening reminder once a payday completes.
-    func cancelEveningReminder(sequenceNumber: Int) {
-        center.removePendingNotificationRequests(withIdentifiers: [
-            "payday-evening-\(sequenceNumber)",
-            "payday-morning-\(sequenceNumber)"
+    /// Cancels a payday's reminders the moment its check-in completes, so
+    /// the evening nudge cannot fire for finished work. A full reconcile
+    /// follows; this is the immediate half.
+    func cancelPaydayReminders(itemID: UUID) {
+        center.removePending(identifiers: [
+            NotificationFamily.paydayMorning.identifier(entity: itemID.uuidString),
+            NotificationFamily.paydayEvening.identifier(entity: itemID.uuidString)
         ])
+    }
+
+    /// Cancels every request this app owns. Used when the user turns all
+    /// reminders off; requests from other sources are never touched.
+    func cancelAllOwned() async {
+        let owned = await center.pendingRequests()
+            .map(\.identifier)
+            .filter(NotificationFamily.owns)
+        guard !owned.isEmpty else { return }
+        center.removePending(identifiers: owned)
+    }
+}
+
+/// The slice of `UNUserNotificationCenter` this app uses, so the scheduler
+/// can be driven by a fake in tests (the real center cannot be exercised in
+/// a unit-test process without a running app and granted permission).
+protocol NotificationCenterProtocol: Sendable {
+    func authorizationStatus() async -> UNAuthorizationStatus
+    func requestPermission(options: UNAuthorizationOptions) async -> Bool
+    func pendingRequests() async -> [UNNotificationRequest]
+    func add(_ request: UNNotificationRequest) async throws
+    func removePending(identifiers: [String])
+}
+
+extension UNUserNotificationCenter: NotificationCenterProtocol {
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        await notificationSettings().authorizationStatus
+    }
+
+    func requestPermission(options: UNAuthorizationOptions) async -> Bool {
+        (try? await requestAuthorization(options: options)) ?? false
+    }
+
+    func pendingRequests() async -> [UNNotificationRequest] {
+        await pendingNotificationRequests()
+    }
+
+    func removePending(identifiers: [String]) {
+        removePendingNotificationRequests(withIdentifiers: identifiers)
     }
 }
