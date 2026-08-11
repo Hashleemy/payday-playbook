@@ -1,11 +1,18 @@
 # Payday Playbook
 
-A native, offline-first iPhone app that turns one exact debt-elimination plan
-(August 20, 2026 → June 24, 2027) into a payday ritual: know today's play,
-record what actually happened, and see the finish line.
+A native, offline-first iPhone app that turns a debt-elimination plan into a
+payday ritual: know today's play, record what actually happened, and see the
+finish line.
 
-- **Product constitution:** [`soul.md`](soul.md) — read first; F-01…F-16 are non-negotiable.
+The **shipped 0.1.x build** executes one exact seeded plan (August 20, 2026 →
+June 24, 2027). The **0.2.0 contract** (in progress — nothing below the docs is
+implemented yet) generalizes the app to a configurable user with generated
+plans, while preserving the existing seeded plan verbatim via migration. See
+[`CHANGELOG.md`](CHANGELOG.md).
+
+- **Product constitution:** [`soul.md`](soul.md) — read first; F-01…F-16 (as amended there) and V2-01…V2-18 are non-negotiable.
 - **Product/technical spec:** [`MVP_LAYOUT.md`](MVP_LAYOUT.md)
+- **v0.2.0 feature registry:** [`ALPHA_V0.2.0_MULTI_AGENT_PLAN.md`](ALPHA_V0.2.0_MULTI_AGENT_PLAN.md); versioning: [`docs/releases/v0.2.0/VERSIONING.md`](docs/releases/v0.2.0/VERSIONING.md)
 - **Source plan:** *Personal Debt Elimination & Cash Flow Plan* (PDF)
 
 ## Requirements

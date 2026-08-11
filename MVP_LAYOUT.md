@@ -1,10 +1,10 @@
-# Payday Playbook — MVP Product and Technical Layout
+# Payday Playbook — Product and Technical Layout (v0.2.0)
 
 ## 1. Build brief
 
-Build a native, offline-first iPhone app named **Payday Playbook** using SwiftUI. The app is a personal execution companion for the exact debt plan in this document. It must allow the user to record real contributions and balances, compare actual progress with the original plan, receive local notifications, and understand the entire payoff calendar at a glance.
+Build a native, offline-first iPhone app named **Payday Playbook** using SwiftUI. As of v0.2.0 the app is a personal execution companion for a debt plan **generated from the user's own situation** — accounts, income, obligations, floor, allowance, and debts — while preserving the original seeded plan (Master Lem's Original Plan v1) verbatim for the install that already has it. The app must allow the user to record real contributions and balances, compare actual progress with their original plan, receive local notifications, and understand the entire payoff calendar at a glance.
 
-Read `soul.md` first. Its principles and F-01 through F-16 feature contract are non-negotiable.
+Read `soul.md` first. Its principles, the F-01…F-16 contract (as amended), and the V2-01…V2-18 contract are non-negotiable. The canonical V2 registry is `ALPHA_V0.2.0_MULTI_AGENT_PLAN.md`.
 
 ### Technical baseline
 
@@ -15,17 +15,38 @@ Read `soul.md` first. Its principles and F-01 through F-16 feature contract are 
 - Notifications: UserNotifications with calendar-based local triggers.
 - Security: LocalAuthentication for optional Face ID/app lock.
 - Deployment target: iOS 17.0 or newer.
-- Architecture: feature-oriented MVVM with services for calculations, notifications, exports, and plan seeding.
-- Dependencies: Apple frameworks only for MVP.
-- Money type: `Decimal` with explicit currency rounding to two decimals.
+- Architecture: feature-oriented MVVM with services for calculations, notifications, exports, and plan generation.
+- Dependencies: Apple frameworks only.
+- Money type: `Decimal` with explicit currency rounding to two decimals (half-away-from-zero via `.rounded2`), rounded only at persistence/display boundaries. *(V2-18)*
 - Dates: `Calendar` and `DateComponents`; persist a normalized local date and user time zone.
-- No backend, login, telemetry, ads, bank linking, or automatic money movement.
+- No backend, login, telemetry, ads, bank linking, or automatic money movement. *(V2-17)*
 
 ---
 
-## 2. Exact seeded plan
+## 2. Versioning contract
 
-Create **Original Plan v1** on first launch. Make it immutable. User changes create actual records, future-dated settings, or a new plan version; they never rewrite Original Plan v1.
+Full detail in `docs/releases/v0.2.0/VERSIONING.md`. Summary, binding for this release:
+
+| Version | Value | Rule |
+| --- | --- | --- |
+| App version (`MARKETING_VERSION`) | **0.2.0** | SemVer. The 0.1.x MVP is the baseline (the scaffold `1.0` value was a template artifact, corrected in this branch). Backward-compatible feature release → minor bump. |
+| Prerelease tag | **v0.2.0-alpha.1** | Annotated git tag created only when the alpha build is actually cut. `-alpha.N` increments per alpha cut; the bare `v0.2.0` tag marks the final. Recommend retro-tagging current `main` as `v0.1.0`. |
+| Build number (`CURRENT_PROJECT_VERSION`) | 2 | A plain integer, strictly increasing across every distributed build of every version, incremented by exactly 1 per distributed build, never reset. The 0.1.x MVP is build 1. |
+| Persistence schema version (`PlanContract.schemaVersion`) | **2** | Bumped because v0.2.0 adds/changes stored models (§6). Migration from 1 is mandatory and lossless (§7). |
+| Calculation version | **2** for newly generated plans | Original Plan v1 keeps `calculationVersion = 1` forever; its stored schedule is never recomputed. Calc v2 (§5) reduces exactly to calc v1 for a biweekly cadence. |
+| Backup schema version (`ExportService.backupSchemaVersion`) | **2** | Writes v2; imports v1 and v2. Importing v1 runs the same logical migration as §7. |
+| User plan versions | "Original Plan v1", "Plan v1", "Plan v2", … | **Data, not software.** Per-install `PlanVersion` rows. Never conflate with the app version: "Original Plan v1" is Master Lem's baseline row, not app 1.0. |
+
+---
+
+## 3. Master Lem's baseline — Original Plan v1 (migrated, immutable)
+
+In 0.1.x this plan was seeded on first launch. In v0.2.0 it is **not** seeded on fresh installs *(V2-16)*. It exists in exactly two ways:
+
+1. **By migration:** an upgraded 0.1.x install keeps its Original Plan v1, check-ins, ledger, snapshots, milestones, and settings value-for-value — migration adds new fields and rows but never alters an existing value (§7).
+2. **By template:** the bundled `OriginalPlanV1.json` remains in the app as a clearly labeled template a user may deliberately load from onboarding's advanced option or Settings → Plan versions → "Load Original Plan v1 template". Loading it creates an immutable plan version exactly as 0.1.x seeding did.
+
+Original Plan v1 is immutable in either case. User changes create actual records, future-dated settings, or a new plan version; they never rewrite it. It stays stamped `calculationVersion = 1`.
 
 ### Core values
 
@@ -59,8 +80,6 @@ Create **Original Plan v1** on first launch. Make it immutable. User changes cre
 | 5 | C | $11,650.40 | 24.49% | May 13, 2027 |
 | 6 | E | $4,712.56 | 21.99% | Jun 24, 2027 |
 
-The setup screen may let the user assign a friendly issuer/card name, statement due day, and current minimum to A–F. Do not require or store full account numbers.
-
 ### Seed paydays
 
 | # | Date | Income | C1 keep | C2 transfer | Fixed reserve | Card budget | Target | Planned debt after | C1 ceiling |
@@ -89,7 +108,7 @@ The setup screen may let the user assign a friendly issuer/card name, statement 
 | 22 | 2027-06-10 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | E | $921.76 | $7,600.00 |
 | 23 | 2027-06-24 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $929.54 | E | $0.00 | $7,900.00 |
 
-### Baseline calculation rules
+### Baseline calculation rules (calculation version 1 — frozen)
 
 1. Accrue 14 days of estimated interest before each planned payment: `balance × APR × 14 / 365`.
 2. Estimated biweekly minimum per active card is `max($17.50, postInterestBalance × 0.005)`, capped at its remaining balance.
@@ -98,701 +117,440 @@ The setup screen may let the user assign a friendly issuer/card name, statement 
 5. Roll unused attack money to the next card in the same transaction if the target is paid off.
 6. The actual track uses user-entered payment and balance records. A balance snapshot overrides accumulated estimates from that date forward.
 
+These rules remain frozen for any plan stamped `calculationVersion = 1`. New plans use §5.
+
 ---
 
-## 3. Information architecture
+## 4. First-run onboarding (v0.2.0) — V2-01 … V2-09
 
-Use a four-tab layout.
+Replaces the 0.1.x four-screen seeded onboarding for fresh installs. Migrated installs (§7) never see it; they may revisit any step later via Settings → "Review setup".
 
-| Tab | Purpose | Primary action |
+### 4.0 Resumability contract — V2-01
+
+- Progress lives in a persisted `OnboardingState` row: `lastCompletedStep`, per-step draft payloads, `startedAt`, `completedAt`.
+- Every `Continue` writes that step's data and advances `lastCompletedStep` in one transaction before the next screen appears.
+- On launch with `completedAt == nil` and `lastCompletedStep > .none`, the app resumes at the first incomplete step with all prior answers intact and shows "Picking up where you left off."
+- `Back` is always available and never destroys saved data; editing an earlier step preserves later steps unless they become invalid (then those steps are flagged, not wiped).
+- Finishing (§4.9) generates the plan atomically: either the whole plan version, accounts, obligations, debts, and milestones commit together and `completedAt` is set, or nothing commits and the user can retry. A relaunch mid-generation resumes safely without duplicate rows (same idempotency bar as the 0.1.x seeder).
+- Screen states for every step: **empty → partially filled (validation inline) → valid (Continue enabled) → saved**. Validation errors are calm, specific, and never lose input.
+
+### Step sequence
+
+| # | Step | Feature |
 | --- | --- | --- |
-| Today | Immediate status and next move | Start/continue payday check-in |
-| Calendar | Dates, due items, history, and milestones | Open a day's play-by-play |
-| Debts | Card balances, priorities, and histories | Add payment or balance update |
-| Progress | Charts, variance, milestones, and forecast | Review and reforecast |
+| 1 | Welcome and privacy promise | V2-17 |
+| 2 | Goals and payoff posture | V2-02 |
+| 3 | Checking accounts | V2-03 |
+| 4 | Income and paydays | V2-06 |
+| 5 | Essential obligations | V2-07 |
+| 6 | Floor and allowance | V2-08, V2-09 |
+| 7 | Debts (repeatable) | V2-04, V2-05 |
+| 8 | Review and generate plan | V2-10 |
+| 9 | Notifications | (F-11) |
 
-Settings is reached from the Today navigation bar. A global `+` action may open a sheet for payment, balance update, windfall, C1/C2 adjustment, or note.
+### 4.1 Step 1 — Welcome
+
+- Promise: "Know today's play. Record what happened. See the finish line."
+- Statement that all data stays on this iPhone unless the user exports it; no accounts, no bank logins, ever.
+- Primary: `Set Up My Plan`. Secondary (advanced, de-emphasized): `Load a template` → Original Plan v1 template (§3), shown with Master Lem's headline numbers and an explicit warning that it is a specific person's plan, not a recommendation.
+
+### 4.2 Step 2 — Goals and payoff posture — V2-02
+
+- "What are you working toward?" — free-text goal (optional, e.g. "debt-free before the wedding"), shown later on the dashboard.
+- Optional target debt-free date (month/year picker). Used for the goal-gap insight (§5 R-13) only; it never alters allocation.
+- Payoff posture, single choice:
+  - **Full throttle** — every spare dollar attacks debt.
+  - **Steady** — strong payments with breathing room.
+  - **Cushion first** — build the cash floor before going hard.
+- **Rule:** posture affects *suggested defaults* in steps 5–6 and dashboard copy tone only. After plan generation it never changes math. *(ASSUMPTION A-01: posture→suggestion mapping in §5 R-14; product may retune the suggestions without a contract change.)*
+
+### 4.3 Step 3 — Checking accounts — V2-03
+
+- Add 1–10 checking accounts *(ASSUMPTION A-02: cap of 10)*. For each: name (required), current balance (required, `Decimal ≥ 0`), role (required): **income** (receives paychecks), **spending** (day-to-day + floor), **reserves** (obligations and debt money).
+- One account may hold multiple roles (a single-account user is valid: all roles on one account).
+- Exactly one account is marked **default income account**; the first income-role account is preselected. Adding, renaming, or re-roling accounts later (Settings → Accounts) must keep exactly one default income account.
+- Never ask for account numbers, routing numbers, or credentials — a name and a typed balance only. *(V2-17)*
+- Migration mapping for Lem's install: "Checking 1" = income + spending (default income), "Checking 2" = reserves (§7).
+
+### 4.4 Step 4 — Income and paydays — V2-06
+
+- Take-home per paycheck (`Decimal > 0`).
+- Next payday date (today or future).
+- Pay cadence: **weekly** (every 7 days), **biweekly** (every 14 days), **semimonthly** (two days of month, e.g. 1st and 15th; either may be "last day"), **monthly** (day of month, clamped per §5 R-11).
+- Which account receives the paycheck (defaults to the default income account).
+- Future income changes: zero or more future-dated `IncomeRule` rows ("raises to $2,300 on 2027-01-15"), editable later in Settings. The generator and reforecast both honor them.
+
+### 4.5 Step 5 — Essential obligations — V2-07
+
+- Repeatable list of essential recurring obligations: name (required), amount (required), cadence (weekly / biweekly / monthly / quarterly / semiannual / annual), optional due day, optional linked account (defaults to a reserves-role account).
+- Posture-based starter suggestions (rent/mortgage, car, transit, insurance, utilities) are offered as empty chips — never prefilled amounts.
+- Per-paycheck reservation follows the smoothing rule (§5 R-04). The step shows the computed per-paycheck reserve live, e.g. "$726/month ≈ $335.08 per paycheck", so the math is visible before the plan exists.
+
+### 4.6 Step 6 — Protected floor and allowance — V2-08, V2-09
+
+- Protected cash floor (`Decimal ≥ 0`) on the spending account. Suggested default by posture (§5 R-14); Lem-equivalent is $1,000.
+- Per-paycheck personal allowance cap (`Decimal ≥ 0`). Explained exactly as the soul demands: "This is available, not spent. We'll never count it as spent unless you tell us."
+- Both editable later; edits follow the F-13 rule (future rule or new plan version).
+
+### 4.7 Step 7 — Debts — V2-04, V2-05
+
+**Type picker first.** `Add a debt` → choose: **Credit card**, **Personal loan**, **Car note / auto loan**, **Student loan**, **Medical debt**, **Other**.
+
+**Fields by type** (✓ required, ○ optional):
+
+| Field | Credit card | Personal loan | Auto loan | Student loan | Medical | Other |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Nickname / issuer | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Current balance / principal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Original principal | ○ | ✓ | ✓ | ✓ | ○ | ○ |
+| APR (≥ 0%, may be 0%) | ✓ | ✓ | ✓ | ✓ | ✓ (often 0%) | ✓ |
+| Minimum / contractual payment | ○ (estimated per §5 R-06 if blank) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Due date (editable day-of-month) | ✓ | ✓ | ✓ | ✓ | ○ | ○ |
+| Credit limit (→ utilization display) | ○ | — | — | — | — | — |
+| Extra-principal eligible | ✓ default on | ✓ default on | ✓ default on (off if penalty) | ✓ default on | ✓ default on | ✓ default on |
+| Last four digits | ○ | ○ | ○ | ○ | ○ | ○ |
+
+- Original principal defaults to current balance when omitted; used for percent-paid display, never allocation.
+- Utilization = current balance ÷ credit limit, display and insights only (§5 R-12).
+- Extra-principal-ineligible debts receive minimums only (§5 R-07); the toggle explains this in one sentence.
+- Never a full account number, ever. "Other" behaves as a personal loan. *(ASSUMPTION A-03)*
+- Zero debts is allowed (the user may be here for the payday ritual); the plan then only reserves obligations, floor, and allowance, and Insights explains there is nothing to attack.
+
+### 4.8 Screen states (steps 3, 5, 7 lists)
+
+- Empty state with one-line explanation and a single add button.
+- Row states: valid / incomplete (amber "needs a detail" chip, tappable to the missing field).
+- Swipe-to-delete with undo; deletion during onboarding only (post-onboarding archival keeps history).
+
+### 4.9 Step 8 — Review and generate — V2-10
+
+- Summary cards: accounts, income and cadence, obligations with per-paycheck reserve, floor, allowance, debts sorted in avalanche order (§5 R-08) with the order explained ("highest APR first — this minimizes interest").
+- `Generate My Plan` runs the §5 generator and shows: projected debt-free date, total estimated interest, paychecks count, first payday play, and per-debt payoff dates — all labeled as estimates.
+- `Use This Plan` commits atomically (see 4.0): an immutable `PlanVersion` named **"Plan v1"** (`isOriginalBaseline = true`, `calculationVersion = 2`) with its full `PaydayPlanItem` schedule and milestones. *(ASSUMPTION A-04: fresh-install naming "Plan v1"; the migrated install's row keeps its historical name "Original Plan v1".)*
+- `Adjust` returns to any step without losing the others.
+
+### 4.10 Step 9 — Notifications
+
+Unchanged contract from 0.1.x (F-11): explain value before requesting permission; defaults — payday play 8:00 AM, incomplete check-in 7:00 PM, due-soon 3 days prior 9:00 AM, due-today 9:00 AM, weekly summary Sunday 6:00 PM (toggleable), milestone one payday ahead. Denial leaves the app fully functional with a path to iOS Settings.
 
 ---
 
-## 4. Screen layouts
+## 5. Calculation rules (calculation version 2) — V2-10
 
-### 4.1 Onboarding — F-01
+Numbered, testable, and binding. Where a rule reduces to a calc-v1 rule under Lem's inputs (biweekly, $1,000 floor, $300 allowance, car+train obligations), the reduction is part of the rule and must be covered by a test.
 
-**Screen 1: Welcome**
+- **R-01 Paycheck timeline.** Paydays are generated from the next-payday anchor by cadence: weekly +7d, biweekly +14d, semimonthly on the two configured days (clamped per R-11), monthly on the configured day (clamped). Future `IncomeRule` rows switch the take-home amount on their effective date. Horizon: generation runs until all debts are paid or 600 paychecks, whichever comes first; hitting the cap flags the plan "not payable as configured" instead of looping. *(ASSUMPTION A-05: 600-paycheck cap.)*
+- **R-02 Per-period interest.** For each debt with APR > 0: `interest = balance × APR × daysSincePreviousPayday / 365`, full Decimal precision, rounding only at output. For biweekly cadence this is exactly calc v1's `× 14 / 365`.
+- **R-03 Paychecks per year.** weekly 52, biweekly 26, semimonthly 24, monthly 12.
+- **R-04 Obligation smoothing.** Per-paycheck reserve for an obligation = `round2(amount × occurrencesPerYear / paychecksPerYear)`; occurrences: weekly 52, biweekly 26, monthly 12, quarterly 4, semiannual 2, annual 1. Reduction check: $726 monthly at biweekly pay → `726 × 12 / 26` → **$335.08**; $111 monthly → **$51.23** (Lem's exact reserves).
+- **R-05 Per-paycheck allocation order.** From take-home (plus explicitly assigned windfalls): (1) allowance cap reserved as available-not-spent; (2) spending-account floor top-up to the protected floor; (3) obligation reserves (R-04); (4) minimum payments for all active debts; (5) everything remaining is extra principal to the avalanche target (R-08), rolling to the next eligible debt within the same paycheck when a payoff occurs (calc-v1 rule 5).
+- **R-06 Minimums.** A user-entered minimum is authoritative. Blank minimums are estimated **for credit cards only**: `max($17.50 × daysSincePreviousPayday / 14, postInterestBalance × 0.005)`, capped at the balance — identical to calc v1 under biweekly cadence. Installment types (personal, auto, student, medical, other) require an entered minimum at input; no estimator. *(ASSUMPTION A-06)*
+- **R-07 Extra-principal eligibility.** Ineligible debts never receive more than their minimum. If the top avalanche debt is ineligible, extra principal goes to the highest-APR *eligible* debt.
+- **R-08 Avalanche order.** Active debts sorted by APR descending; ties broken by lower current balance first; remaining ties by creation order. 0% APR debts sort last. The user may still reorder manually; per F-13 that creates a new plan version (or future-dated rule) carrying the manual order — baseline versions are never edited.
+- **R-09 Shortfall.** If floor top-up + obligations + minimums exceed take-home for a paycheck: reduce extra principal to $0, then reduce that paycheck's allowance toward $0, and if still short, mark the paycheck "needs attention" with the exact gap. Minimums are never silently dropped; the plan generates with the flag visible in review, calendar, and dashboard.
+- **R-10 Termination and outputs.** Generation stops when every balance rounds to $0.00 (or R-01's cap). Outputs per paycheck: income, keep-in-spending, transfer-to-reserves, obligation reserve, debt budget, target debt, planned per-debt balances, planned total after, and no-spend ceiling. The ceiling seeds from the spending account's starting balance and increments each paycheck by that paycheck's planned keep-in-spending amount (allowance plus any floor top-up) — the 0.1.x construction: $900 + $400 = $1,300 after check 1, reaching $7,900 at check 23. Whole-plan outputs: payoff date, paycheck count, total estimated interest, per-debt payoff dates.
+- **R-11 Due-day clamping.** A due day greater than the days in a month clamps to the last day (Jan 31 → Feb 28/29). Semimonthly "last day" behaves the same.
+- **R-12 Utilization.** `balance ÷ limit` when a limit exists. Display and insights only — never an allocation input. Thresholds: ≥ 30% informational, ≥ 90% "needs attention". *(ASSUMPTION A-07)*
+- **R-13 Goal gap.** With a target debt-free date set, Insights computes the smallest additional per-paycheck amount (binary search, $1 resolution) that would meet the target, displayed as "about $X more per paycheck". Display only. *(ASSUMPTION A-08)*
+- **R-14 Posture suggestions.** Suggested defaults by posture — Full throttle: allowance $150, floor $500; Steady: allowance $300, floor $1,000; Cushion first: allowance $300, floor $2,000. Suggestions are editable defaults, never enforced, and affect nothing after generation. *(ASSUMPTION A-01 — values are product-tunable.)*
+- **R-15 Three truths.** Generated plans obey the same separation as Original Plan v1: the baseline `PlanVersion` is immutable; actuals come only from user entries; reforecasts (F-12) start from authoritative snapshots and never touch the baseline. *(V2-15)*
+- **R-16 Money hygiene.** All rules use `Decimal`; negative inputs are rejected outside explicit refund/reversal/correction ledger types (calc-v1 rule preserved).
 
-- Product promise: “Know today's play. Record what happened. See the finish line.”
-- State that all data stays local unless exported.
-- Button: `Load My Plan`.
+---
 
-**Screen 2: Confirm starting plan**
+## 6. Data model (schema version 2)
 
-- Show $29,681.61 starting debt, 23 planned checks, and June 24, 2027 baseline payoff.
-- Show $900 starting Checking 1 cash and the $1,000 protected floor.
-- Show the two-account model.
-- Button: `Use Original Plan v1`.
+Schema v1 models (`PlanVersion`, `IncomeRule`, `DebtAccount`, `PaydayPlanItem`, `PaydayCheckIn`, `LedgerEntry`, `BalanceSnapshot`, `CashBucket`, `ForecastSnapshot`, `NotificationPreference`, `Milestone`, `AppSettings`) persist. Changes:
 
-**Screen 3: Label cards**
+### New: `CheckingAccount` — V2-03
 
-- A–F are preloaded with balance/APR.
-- Optional fields: nickname/issuer, last four digits, statement due day, current minimum.
-- Last four must be optional; never ask for a full account number.
-- Skipping must not block onboarding.
+- `id: UUID`, `name: String`, `currentBalance: Decimal`
+- `roles: Set<AccountRole>` — `.income` / `.spending` / `.reserves`
+- `isDefaultIncome: Bool` — exactly one true, enforced by service invariant + test
+- `sortOrder: Int`, `isArchived: Bool`, `createdAt/updatedAt`
 
-**Screen 4: Notifications**
+### New: `Obligation` — V2-07
 
-- Explain payday, incomplete-check-in, and due-date reminders before requesting permission.
-- Default payday morning: 8:00 AM local time.
-- Default incomplete reminder: 7:00 PM local time.
-- Default due reminder: three days before at 9:00 AM and due date at 9:00 AM.
-- Default weekly summary: Sunday 6:00 PM; toggleable.
+- `id`, `name`, `amount: Decimal`, `cadence: ObligationCadence`
+- `dueDay: Int?` (clamped per R-11), `accountID: UUID?`
+- `perPaycheckReserve` is **derived** (R-04), not stored, except frozen into `PaydayPlanItem` rows at generation.
+- `isArchived`, timestamps.
 
-**Done state**
+### New: `UserProfile` — V2-02
 
-- Seed all entities in one transaction.
-- Set onboarding complete only after the seed succeeds.
-- On relaunch after an interrupted seed, resume safely without duplicate rows.
+- `goalText: String?`, `targetDebtFreeDate: Date?`, `posture: PayoffPosture` (`fullThrottle/steady/cushionFirst`), `createdAt`.
 
-### 4.2 Today dashboard — F-02
+### New: `OnboardingState` — V2-01
 
-Order content vertically for one-handed scanning.
+- `lastCompletedStep: OnboardingStep`, per-step draft payload (typed optionals, not JSON blobs where practical), `startedAt`, `completedAt: Date?`.
 
-1. **Status header**
-   - “On track,” “Ahead by $X,” or “Needs $X to return to plan.”
-   - Remaining debt and percent eliminated.
-   - Original payoff and current reforecast payoff.
+### Extended: `DebtAccount` — V2-04, V2-05
 
-2. **Today's play card**
-   - If payday is today: Keep → Move → Reserve → Pay.
-   - If between checks: next payday date, days remaining, current avalanche card, and next planned card payment.
-   - Primary button: `Start Check-In`, `Continue Check-In`, or `Review Completed Check`.
+Adds: `debtType: DebtType` (`creditCard/personalLoan/autoLoan/studentLoan/medicalDebt/other`; migrated rows → `.creditCard`), `originalPrincipal: Decimal?`, `creditLimit: Decimal?`, `isExtraPrincipalEligible: Bool` (default true). Existing `minimumAmount`, `dueDayOfMonth` (editable, V2-11), `apr`, `priority`, `optionalLastFour`, `isArchived` unchanged.
 
-3. **Current target card**
-   - Card nickname/ID, actual balance, APR, planned attack amount, and due date.
-   - Button: `Add Payment`.
+### Extended: `PlanVersion`
 
-4. **Checking 1 card — F-08**
-   - Actual C1 balance.
-   - Protected floor: $1,000.
-   - Current allowance available.
-   - No-spend ceiling for the current date.
-   - Label ceiling: `Maximum if no allowance had been spent`.
-   - Never infer actual C1 balance from the ceiling.
+Adds: `payCadence: PayCadence` (`weekly/biweekly(default for migrated)/semimonthly(day1,day2)/monthly(day)`), `incomeAccountID: UUID?`, `generatedFromProfile: Bool`. Existing fields (`isOriginalBaseline`, `isActive`, `payFrequencyDays`, `protectedBuffer`, `allowanceCap`, `calculationVersion`, …) unchanged; `carReservePerCheck`/`trainReservePerCheck` remain for the migrated baseline and are superseded by `Obligation` rows for new plans (kept in sync for Original Plan v1 by migration, §7).
 
-5. **Checking 2 card — F-09**
-   - Actual/estimated C2 balance.
-   - Reserved for car.
-   - Reserved for train.
-   - Available for minimums and avalanche payment.
-   - Warn on negative or overallocated buckets.
+### Extended: `PaydayPlanItem`
 
-6. **Upcoming strip**
-   - Next payday, next card due date, next projected card payoff.
+Adds: `plannedObligationReserves` as related rows `(obligationID, amount)` replacing the fixed car/train pair for generated plans; migrated items keep their existing car/train values and also gain equivalent obligation-reserve rows pointing at the migrated car/train obligations.
 
-### 4.3 Guided payday check-in — F-03
+### Unchanged semantics
 
-Use a five-step flow with a persistent summary at the bottom.
+`PaydayCheckIn`, `LedgerEntry`, `BalanceSnapshot`, `ForecastSnapshot`, `NotificationPreference`, `Milestone` keep their v1 shapes; ledger `sourceAccount`/`destinationAccount` now reference `CheckingAccount` ids where applicable (migration maps the legacy C1/C2 constants).
 
-**Step 1 — Income**
+---
 
-- Prefill planned paycheck.
-- User enters actual take-home.
-- Optional note for overtime, deduction, or correction.
+## 7. Migration (schema 1 → 2) — V2-16
 
-**Step 2 — Checking 1**
+Runs once, before any UI, wrapped in a single transaction with a pre-migration integrity check; on failure the store is left untouched and the app retries next launch (never a half-migrated store).
 
-- Prefill planned allowance cap and buffer addition.
-- User enters actual amount kept in C1.
-- Optional: actual spending since prior check.
-- User enters or confirms current C1 balance.
-- Clearly show protected floor and no-spend ceiling.
+1. Detect schema v1 (`PlanContract.schemaVersion` stamp / store metadata).
+2. Create `CheckingAccount` rows: **"Checking 1"** (roles income + spending, `isDefaultIncome = true`) and **"Checking 2"** (role reserves). Balances derive from the existing C1/C2 bucket state; nothing is invented.
+3. Create `Obligation` rows: Car — $726.00 monthly; Train pass — $111.00 monthly. Verify R-04 reproduces $335.08 and $51.23 exactly; a mismatch aborts migration (it cannot happen while R-04 holds, and the check keeps it that way).
+4. Stamp every existing `DebtAccount` with `debtType = .creditCard`, `originalPrincipal = startingBalance`, `isExtraPrincipalEligible = true`, `creditLimit = nil`.
+5. Set `PlanVersion.payCadence = .biweekly`, `incomeAccountID` = Checking 1, `generatedFromProfile = false`. **Do not touch** any `PaydayPlanItem` value, check-in, ledger entry, snapshot, forecast, milestone, or notification preference. Original Plan v1 keeps `calculationVersion = 1` and its stored 23-item schedule verbatim.
+6. Add obligation-reserve rows to plan items mirroring the stored car/train amounts (per §6), values copied, not recomputed.
+7. Create a default `UserProfile` (posture `.steady`, no goal text) and a completed `OnboardingState` — the migrated user never re-onboards.
+8. Bump the stored schema stamp to 2; record a migration audit note in `AppSettings`.
 
-**Step 3 — Checking 2 and reserves**
+**Acceptance:** after migration, the §3 baseline checklist as exercised by §13's manual verification (23 paydays, $29,681.61, all milestone dates, $3,461.16 interest, Jun 24 2027 payoff, $7,900 ceiling, $929.54 final payment) passes value-for-value; all pending notifications still fire; a v1 JSON backup taken before upgrade restores into the v2 app (backup import runs steps 2–7 logically).
 
-- Prefill planned C2 transfer, car reserve, and train reserve.
-- User records actual transfer and actual reserve amounts.
-- Show remaining C2 money available for cards.
+Fresh installs skip all of this: schema v2 store, no plan rows, onboarding (§4) is the only path to a plan besides the template.
 
-**Step 4 — Card payments**
+---
 
-- Prefill planned total card budget and recommended target.
-- User enters actual payment for each card.
-- Minimums may be prefilled from the user's current settings but remain editable.
-- Show total payments and unallocated/overallocated amount.
-- Permit a partial check-in but require an explanation before marking a mathematically unreconciled check complete.
+## 8. Information architecture and screens
 
-**Step 5 — Reconcile and finish**
+Four tabs, unchanged: **Today**, **Calendar**, **Debts**, **Progress**. Settings from the Today navigation bar; global `+` sheet for payment, balance update, windfall, account adjustment, or note.
 
-- Equation: actual income + explicitly selected outside funds = C1 kept + C2 transfer + any unallocated amount.
-- Show planned versus actual for each category.
-- Offer optional post-payment balance entry for every paid card.
-- Buttons: `Save Draft` and `Mark Payday Complete`.
-- Completion writes actual ledger entries atomically, recalculates the forecast, refreshes notifications, and records a completion timestamp.
+### 8.1 Today dashboard — F-02, V2-13
 
-Never create actual payments merely because the user marks a check complete. Actual amount fields must be confirmed.
+As in 0.1.x, generalized: the status header, today's-play card, and current-target card are unchanged in shape; the account cards render the user's **named** accounts by role instead of hard-coded "Checking 1/2":
 
-### 4.4 Calendar dashboard — F-07
+- Spending account card (F-08 semantics): actual balance, protected floor, allowance available, no-spend ceiling labeled "Maximum if no allowance had been spent"; ceiling never mutates actual.
+- Reserves card (F-09 semantics): per-obligation reserved amounts (car, train, rent, …), available-for-debts, overallocation warnings.
+- The user's goal text (V2-02), when present, appears as a single calm line under the status header.
+- Upcoming strip: next payday, next due date (any debt type), next projected payoff.
 
-**Views**
+### 8.2 Guided payday check-in — F-03, V2-15
 
-- Default month view.
-- Optional week/list toggle.
-- Jump to Today and jump to Debt-Free Date controls.
+Five-step flow unchanged; wording generalizes "cards" to "debts", reserve step iterates the user's obligations instead of fixed car/train, and account names come from `CheckingAccount`. All 0.1.x reconciliation rules stand, including the outside-funds equation and "never create actuals from planned values".
 
-**Markers**
+### 8.3 Calendar — F-07, V2-12
 
-- Blue filled dot: future payday.
-- Green check: completed payday.
-- Amber ring: payday due/incomplete.
-- Coral dot: card due date.
-- Mint star: card payoff milestone.
-- Gray dot: manual balance snapshot or note.
+Same views, markers, filters, selected-day panel as 0.1.x, now also rendering: obligation due dates (when set), all debt types' due dates, and shortfall-flagged paydays (amber "needs attention" ring, R-09). Generated plans get identical treatment to Original Plan v1.
 
-Do not rely on color alone; each event also needs an icon and text label.
+### 8.4 Debts — F-04, V2-04, V2-05
 
-**Selected-day panel**
+- List: avalanche order default, type icon + nickname, balance, APR, next due, status, percent paid (uses `originalPrincipal` when present).
+- Detail adds: debt type, original principal, credit limit + utilization badge (cards, R-12), extra-principal-eligibility state.
+- `Edit Card` becomes `Edit Debt` and includes the editable due date; saving a due-date change triggers §9 immediately. Balance-snapshot rules unchanged.
+- Add-debt from this tab uses the same type picker + per-type form as onboarding step 7.
 
-- Planned events and amounts.
-- Actual entries and completion state.
-- Plan-versus-actual variance.
-- `Open Check-In`, `Add Entry`, or `View Milestone` action.
+### 8.5 Insights — V2-14
 
-**Filters**
+Lives at the top of the Progress tab as a card row (no fifth tab). Cards, each with accessible text and estimate-honest wording:
 
-- All.
-- Paydays.
-- Card due dates.
-- Milestones.
-- Actual entries.
+1. **Interest saved** — generated plan versus minimums-only projection.
+2. **Payoff delta** — reforecast payoff versus baseline, with the R-09/variance explanation sentence.
+3. **Utilization** — per-card badges at the R-12 thresholds; only shown when limits exist.
+4. **Obligation crunch** — upcoming paychecks where obligations + minimums crowd out extra principal (R-09 flags).
+5. **Allowance trend** — allowance used versus available over the last paychecks; neutral wording, never shaming.
 
-### 4.5 Debts list and detail — F-04
+### 8.6 Progress, reforecast, ledger, settings, backup, phase II
 
-**List**
+F-05, F-10, F-12, F-13, F-14, F-16 carry forward unchanged in structure. Deltas:
 
-- Sort by avalanche order by default.
-- Each row: ID/nickname, actual balance, APR, next due date, status, percent paid.
-- Paid-off cards remain visible in a collapsed `Paid Off` section.
+- Reforecast (F-12) uses calc v2 (§5) for plans stamped `calculationVersion = 2` and calc v1 for Original Plan v1 — the engine dispatches on the plan's stamp. *(V2-15)*
+- Settings adds: **Accounts** (V2-03 management), **Obligations** (V2-07), **Goals & posture** (V2-02), **Review setup** (re-enter any onboarding step; changes flow through F-13's future-rule/new-version choice).
+- Export (F-14) writes backup schema 2, imports 1 and 2 (§2). CSV column sets are append-only; existing columns keep names and order. *(V2-18)*
+- Plan versions screen shows every version with its calculation-version stamp and an immutability badge on baselines; the template loader lives here too (§3).
 
-**Detail**
+---
 
-- Actual balance as the primary number.
-- Original starting balance and baseline balance for today.
-- APR, actual minimum, due day, priority, and payoff status.
-- Planned payoff versus reforecast payoff.
-- Payment history and balance-snapshot history.
-- Buttons: `Add Payment`, `Update Balance`, `Edit Card`.
+## 9. Calendar and notification behavior on due-date edits — V2-11
 
-**Balance update**
+- Editing `dueDayOfMonth` on any debt, or `dueDay` on any obligation, immediately: (1) recomputes that item's calendar events (R-11 clamping); (2) cancels and reschedules its pending due-soon/due-today notifications using the existing stable-identifier scheme, so updates replace rather than duplicate; (3) appends an audit note to the item.
+- The reschedule completes before the edit screen is dismissed; the calendar reflects the new date on next render with no stale markers.
+- All 0.1.x notification rules stand (contextual permission, rolling window, completion cancels the evening reminder, discreet lock-screen content by default).
+- Notification identifiers extend to `debt-due-<uuid>` / `obligation-due-<uuid>` families; migration re-registers existing card reminders under the same identifiers they already use (no duplicate fires after upgrade).
 
-- Enter amount and effective date.
-- Optional source: app estimate, current online balance, statement balance, issuer payoff quote.
-- Snapshot becomes authoritative from its effective date for the actual track.
-- Never delete previous snapshots during correction; append a correction record or explicitly edit with an audit note.
+---
 
-### 4.6 Contribution entry and ledger — F-05
+## 10. Core services (v0.2.0)
 
-Entry types:
-
-- card payment;
-- C1 buffer addition;
-- C1 spending;
-- C1 balance adjustment;
-- C2 transfer;
-- car reserve contribution/use;
-- train reserve contribution/use;
-- windfall;
-- refund/reversal;
-- correction.
-
-Each entry stores date, amount, source, destination/category, related card/payday, optional note, creation timestamp, and modification timestamp. Negative amounts require an explicit refund/reversal/correction type.
-
-Ledger screen/search must support filters by date, account, card, entry type, and payday. All edits should preserve an audit note.
-
-### 4.7 Progress — F-10
-
-Provide these charts with `Plan`, `Actual`, and `Reforecast` selectors where applicable:
-
-- total debt over time;
-- balance by card;
-- cumulative principal paid versus modeled interest;
-- percent debt eliminated;
-- plan-versus-actual variance by payday;
-- Checking 1 actual balance versus protected floor and no-spend ceiling;
-- card payoff timeline.
-
-Also show:
-
-- dollars eliminated;
-- current modeled daily interest cost;
-- paychecks remaining;
-- days to forecast payoff;
-- total contributions logged;
-- next milestone;
-- all earned milestone cards.
-
-### 4.8 Reforecast — F-12
-
-Reforecast after every completed payday, balance snapshot, APR change, paycheck change, or extra payment.
-
-The engine must:
-
-1. start from the latest authoritative actual balance per card;
-2. generate future biweekly dates from the current plan version;
-3. reserve the allowance, buffer need, car amount, and train amount;
-4. apply known minimums, or use the baseline estimate when missing;
-5. follow the active avalanche order;
-6. apply windfalls only when the user explicitly assigns them;
-7. stop when all card balances round to $0.00;
-8. return payoff date, paychecks, estimated interest, per-card payoff dates, and future schedule.
-
-Display a variance explanation such as: `Forecast moved 14 days later because this payday's card contributions were $620 below plan.` Do not imply certainty.
-
-### 4.9 Local notifications — F-11
-
-Notification types:
-
-| Notification | Default trigger | Deep link |
+| Service | Responsibility | Status |
 | --- | --- | --- |
-| Payday play | 8:00 AM on each payday | Relevant check-in |
-| Incomplete payday | 7:00 PM only if the day's check-in is incomplete | Relevant check-in |
-| Card due soon | 9:00 AM three days before configured due date | Card detail |
-| Card due today | 9:00 AM on configured due date | Card detail |
-| Weekly summary | Sunday 6:00 PM | Today/Progress |
-| Milestone approaching | User-configurable, default one payday before | Milestone detail |
-
-Requirements:
-
-- Ask permission only after showing the value.
-- Check authorization status whenever notification settings opens.
-- If permission is denied, show how to open iOS Settings; the app still works fully.
-- Schedule only local notifications.
-- Cancel/reschedule affected requests when dates, due days, completion state, or settings change.
-- Use stable identifiers so updates replace, rather than duplicate, requests.
-- The evening reminder must be removed immediately when the payday is completed.
-- Notification content must avoid sensitive details on the lock screen by default. Use “Your payday check-in is ready” rather than exact debt balances unless the user enables detailed previews.
-
-### 4.10 Plan/settings editor — F-13
-
-Settings groups:
-
-- Plan versions.
-- Pay schedule and future paycheck changes.
-- Allowance and protected buffer.
-- Car/train reserve amounts and optional due dates.
-- Debt names, APRs, minimums, due days, and priority.
-- Notification types/times and lock-screen detail.
-- Face ID/app lock.
-- Data export/import.
-- Calculation assumptions.
-
-Edits must show impact before saving. The user chooses:
-
-- `Apply to future dates` for a rule change; or
-- `Save as New Plan Version` for a scenario change.
-
-Original Plan v1 stays readable and can be compared at any time.
-
-### 4.11 Backup/export — F-14
-
-- Export a versioned JSON file containing all models and metadata needed for full restore.
-- Restore validates schema version and shows a summary before writing.
-- Export CSV files for ledger entries, balance snapshots, debts, and paycheck check-ins.
-- Use the iOS share sheet or Files picker; user initiates every export/import.
-- Never log financial data to the debug console in release builds.
-- Before destructive restore, create a local rollback backup and require confirmation.
-
-### 4.12 Privacy, security, accessibility — F-15
-
-- Store no full card numbers, credentials, CVVs, SSNs, or bank login information.
-- Use local SwiftData storage and iOS file protection appropriate for user financial records.
-- Optional Face ID/app lock after app backgrounding.
-- App-lock fallback uses device authentication; do not invent a custom financial PIN store for MVP.
-- Support Dynamic Type, VoiceOver, Reduce Motion, high contrast, and 44-point minimum hit targets.
-- Every chart must include a text summary and accessible values.
-- Privacy screen can explain exactly what is stored and exported.
-
-### 4.13 Debt-free transition — F-16
-
-When all actual card balances reach zero:
-
-- verify with a confirmation screen before declaring completion;
-- celebrate once with reduced-motion support;
-- preserve all history;
-- show the estimated released cash per paycheck;
-- offer a Phase II goal choice: larger emergency fund, car principal, retirement, Roth IRA, or taxable investing;
-- create only a goal tracker and suggested allocation placeholder; do not make investment recommendations or automatically move money.
+| `PlanSeeder` | Loads the Original Plan v1 **template** idempotently — deliberate template loads only. It never runs against a migrated store (§7 preserves those); the idempotency guard stays as a second line of defense. | Repurposed |
+| `PlanGenerationService` | New. Runs §5 R-01…R-14 to produce an immutable baseline `PlanVersion` from onboarding inputs. Pure functions where possible. | New |
+| `MigrationService` | New. §7 schema 1→2, plus v1-backup import migration. | New |
+| `OnboardingStateService` | New. Step persistence and resume (§4.0). | New |
+| `DebtCalculationEngine` | Interest, minimums, avalanche allocation; dispatches calc v1/v2 by plan stamp. | Extended |
+| `ReconciliationService` | Payday equations, atomic ledger/check-in writes; obligation-aware. | Extended |
+| `AccountBalanceService` | Derives balances/buckets per `CheckingAccount` and obligation; actual vs. ceiling. | Extended |
+| `ReforecastService` | F-12 on both calc versions. | Extended |
+| `NotificationScheduler` | Stable-ID scheduling incl. obligation due dates and §9 reschedules. | Extended |
+| `CalendarEventService` | Event merge incl. obligations and shortfall flags. | Extended |
+| `ExportService` | Backup schema 2 write, 1+2 read; append-only CSV. | Extended |
+| `MilestoneService`, `AppLockService`, `PlanContract` | As in 0.1.x; `PlanContract` gains schema/calc version 2 constants alongside the frozen v1 constants. | Extended |
 
 ---
 
-## 5. Data model
+## 11. Acceptance criteria
 
-Use SwiftData `@Model` types. Names below are suggested and may be refined without changing behavior.
+### v0.1 criteria (F-01…F-16)
 
-### `PlanVersion`
+All sixteen 0.1.x acceptance rows remain binding as amended in `soul.md` (F-01's fresh-install clause is replaced by the V2 rows below; every other row unchanged, applied to generalized accounts/debts).
 
-- `id: UUID`
-- `name: String`
-- `createdAt: Date`
-- `isOriginalBaseline: Bool`
-- `isActive: Bool`
-- `firstPayday: Date`
-- `payFrequencyDays: Int`
-- `startingChecking1: Decimal`
-- `protectedBuffer: Decimal`
-- `allowanceCap: Decimal`
-- `carReservePerCheck: Decimal`
-- `trainReservePerCheck: Decimal`
-- `calculationVersion: Int`
+### v0.2.0 criteria
 
-### `IncomeRule`
-
-- `id`, `planVersionID`
-- `effectiveDate`
-- `netPaycheckAmount`
-
-Seed $2,094 effective Aug 20, 2026 and $2,190 effective Dec 10, 2026.
-
-### `DebtAccount`
-
-- `id`
-- `planID: String` such as A–F
-- `displayName`
-- `optionalLastFour`
-- `startingBalance`
-- `apr`
-- `minimumAmount`
-- `dueDayOfMonth`
-- `priority`
-- `isArchived`
-
-### `PaydayPlanItem`
-
-- `id`, `planVersionID`
-- `sequenceNumber`
-- `date`
-- `plannedIncome`
-- `plannedC1Keep`
-- `plannedBufferAdd`
-- `plannedAllowance`
-- `plannedC2Transfer`
-- `plannedCarReserve`
-- `plannedTrainReserve`
-- `plannedCardBudget`
-- `plannedTargetDebtID`
-- `plannedDebtAfter`
-- `plannedC1NoSpendCeiling`
-- `plannedPerCardBalances` as related rows, not encoded JSON if practical
-
-### `PaydayCheckIn`
-
-- `id`, `paydayPlanItemID`
-- `status: draft/completed/needsAttention`
-- `actualIncome`
-- `outsideFundsUsed`
-- `actualC1Kept`
-- `actualC1Balance`
-- `actualAllowanceSpent`
-- `actualC2Transfer`
-- `actualCarReserve`
-- `actualTrainReserve`
-- `unallocatedAmount`
-- `note`
-- `completedAt`
-
-### `LedgerEntry`
-
-- `id`
-- `effectiveDate`
-- `createdAt`, `updatedAt`
-- `type`
-- `amount`
-- `sourceAccount`
-- `destinationAccount`
-- `debtAccountID`
-- `paydayCheckInID`
-- `note`
-- `isCorrection`
-- `correctsEntryID`
-
-### `BalanceSnapshot`
-
-- `id`
-- `debtAccountID` or cash-account ID
-- `effectiveDate`
-- `amount`
-- `sourceType`
-- `note`
-- `isAuthoritative`
-
-### `CashBucket`
-
-- `id`
-- `type: checking1Actual/checking1Buffer/checking2Car/checking2Train/checking2Debt`
-- `currentAmount`
-
-Derive bucket values from the ledger when possible. Cache only if needed and verify cached totals against the ledger.
-
-### `ForecastSnapshot`
-
-- `id`
-- `calculatedAt`
-- `sourcePlanVersionID`
-- `triggerType`
-- `projectedPayoffDate`
-- `remainingPaychecks`
-- `estimatedRemainingInterest`
-- `projectedPerCardPayoffDates`
-- `summaryExplanation`
-
-### `NotificationPreference`
-
-- type, enabled, hour, minute, leadDays, detailedLockScreenContent.
-
-### `Milestone`
-
-- type, threshold, baselineDate, forecastDate, achievedDate, relatedDebtID.
-
----
-
-## 6. Core services
-
-| Service | Responsibility |
+| ID | v0.2.0 is accepted when… |
 | --- | --- |
-| `PlanSeeder` | Idempotently seeds Original Plan v1, debts, schedule, milestones, and defaults. |
-| `DebtCalculationEngine` | Baseline calculation, avalanche allocation, interest estimate, and reforecast. Pure functions where possible. |
-| `ReconciliationService` | Validates payday equations and creates atomic ledger/check-in records. |
-| `AccountBalanceService` | Derives C1/C2 bucket balances and distinguishes actual from ceiling. |
-| `NotificationScheduler` | Requests authorization, creates stable requests, reschedules changes, and handles deep links. |
-| `CalendarEventService` | Merges paydays, due dates, milestones, and actual entries into display events. |
-| `ExportService` | Versioned JSON backup/restore and CSV exports. |
-| `AppLockService` | LocalAuthentication state and background-lock timing. |
+| V2-01 | Killing the app at every onboarding step boundary and mid-step, then relaunching, resumes at the correct step with all entered data intact; finishing twice cannot create duplicate plans, accounts, obligations, or debts. |
+| V2-02 | Goal, target date, and posture persist; posture changes only suggested defaults and copy (verified by generating identical plans under different postures with identical numeric inputs). |
+| V2-03 | 1–10 accounts with names, balances, and roles can be created and edited; the app enforces exactly one default income account at all times; no credential-like field exists anywhere. |
+| V2-04 | All six debt types can be created from the picker and render correct type-specific forms and icons in every screen. |
+| V2-05 | Balance, original principal, APR, minimum, editable due date, credit limit/utilization, and extra-principal eligibility round-trip through create → edit → plan generation → display; ineligible debts never receive extra principal in any generated or reforecast schedule. |
+| V2-06 | All four cadences generate correct payday timelines (including month-end clamping and semimonthly pairs); future income rules switch amounts on their effective dates in plan and reforecast. |
+| V2-07 | Obligation smoothing matches R-04 to the cent, including the $726→$335.08 and $111→$51.23 reductions; per-paycheck reserves appear in plan items, check-in, and reserves card. |
+| V2-08 | No generated schedule plans the spending account below the floor; floor top-ups precede extra principal (R-05 order verified). |
+| V2-09 | The configured allowance is reserved every paycheck as available-not-spent; recording actual spending lowers actual only, never planned or ceiling values. |
+| V2-10 | Under Lem-equivalent inputs, the calc-v2 generator reproduces Original Plan v1's headline values exactly ($3,461.16 interest, 23 checks, Jun 24 2027, $929.54 final, all six payoff dates); property tests confirm minimums-first, avalanche targeting, same-check rollover, and R-09 shortfall flags. |
+| V2-11 | Editing any due date updates calendar markers and replaces the exact affected notification requests (verified by pending-request inspection) before the editor dismisses; no duplicates, no orphans. |
+| V2-12 | A generated plan's paydays, due dates, milestones, and shortfall flags render on the calendar with the same markers, filters, and day panel as the migrated baseline. |
+| V2-13 | The dashboard shows the user's named accounts, floor, allowance, goal line, and next play; F-02's five-second content list is fully present for a generated plan. |
+| V2-14 | All five insight cards render from stored data with accessible text summaries and estimate-honest wording; utilization badges appear only when a limit exists and at R-12 thresholds. |
+| V2-15 | Check-in, ledger, snapshots, and reforecast behave identically on a generated plan; every baseline field value is unchanged across any sequence of actual entries. |
+| V2-16 | Upgrading a seeded 0.1.x store passes the §7 acceptance — every pre-existing field value unchanged, baseline checklist green, live notifications, no re-onboarding; a fresh v0.2.0 install contains zero Lem data unless the template is deliberately loaded. |
+| V2-17 | Release build makes no network connections; no credential-type fields exist; all storage is local; export remains the only data egress and is user-initiated. |
+| V2-18 | New screens pass Dynamic Type (accessibility sizes), VoiceOver, Reduce Motion, and 44-pt target checks; a grep-level audit finds no Double/Float money; a v1 backup file restores successfully and equivalently in v0.2.0. |
 
 ---
 
-## 7. Feature acceptance criteria
+## 12. F ↔ V2 parity check table
 
-This section mirrors every feature in `soul.md`.
-
-| ID | MVP is accepted when… |
-| --- | --- |
-| F-01 | A clean install produces exactly one Original Plan v1 with six debts and 23 paydays; onboarding can be interrupted and resumed without duplicates. |
-| F-02 | Today shows remaining debt, variance status, current target, next action, payoff forecast, C1/C2 status, and check-in state without scrolling on a common iPhone Pro-sized screen where practical. |
-| F-03 | A payday can be saved as draft or completed; all planned and actual amounts remain distinct; completion reconciles or records an explicit exception. |
-| F-04 | The user can view/edit six debt records, add payments and authoritative balance snapshots, and inspect full history. |
-| F-05 | Every money action is represented by a filterable ledger entry and corrections retain an audit link. |
-| F-06 | All 23 dates and seed values match this document; Original Plan v1 cannot be edited or deleted. |
-| F-07 | Calendar displays paydays, due dates, milestones, entries, and completion states; selecting a date opens the relevant detail. |
-| F-08 | C1 shows actual, protected floor, allowance usage, and no-spend ceiling as separately labeled values; no-spend never mutates actual. |
-| F-09 | C2 shows car, train, and debt buckets and prevents an unnoticed negative allocation. |
-| F-10 | All specified charts and milestones render from stored data and have accessible text equivalents. |
-| F-11 | Local notification permission is contextual; enabled reminders deep-link correctly; completing a payday cancels its incomplete reminder. |
-| F-12 | Changing an actual balance or contribution updates the forecast while baseline values remain unchanged and visible. |
-| F-13 | Future plan changes show impact and create a future rule/new version; baseline remains immutable. |
-| F-14 | A JSON round-trip restores equivalent records; CSV exports open with correct headers and currency values. |
-| F-15 | No prohibited sensitive fields exist; Face ID lock, Dynamic Type, VoiceOver, Reduce Motion, and secure local behavior are testable. |
-| F-16 | Reaching zero produces one confirmation/celebration and exposes a Phase II goal tracker without moving money or giving individualized investment advice. |
+| V2 ID | soul.md | This document | Related F |
+| --- | --- | --- | --- |
+| V2-01 | v0.2 contract table | §4.0, §11 | F-01 (amended) |
+| V2-02 | v0.2 contract table | §4.2, §6 UserProfile, §11 | F-02 |
+| V2-03 | v0.2 contract table | §4.3, §6 CheckingAccount, §11 | F-08, F-09 |
+| V2-04 | v0.2 contract table | §4.7, §8.4, §11 | F-04 |
+| V2-05 | v0.2 contract table | §4.7, §6 DebtAccount, §11 | F-04 |
+| V2-06 | v0.2 contract table | §4.4, §5 R-01/R-03, §11 | F-13 |
+| V2-07 | v0.2 contract table | §4.5, §5 R-04, §6 Obligation, §11 | F-09 |
+| V2-08 | v0.2 contract table | §4.6, §5 R-05/R-09, §11 | F-08 |
+| V2-09 | v0.2 contract table | §4.6, §5 R-05, §11 | F-08 |
+| V2-10 | v0.2 contract table | §4.9, §5, §11 | F-06, F-12 |
+| V2-11 | v0.2 contract table | §8.4, §9, §11 | F-07, F-11 |
+| V2-12 | v0.2 contract table | §8.3, §11 | F-07 |
+| V2-13 | v0.2 contract table | §8.1, §11 | F-02 |
+| V2-14 | v0.2 contract table | §8.5, §5 R-12/R-13, §11 | F-10 |
+| V2-15 | v0.2 contract table | §8.2, §8.6, §5 R-15, §11 | F-03, F-05, F-12 |
+| V2-16 | v0.2 contract table | §3, §7, §11 | F-01 (amended), F-06 |
+| V2-17 | v0.2 contract table | §1, §4.1, §4.3, §11 | F-15 |
+| V2-18 | v0.2 contract table | §1, §8.6, §11 | F-14, F-15 |
 
 ---
 
-## 8. Validation and tests
+## 13. Validation and tests
 
-### Required unit tests
+### Carried-forward v0.1 suites
 
-1. Original total equals $29,681.61.
-2. Avalanche order equals B, D, A, F, C, E.
-3. First paycheck is Aug 20, 2026 and the next is Sep 3, 2026.
-4. First check keeps $400, transfers $1,694, reserves $386.31, and budgets $1,307.69 to cards.
-5. Checks 2–8 budget $1,407.69 to cards.
-6. Dec 10, 2026 income changes to $2,190 and card budget changes to $1,503.69.
-7. Baseline card payoff dates match B Aug 20, D Oct 15, A Nov 26, F Jan 7, C May 13, E Jun 24.
-8. Baseline final payoff is Jun 24, 2027 after 23 checks.
-9. Baseline modeled interest rounds to $3,461.16.
-10. Baseline no-spend ceiling reaches $7,900.
-11. Recording $100 of actual allowance spending lowers actual C1 only; it does not change the baseline ceiling.
-12. An authoritative debt balance snapshot changes the forecast but not Original Plan v1.
-13. A payoff that leaves extra attack money applies the remainder to the next avalanche card.
-14. Negative currency inputs are rejected except explicit refund/reversal/correction entries.
-15. Reconciliation catches overallocated income and negative C2 buckets.
+The full 0.1.x suite — 54 unit and UI tests, including the fifteen spec-required calculation tests — remains green, unchanged. The migrated store must still satisfy every one (run against a migrated fixture, not only a fresh seed).
+
+### Required new unit tests (v0.2.0)
+
+1. R-04 smoothing: $726 monthly/biweekly → $335.08; $111 → $51.23; weekly, semimonthly, monthly, quarterly, and annual cases to the cent.
+2. R-02 reduction: biweekly calc v2 interest equals calc v1 for identical inputs across the full Lem schedule.
+3. Lem-equivalence: calc-v2 generation from Lem-equivalent inputs reproduces every §3 headline value ($3,461.16 interest, 23 checks, Jun 24 2027, $929.54 final payment, all six payoff dates, $7,900 ceiling) and the 23-check date/target/allocation structure. Per-check planned-debt-after values must match the clean-Decimal engine output — which may differ from the printed seed tables by the documented ±$0.01–$0.06 artifacts in the source document (see `ENGINEERING.md`); do not "fix" either direction.
+4. R-08 ordering incl. APR ties, 0% APR, and manual override.
+5. R-07: ineligible debts capped at minimums in every generated paycheck.
+6. R-09 shortfall: extra→0, allowance→0, flag with exact gap; minimums never dropped.
+7. R-06: card estimate scaling by cadence; installment debts reject blank minimums.
+8. R-01: month-end clamping (Jan 31 → Feb 28 and 29), semimonthly pairs, 600-cap flag.
+9. R-05 order: floor top-up precedes extra principal; allowance reserved first.
+10. Migration §7: fixture v1 store → v2 passes the §3 baseline checklist value-for-value with every pre-existing field unchanged; idempotent (re-running is a no-op); aborts cleanly on induced failure.
+11. Exactly-one-default-income-account invariant under add/edit/archive.
+12. Backup: v1 file imports; v2 round-trips; CSV headers superset of v1.
+13. R-12 utilization thresholds and nil-limit behavior.
+14. R-13 goal gap monotonicity (more extra never later payoff).
+15. OnboardingState: every step boundary persists and resumes; double-finish creates no duplicates.
 
 ### Required integration/UI tests
 
-- Clean install and idempotent seed.
-- Complete the first payday check-in.
-- Save and resume a draft.
-- Enter a card payment and balance update.
-- Calendar deep link from payday notification.
-- Notification-denied experience.
-- Export and restore JSON.
-- Dynamic Type at accessibility sizes.
-- VoiceOver labels on dashboard and charts.
-- Reduce Motion celebration.
-- App background lock and successful Face ID return.
+- Full fresh-install onboarding through plan generation, with a mid-flow force-quit and resume.
+- Upgrade launch on a seeded v1 fixture: no onboarding, dashboard intact, baseline verification screen matches.
+- Add one debt of each of the six types; verify plan, calendar, debts list.
+- Edit a due date; assert pending notification requests and calendar markers changed before dismissal.
+- Template load path shows the warning and produces the exact Original Plan v1.
+- Accessibility passes (Dynamic Type, VoiceOver, Reduce Motion) on every new screen.
 
-### Manual data verification
+### Manual verification
 
-Add a debug-only `Plan Verification` screen or test helper that prints:
-
-- plan version;
-- number of debts;
-- number of paydays;
-- original total;
-- each milestone date;
-- final payoff date;
-- total modeled interest;
-- final no-spend ceiling.
-
-The release UI must not expose debug logs containing financial data.
+The debug-only Plan Verification screen extends to print: schema version, calculation version per plan version, account count, obligation reserves, and — on migrated stores — the full §3 baseline checklist. Release builds expose none of it.
 
 ---
 
-## 9. Suggested project structure
+## 14. Updated project structure (delta)
 
 ```text
 PaydayPlaybook/
-├── App/
-│   ├── PaydayPlaybookApp.swift
-│   ├── AppRouter.swift
-│   └── AppEnvironment.swift
-├── Models/
-│   ├── PlanVersion.swift
-│   ├── IncomeRule.swift
-│   ├── DebtAccount.swift
-│   ├── PaydayPlanItem.swift
-│   ├── PaydayCheckIn.swift
-│   ├── LedgerEntry.swift
-│   ├── BalanceSnapshot.swift
-│   ├── CashBucket.swift
-│   ├── ForecastSnapshot.swift
-│   ├── NotificationPreference.swift
-│   └── Milestone.swift
-├── Services/
-│   ├── PlanSeeder.swift
-│   ├── DebtCalculationEngine.swift
-│   ├── ReconciliationService.swift
-│   ├── AccountBalanceService.swift
-│   ├── NotificationScheduler.swift
-│   ├── CalendarEventService.swift
-│   ├── ExportService.swift
-│   └── AppLockService.swift
+├── Models/          + CheckingAccount.swift, Obligation.swift, UserProfile.swift,
+│                      OnboardingState.swift  (DebtAccount/PlanVersion/PaydayPlanItem extended)
+├── Services/        + PlanGenerationService.swift, MigrationService.swift,
+│                      OnboardingStateService.swift  (others extended per §10)
 ├── Features/
-│   ├── Onboarding/
-│   ├── Today/
-│   ├── CheckIn/
-│   ├── Calendar/
-│   ├── Debts/
-│   ├── Ledger/
-│   ├── Progress/
-│   ├── Settings/
-│   └── PhaseTwo/
-├── Components/
-│   ├── MoneyText.swift
-│   ├── StatusBadge.swift
-│   ├── PlanActualRow.swift
-│   ├── EmptyState.swift
-│   └── AccessibleChartSummary.swift
-├── Resources/
-│   ├── OriginalPlanV1.json
-│   └── Assets.xcassets
-└── Tests/
-    ├── DebtCalculationEngineTests.swift
-    ├── PlanSeederTests.swift
-    ├── ReconciliationServiceTests.swift
-    ├── ExportServiceTests.swift
-    └── PaydayPlaybookUITests/
+│   ├── Onboarding/  rebuilt: one view per §4 step + resume coordinator
+│   ├── Insights/    new: insight cards (hosted in Progress tab)
+│   └── Settings/    + AccountsView, ObligationsView, GoalsView, ReviewSetupView
+└── Tests/           + PlanGenerationServiceTests, MigrationServiceTests,
+                       ObligationSmoothingTests, OnboardingResumeTests
 ```
 
-The plan may be seeded from a bundled, versioned JSON resource. Validate it before insertion and include a hash or schema version so accidental changes are caught in tests.
+Everything else in the 0.1.x structure stands.
 
 ---
 
-## 10. Build sequence
+## 15. Build sequence for 0.2.0
 
-### Phase 1 — Foundation
+1. **Contract** (this branch): docs, versioning, changelog — no feature code.
+2. **Schema + migration**: §6 models, §7 migration, fixtures, tests green before UI.
+3. **Generation engine**: §5 rules, Lem-equivalence test first.
+4. **Onboarding UI**: §4 with resume tests.
+5. **Generalized surfaces**: dashboard, check-in, calendar, debts, insights, settings.
+6. **Compatibility pass**: backup import, notification re-registration, accessibility, privacy audit.
+7. **Alpha cut**: full suite green on fresh + migrated fixtures → tag `v0.2.0-alpha.1`, build 2.
 
-- Create project and models.
-- Implement Decimal helpers and date normalization.
-- Implement/verify Original Plan v1 seed.
-- Add calculation tests before UI.
-
-### Phase 2 — Core execution
-
-- Build Today, Debts, and payday check-in.
-- Implement ledger, balance snapshots, and reconciliation.
-- Implement actual versus plan status.
-
-### Phase 3 — Time and accountability
-
-- Build calendar event merge and calendar UI.
-- Add notification permission flow, scheduler, and deep links.
-- Add reminders for only the rolling relevant window and reschedule on changes.
-
-### Phase 4 — Insight and resilience
-
-- Build charts, milestones, reforecast explanations, and settings.
-- Add JSON/CSV export/restore and app lock.
-- Add accessibility and privacy pass.
-
-### Phase 5 — Verification
-
-- Run all tests.
-- Validate every baseline date and amount against this document.
-- Test on a physical iPhone for notification delivery, Face ID, share sheet, calendar sizing, and app relaunch persistence.
-- Produce a short `README.md` with build/run steps and a `TESTING.md` checklist.
-
-Do not skip foundational calculation tests to rush into visual work.
+Do not skip calculation and migration tests to rush into visual work.
 
 ---
 
-## 11. MVP exclusions and future options
+## 16. Exclusions (unchanged)
 
-Not part of MVP:
-
-- bank/card API connections;
-- cloud sync or multi-device collaboration;
-- Android or web clients;
-- automatic payment initiation;
-- receipt scanning;
-- shared household accounts;
-- AI financial recommendations;
-- securities trading or portfolio management;
-- widgets, watch app, or Siri shortcuts.
-
-Potential post-MVP work after the local app is stable:
-
-- iCloud sync as an explicit opt-in;
-- lock-screen/widget next-action view;
-- Shortcuts/App Intents for quick balance updates;
-- scenario comparison without changing the active plan;
-- PDF progress report generation;
-- configurable debt snowball mode;
-- biometric privacy screen snapshot protection.
+Still out of scope: bank/card APIs, cloud sync, Android/web, automatic payments, receipt scanning, household accounts, AI recommendations, trading, widgets/watch/Siri. The post-MVP options list from 0.1.x stands, now including: debt snowball mode, scenario comparison, and multi-income households.
 
 ---
 
-## 12. Definition of done
+## 17. Definition of done (v0.2.0)
 
-The MVP is done only when:
+v0.2.0 is done only when:
 
-- all F-01 through F-16 acceptance criteria pass;
-- every seeded value matches the exact plan;
-- a fresh install works fully offline;
-- user entries persist across relaunch;
-- planned values never masquerade as actual values;
-- C1 no-spend ceiling never masquerades as actual cash;
-- the user can complete an end-to-end payday workflow;
-- calendar and notifications take the user to the correct action;
-- reforecast changes do not alter Original Plan v1;
-- backup/restore is verified;
+- every §11 V2 criterion and every carried-forward F criterion passes;
+- a migrated 0.1.x store keeps every pre-existing value intact on its baseline and history;
+- a fresh install reaches a generated plan fully offline with zero Lem data;
+- planned, actual, and reforecast never cross-contaminate on either plan kind;
+- backup v1 import, v2 round-trip, and append-only CSVs are verified;
 - accessibility and privacy checks pass on a physical device;
-- no prohibited financial credentials are collected or logged.
-
-At handoff, provide the Xcode project, passing test results, `README.md`, `TESTING.md`, and a list of any known limitations. Do not call the MVP complete with placeholder data, nonfunctional buttons, or mocked persistence.
+- `CHANGELOG.md` claims exactly what shipped, nothing more.
 
 ---
 
-## 13. Apple implementation references
+## 18. Apple implementation references
 
 - SwiftData persistence: <https://developer.apple.com/documentation/swiftdata>
+- SwiftData migration (`SchemaMigrationPlan`): <https://developer.apple.com/documentation/swiftdata/schemamigrationplan>
 - Adding/editing SwiftData records: <https://developer.apple.com/documentation/swiftdata/adding-and-editing-persistent-data-in-your-app>
 - User Notifications: <https://developer.apple.com/documentation/usernotifications>
 - Scheduling local notifications: <https://developer.apple.com/documentation/usernotifications/scheduling-a-notification-locally-from-your-app>
