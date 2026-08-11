@@ -34,7 +34,7 @@ struct PlanningInput: Codable, Equatable, Sendable {
 /// Pay cadence for payday timeline generation (R-01, R-03).
 /// Days of month are 1…31; a day beyond a month's length clamps to the last
 /// valid day (R-11), so "last day of month" is expressed as day 31.
-enum PayCadence: Codable, Equatable, Sendable {
+enum PlanningPayCadence: Codable, Equatable, Sendable {
     case weekly
     case biweekly
     /// Two paydays per month on the given days (e.g. 1 and 15, or 15 and 31
@@ -54,7 +54,7 @@ enum PayCadence: Codable, Equatable, Sendable {
 }
 
 struct IncomeInput: Codable, Equatable, Sendable {
-    var cadence: PayCadence
+    var cadence: PlanningPayCadence
     /// The next payday; the anchor the timeline is generated from. For
     /// semimonthly/monthly cadences its day must match a configured day
     /// (after clamping).
@@ -62,17 +62,15 @@ struct IncomeInput: Codable, Equatable, Sendable {
     /// Take-home amounts by effective date, ascending. The first entry's
     /// amount applies from the first payday even if its effective date is
     /// later (a plan cannot have zero income).
-    var amounts: [IncomeChange]
+    var amounts: [PlanningIncomeChange]
     /// One-time extra money the user has explicitly assigned to the plan.
     /// Each windfall lands on the first payday on/after its date and flows
     /// through the normal allocation order. Windfalls are never inferred.
     var windfalls: [Windfall] = []
 }
 
-struct IncomeChange: Codable, Equatable, Sendable {
-    var effectiveDate: Date
-    var amount: Decimal
-}
+// `PlanningIncomeChange` (effective-dated take-home step) is declared in
+// Services/PlanningDTO.swift and shared with the persistence layer.
 
 struct Windfall: Codable, Equatable, Sendable {
     var date: Date
@@ -91,21 +89,8 @@ struct SpendingInput: Codable, Equatable, Sendable {
     var allowancePerPaycheck: Decimal
 }
 
-/// Cadence of an essential obligation (R-04 occurrences per year).
-enum ObligationCadence: String, Codable, Equatable, Sendable, CaseIterable {
-    case weekly, biweekly, monthly, quarterly, semiannual, annual
-
-    var occurrencesPerYear: Int {
-        switch self {
-        case .weekly: return 52
-        case .biweekly: return 26
-        case .monthly: return 12
-        case .quarterly: return 4
-        case .semiannual: return 2
-        case .annual: return 1
-        }
-    }
-}
+// `ObligationCadence` (R-04 occurrences per year) is declared in
+// Models/RecurringObligation.swift and shared with the model layer.
 
 struct ObligationInput: Codable, Equatable, Sendable {
     var id: UUID
@@ -117,9 +102,8 @@ struct ObligationInput: Codable, Equatable, Sendable {
     var dueDay: Int?
 }
 
-enum DebtType: String, Codable, Equatable, Sendable, CaseIterable {
-    case creditCard, personalLoan, autoLoan, studentLoan, medicalDebt, other
-}
+// `DebtType` (six kinds, V2-04) is declared in Models/DebtAccount.swift and
+// shared with the model layer.
 
 /// Whether extra principal may be sent to this debt beyond its minimum.
 /// `unknown` is treated as `ineligible` (never risk a prepayment penalty) and
