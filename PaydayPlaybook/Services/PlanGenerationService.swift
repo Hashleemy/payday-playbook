@@ -106,7 +106,11 @@ enum PlanGenerationService {
     // MARK: - Snapshot → engine input
 
     /// Maps the persistence snapshot onto the engine's call contract.
-    static func engineInput(from snapshot: StoredPlanInput) throws -> PlanningInput {
+    /// The single store→engine conversion. `GeneratedPlanService` delegates
+    /// here so the plan the UI renders is built from exactly the same input as
+    /// the plan that was persisted. `asOf` overrides the snapshot's own stamp
+    /// (used for live previews generated "as of today").
+    static func engineInput(from snapshot: StoredPlanInput, asOf: Date? = nil) throws -> PlanningInput {
         let cadence = try planningCadence(from: snapshot)
 
         var amounts = [PlanningIncomeChange(
@@ -120,7 +124,7 @@ enum PlanGenerationService {
         return PlanningInput(
             calculationVersion: snapshot.calculationVersion == 1
                 ? .v1LegacyBaseline : .v2Avalanche,
-            asOf: snapshot.asOf ?? DateMath.startOfDay(snapshot.nextPayday),
+            asOf: asOf ?? snapshot.asOf ?? DateMath.startOfDay(snapshot.nextPayday),
             income: IncomeInput(
                 cadence: cadence,
                 firstPayday: snapshot.nextPayday,

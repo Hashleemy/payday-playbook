@@ -35,66 +35,19 @@ struct GeneratedPlanService {
 
     // MARK: - Stored snapshot → engine input
 
-    /// Maps the stored snapshot DTO onto the engine's input contract.
-    /// Pure and deterministic; every value is the snapshot's own.
-    static func engineInput(from stored: StoredPlanInput, asOf: Date? = nil) -> PlanningInput {
-        let cadence: PlanningPayCadence
-        switch stored.cadence {
-        case .weekly:
-            cadence = .weekly
-        case .biweekly:
-            cadence = .biweekly
-        case .semimonthly:
-            cadence = .semimonthly(
-                firstDay: stored.semimonthlyPayDay1 ?? 1,
-                secondDay: stored.semimonthlyPayDay2 ?? 15
-            )
-        case .monthly:
-            cadence = .monthly(day: stored.monthlyPayDay ?? 1)
-        }
-
-        // The base take-home applies from the first payday (the engine treats
-        // the first entry that way regardless of its effective date).
-        var amounts = [PlanningIncomeChange(effectiveDate: stored.nextPayday, amount: stored.baseTakeHome)]
-        amounts.append(contentsOf: stored.incomeChanges)
-
-        return PlanningInput(
-            calculationVersion: .v2Avalanche,
-            asOf: asOf ?? stored.nextPayday,
-            income: IncomeInput(
-                cadence: cadence,
-                firstPayday: stored.nextPayday,
-                amounts: amounts,
-                windfalls: []
-            ),
-            spending: SpendingInput(
-                // A one-time first-check buffer is extra cash that starts in
-                // the spending account (Lem-equivalence: the $100 emerges as
-                // a floor top-up). Generated plans store 0 here.
-                startingBalance: stored.spendingStartingBalance + stored.firstCheckBufferAdd,
-                protectedFloor: stored.protectedFloor,
-                allowancePerPaycheck: stored.allowanceCap
-            ),
-            obligations: stored.obligations.map {
-                ObligationInput(id: $0.id, name: $0.name, amount: $0.amount,
-                                cadence: $0.cadence, dueDay: $0.dueDay)
-            },
-            debts: stored.debts.enumerated().map { index, debt in
-                DebtInput(
-                    id: debt.id,
-                    name: debt.name,
-                    debtType: debt.debtType,
-                    balance: debt.currentBalance,
-                    apr: debt.apr,
-                    promo: nil,
-                    minimumPayment: debt.minimumAmount,
-                    dueDay: debt.dueDayOfMonth,
-                    creditLimit: debt.creditLimit,
-                    prepayment: debt.isExtraPrincipalEligible ? .eligible : .ineligible,
-                    createdOrder: index
-                )
-            }
-        )
+    /// Store snapshot → engine input.
+    ///
+    /// Delegates to `PlanGenerationService.engineInput`, which is the single
+    /// conversion used when a plan is generated and persisted. This service
+    /// previously kept its own copy, written before the snapshot carried a
+    /// tri-state `prepayment` or an `asOf` stamp, so it silently disagreed
+    /// with the persisted plan in four ways: it flattened `.unknown`
+    /// prepayment to eligible, ignored `stored.asOf`, defaulted missing
+    /// semimonthly pay days instead of failing, and did not normalise
+    /// reversed semimonthly days. Each of those made the plan the user *sees*
+    /// differ from the plan that was *saved*.
+    static func engineInput(from stored: StoredPlanInput, asOf: Date? = nil) throws -> PlanningInput {
+        try PlanGenerationService.engineInput(from: stored, asOf: asOf)
     }
 
     // MARK: - Engine result → stored rows format
@@ -161,7 +114,7 @@ struct GeneratedPlanService {
     func previewFromCurrentInputs() throws -> PlanPreview {
         let stored = try PlanningInputBuilder(context: context).build()
         let result = try AvalanchePlanEngine.generatePlan(
-            Self.engineInput(from: stored, asOf: DateMath.startOfDay(dateProvider.now))
+            try Self.engineInput(from: stored, asOf: DateMath.startOfDay(dateProvider.now))
         )
         return PlanPreview(storedInput: stored, result: result)
     }
@@ -177,7 +130,7 @@ struct GeneratedPlanService {
         var adjusted = storedInput
         if let protectedFloor { adjusted.protectedFloor = protectedFloor }
         if let allowanceCap { adjusted.allowanceCap = allowanceCap }
-        return try AvalanchePlanEngine.generatePlan(engineInput(from: adjusted))
+        return try AvalanchePlanEngine.generatePlan(try engineInput(from: adjusted))
     }
 
     /// Decodes a plan's stored input snapshot.
@@ -197,7 +150,7 @@ struct GeneratedPlanService {
     func baselineResult(for plan: PlanVersion) throws -> PlanningResult? {
         guard plan.calculationVersion >= PlanContract.currentCalculationVersion else { return nil }
         let stored = try Self.storedInput(for: plan)
-        return try AvalanchePlanEngine.generatePlan(Self.engineInput(from: stored))
+        return try AvalanchePlanEngine.generatePlan(try Self.engineInput(from: stored))
     }
 
     // MARK: - Reforecast (calc v2)
@@ -229,7 +182,7 @@ struct GeneratedPlanService {
 
         let actuals = ActualState(asOf: today, balances: balances, spendingBalance: nil)
         return try AvalanchePlanEngine.reforecast(
-            Self.engineInput(from: stored),
+            try Self.engineInput(from: stored),
             actuals: actuals
         )
     }
