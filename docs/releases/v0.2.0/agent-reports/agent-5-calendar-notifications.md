@@ -8,16 +8,22 @@ No optimizer math, onboarding forms, or unrelated dashboard files were changed.
 ## Integration prerequisite (before any of my work)
 
 Agents 2 and 3 each independently declared `PlanningInput`, `PlanningResult`,
-`PayCadence`, `ObligationCadence`, `DebtType`, and `IncomeChange`. The merged
-tree did not compile. Agent 2's names stayed (they are wired into SwiftData
-models and persistence); Agent 3's engine-local types took an `Engine` prefix
-(`EnginePlanningInput`, `EngineDebtType`, …). Pure rename, no math touched —
-147/147 unit tests green on the merged tree before my first feature commit
-(`e47671e`).
+`PayCadence`, `ObligationCadence`, `DebtType`, and `IncomeChange`. Each branch
+compiled alone; the merged tree did not compile at all.
 
-**For the release owner:** this collision is a contract gap, not a defect in
-either branch. Whoever integrates should decide which DTO set is canonical
-rather than carrying two forever.
+I first resolved this by prefixing Agent 3's engine-local types with `Engine`.
+Agent 6 independently resolved the same clash on `feature/v0.2-dashboard-plan`
+(`bafa07a`) and did it better: the engine keeps `PlanningInput`/`PlanningResult`,
+the stored-snapshot DTOs became `StoredPlanInput`/`StoredPlanResult`, the engine
+adopted the model-layer `DebtType`/`ObligationCadence` (removing the duplicate
+enums instead of renaming them), and the engine's cadence enum became
+`PlanningPayCadence`.
+
+**This branch now sits on `bafa07a`** — my own rename commit was dropped and the
+five feature commits were replayed onto Agent 6's resolution, which is therefore
+the single canonical type system across both branches. The replay was
+conflict-free: no feature code here references a renamed planning type. Verified
+212 unit tests green on the rebased branch.
 
 ## Event taxonomy
 
@@ -245,7 +251,10 @@ own current state, which is always something useful.
 | `Features/CheckIn/CheckInFlowView.swift` | `cancelPaydayReminders(itemID:)` (was sequence-keyed). |
 | `Features/Progress/ProgressTabView.swift` | Honors the milestone deep link (scroll + highlight). |
 | `Models/DebtAccount.swift`, `Models/RecurringObligation.swift` | `dueDateShiftRuleRaw`, `dueDateAuditLog`, `dueDayEffectiveFrom` (all optional, additive). |
-| `Services/Planning/*`, `PaydayPlaybookTests/Avalanche*` | Engine-prefix rename only (integration fix above). |
+
+No engine file (`Services/Planning/*`, `DebtCalculationEngine`) is touched by
+this branch — the planning-contract reconciliation comes in from `bafa07a`
+underneath it.
 
 ## Tests
 
@@ -377,9 +386,17 @@ None of the following can be proven in the simulator or in unit tests:
 
 ## Risks and notes
 
-- **The DTO collision above is unresolved at the contract level.** Two parallel
-  `PlanningInput`/`PlanningResult` families now exist. Harmless today because
-  only the engine uses the `Engine*` set, but it will confuse the next agent.
+- **Two feature conflicts remain against `feature/v0.2-dashboard-plan`**, both
+  genuine overlap rather than naming churn:
+  - `TodayView.swift` — Agent 6 added debt-type-aware due-day labels and an
+    obligation due line, using a local `nextOccurrence(day:)` helper that clamps
+    with `min(dueDay, range?.count ?? 28)`. That clamping is right about month
+    length but bypasses the user's weekend shift rule and the
+    `dueDayEffectiveFrom` rule. **Recommended resolution:** keep Agent 6's labels
+    and obligation line, route the date math through `DueDateRule.nextOccurrence`.
+  - `DebtsView.swift` — Agent 6's debt-type presentation against my due-day
+    editor (1–31, shift-rule picker, audit note, await-before-dismiss
+    reschedule). Both sides are additive; take both.
 - **`plannedTargetDebtID` is a plan letter, not a UUID.** Calendar debt-payment
   events and the notification `debt` route both key on it because that is what
   the schema stores. If generated plans ever stop assigning stable letters,
