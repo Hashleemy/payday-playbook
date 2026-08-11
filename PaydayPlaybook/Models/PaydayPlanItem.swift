@@ -19,6 +19,12 @@ final class PaydayPlanItem {
     var plannedTargetDebtID: String
     var plannedDebtAfter: Decimal
     var plannedC1NoSpendCeiling: Decimal
+    /// R-09: exact gap when floor + obligations + minimums exceed take-home.
+    /// Nil means the paycheck is fully funded. Never set on migrated items.
+    var shortfallAmount: Decimal?
+
+    /// R-09 "needs attention" flag for calendar/dashboard rendering.
+    var needsAttention: Bool { shortfallAmount != nil }
 
     init(
         id: UUID = UUID(),
