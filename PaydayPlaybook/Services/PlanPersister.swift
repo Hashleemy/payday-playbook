@@ -2,12 +2,12 @@ import Foundation
 import SwiftData
 
 /// Maps between the storage-independent planning DTOs and the SwiftData
-/// store: builds `PlanningInput` from current rows, and persists a
-/// `PlanningResult` as an immutable `PlanVersion` graph.
+/// store: builds `StoredPlanInput` from current rows, and persists a
+/// `StoredPlanResult` as an immutable `PlanVersion` graph.
 ///
 /// The calculation engine (Agent 3) sees only the DTOs — never a context.
 
-// MARK: - Store → PlanningInput
+// MARK: - Store → StoredPlanInput
 
 struct PlanningInputBuilder {
     let context: ModelContext
@@ -32,7 +32,7 @@ struct PlanningInputBuilder {
 
     /// Assembles the generator input from the live onboarding/settings rows.
     /// Every value is the user's own; nothing is defaulted silently.
-    func build(calculationVersion: Int = PlanContract.currentCalculationVersion) throws -> PlanningInput {
+    func build(calculationVersion: Int = PlanContract.currentCalculationVersion) throws -> StoredPlanInput {
         guard let schedule = try context.fetch(
             FetchDescriptor<IncomeSchedule>(predicate: #Predicate { !$0.isArchived })
         ).first else {
@@ -59,7 +59,7 @@ struct PlanningInputBuilder {
             FetchDescriptor<DebtAccount>(predicate: #Predicate { !$0.isArchived })
         ).sorted { ($0.priority, $0.createdAt) < ($1.priority, $1.createdAt) }
 
-        return PlanningInput(
+        return StoredPlanInput(
             calculationVersion: calculationVersion,
             cadence: schedule.cadence,
             monthlyPayDay: schedule.monthlyDay,
@@ -90,13 +90,13 @@ struct PlanningInputBuilder {
                     originalPrincipal: $0.originalPrincipal
                 )
             },
-            paycheckCap: PlanningInput.defaultPaycheckCap,
+            paycheckCap: StoredPlanInput.defaultPaycheckCap,
             timeZoneID: TimeZone.current.identifier
         )
     }
 }
 
-// MARK: - PlanningResult → store
+// MARK: - StoredPlanResult → store
 
 struct PlanPersister {
     let context: ModelContext
@@ -114,8 +114,8 @@ struct PlanPersister {
     @discardableResult
     func insertPlanGraph(
         named name: String,
-        input: PlanningInput,
-        result: PlanningResult,
+        input: StoredPlanInput,
+        result: StoredPlanResult,
         isOriginalBaseline: Bool,
         now: Date = Date()
     ) throws -> PlanVersion {
@@ -233,7 +233,7 @@ struct PlanPersister {
     /// R-08 presentation order: APR descending, ties by lower balance, then
     /// input (creation) order; 0% APR last. The engine applies the same rule —
     /// this keeps `avalancheOrderRaw` consistent for display.
-    private func orderedDisplayIDs(input: PlanningInput, result: PlanningResult) -> [String] {
+    private func orderedDisplayIDs(input: StoredPlanInput, result: StoredPlanResult) -> [String] {
         let indexed = input.debts.enumerated()
         return indexed.sorted { lhs, rhs in
             let (li, ld) = lhs, (ri, rd) = rhs

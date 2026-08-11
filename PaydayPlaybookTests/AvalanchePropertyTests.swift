@@ -22,7 +22,7 @@ final class AvalanchePropertyTests: XCTestCase {
     }
 
     private func randomInput(iteration: Int, rng: inout SplitMix64) -> PlanningInput {
-        let cadences: [PayCadence] = [
+        let cadences: [PlanningPayCadence] = [
             .weekly, .biweekly,
             .semimonthly(firstDay: 1, secondDay: 15),
             .semimonthly(firstDay: 15, secondDay: 31),
@@ -80,9 +80,9 @@ final class AvalanchePropertyTests: XCTestCase {
                 cadence: cadence,
                 firstPayday: TestSupport.date(2026, 8, Int.random(in: 10...28, using: &rng)),
                 amounts: [
-                    IncomeChange(effectiveDate: TestSupport.date(2026, 8, 1),
+                    PlanningIncomeChange(effectiveDate: TestSupport.date(2026, 8, 1),
                                  amount: cents(60000...350_000, &rng)),
-                    IncomeChange(effectiveDate: TestSupport.date(2027, 1, 1),
+                    PlanningIncomeChange(effectiveDate: TestSupport.date(2027, 1, 1),
                                  amount: cents(60000...350_000, &rng))
                 ],
                 windfalls: windfalls
