@@ -27,7 +27,7 @@ final class AvalancheLemParityTests: XCTestCase {
 
     // R-04 across the other cadences, to the cent.
     func testObligationSmoothingOtherCadences() {
-        func reserve(_ amount: String, _ cadence: ObligationCadence, _ pay: PayCadence) -> Decimal {
+        func reserve(_ amount: String, _ cadence: ObligationCadence, _ pay: PlanningPayCadence) -> Decimal {
             AvalanchePlanEngine.smoothedReserve(
                 amount: TestSupport.money(amount), cadence: cadence, payCadence: pay)
         }

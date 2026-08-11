@@ -68,7 +68,7 @@ enum AvalanchePlanEngine {
 
     /// R-04 obligation smoothing: per-paycheck reserve, rounded to cents.
     static func smoothedReserve(amount: Decimal, cadence: ObligationCadence,
-                                payCadence: PayCadence) -> Decimal {
+                                payCadence: PlanningPayCadence) -> Decimal {
         (amount * Decimal(cadence.occurrencesPerYear) / Decimal(payCadence.paychecksPerYear)).rounded2
     }
 
@@ -121,7 +121,7 @@ enum AvalanchePlanEngine {
         normalized.asOf = DateMath.startOfDay(input.asOf)
         normalized.income.firstPayday = DateMath.startOfDay(input.income.firstPayday)
         normalized.income.amounts = input.income.amounts
-            .map { IncomeChange(effectiveDate: DateMath.startOfDay($0.effectiveDate), amount: $0.amount.rounded2) }
+            .map { IncomeStep(effectiveDate: DateMath.startOfDay($0.effectiveDate), amount: $0.amount.rounded2) }
             .sorted { $0.effectiveDate < $1.effectiveDate }
         normalized.income.windfalls = input.income.windfalls
             .map { Windfall(date: DateMath.startOfDay($0.date), amount: $0.amount.rounded2) }
@@ -217,7 +217,7 @@ enum AvalanchePlanEngine {
         }
     }
 
-    private static func incomeAmount(on date: Date, amounts: [IncomeChange]) -> Decimal {
+    private static func incomeAmount(on date: Date, amounts: [IncomeStep]) -> Decimal {
         var amount = amounts.first?.amount ?? 0
         for change in amounts where change.effectiveDate <= date {
             amount = change.amount

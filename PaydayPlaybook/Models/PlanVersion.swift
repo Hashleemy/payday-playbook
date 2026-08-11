@@ -36,7 +36,7 @@ final class PlanVersion {
     /// True for plans generated from onboarding inputs (calc v2); false for
     /// the migrated/template Original Plan v1.
     var generatedFromProfile: Bool = false
-    /// JSON-encoded `PlanningInput` snapshot captured at generation, so the
+    /// JSON-encoded `PlanInputSnapshot` snapshot captured at generation, so the
     /// plan is reproducible byte-for-byte. Nil on Original Plan v1 — it
     /// predates calc v2 and its stored schedule is the truth.
     var inputSnapshotData: Data?

@@ -61,8 +61,8 @@ final class PlanningContractTests: XCTestCase {
 
     // MARK: - Money-exact DTO coding
 
-    private func sampleInput() -> PlanningInput {
-        PlanningInput(
+    private func sampleInput() -> PlanInputSnapshot {
+        PlanInputSnapshot(
             calculationVersion: 2,
             cadence: .semimonthly,
             monthlyPayDay: nil,
@@ -135,7 +135,7 @@ final class PlanningContractTests: XCTestCase {
             noSpendCeiling: TestSupport.money("1300.00"),
             shortfallAmount: TestSupport.money("84.00")
         )
-        let result = PlanningResult(
+        let result = PlanResultSnapshot(
             calculationVersion: 2,
             paydays: [payday],
             payoffDate: nil,
@@ -148,7 +148,7 @@ final class PlanningContractTests: XCTestCase {
         encoder.dateEncodingStrategy = .iso8601
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let decoded = try decoder.decode(PlanningResult.self, from: encoder.encode(result))
+        let decoded = try decoder.decode(PlanResultSnapshot.self, from: encoder.encode(result))
         XCTAssertEqual(decoded, result)
         XCTAssertNil(decoded.payoffDate)
         XCTAssertTrue(decoded.cappedAtPaycheckLimit)
@@ -177,7 +177,7 @@ final class PlanningContractTests: XCTestCase {
             debt("highTie", apr: "0.20", balance: "500.00"),
             debt("top", apr: "0.29", balance: "9000.00")
         ]
-        let result = PlanningResult(
+        let result = PlanResultSnapshot(
             calculationVersion: 2, paydays: [], payoffDate: nil,
             totalEstimatedInterest: .zero, paycheckCount: 0,
             debtPayoffs: [], cappedAtPaycheckLimit: false
