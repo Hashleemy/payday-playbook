@@ -33,9 +33,9 @@ enum PlanningFixtures {
                 cadence: .biweekly,
                 firstPayday: TestSupport.date(2026, 8, 20),
                 amounts: [
-                    IncomeChange(effectiveDate: TestSupport.date(2026, 8, 20),
+                    PlanningIncomeChange(effectiveDate: TestSupport.date(2026, 8, 20),
                                  amount: TestSupport.money("2094.00")),
-                    IncomeChange(effectiveDate: TestSupport.date(2026, 12, 10),
+                    PlanningIncomeChange(effectiveDate: TestSupport.date(2026, 12, 10),
                                  amount: TestSupport.money("2190.00"))
                 ]
             ),
@@ -78,7 +78,7 @@ enum PlanningFixtures {
         income: String = "2000.00",
         obligations: [ObligationInput] = [],
         windfalls: [Windfall] = [],
-        cadence: PayCadence = .biweekly,
+        cadence: PlanningPayCadence = .biweekly,
         firstPayday: Date = TestSupport.date(2026, 8, 20)
     ) -> PlanningInput {
         PlanningInput(
@@ -86,7 +86,7 @@ enum PlanningFixtures {
             income: IncomeInput(
                 cadence: cadence,
                 firstPayday: firstPayday,
-                amounts: [IncomeChange(effectiveDate: firstPayday, amount: TestSupport.money(income))],
+                amounts: [PlanningIncomeChange(effectiveDate: firstPayday, amount: TestSupport.money(income))],
                 windfalls: windfalls
             ),
             spending: SpendingInput(
