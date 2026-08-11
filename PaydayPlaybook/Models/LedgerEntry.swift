@@ -68,6 +68,10 @@ final class LedgerEntry {
     var correctsEntryID: UUID?
     /// Explanation preserved when an entry is edited after creation.
     var auditNote: String?
+    /// Schema-2 references to `CashAccount` rows. Migration fills these from
+    /// the legacy checking1/checking2 raws, which stay untouched beside them.
+    var sourceAccountID: UUID?
+    var destinationAccountID: UUID?
 
     var type: LedgerEntryType {
         get { LedgerEntryType(rawValue: typeRaw) ?? .correction }

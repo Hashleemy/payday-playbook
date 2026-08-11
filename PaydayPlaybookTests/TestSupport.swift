@@ -9,7 +9,10 @@ enum TestSupport {
         PaydayPlanItem.self, PlannedCardBalance.self,
         PaydayCheckIn.self, CheckInCardPayment.self,
         LedgerEntry.self, BalanceSnapshot.self, ForecastSnapshot.self,
-        NotificationPreference.self, Milestone.self, AppSettings.self
+        NotificationPreference.self, Milestone.self, AppSettings.self,
+        CashAccount.self, RecurringObligation.self, UserGoalProfile.self,
+        OnboardingProgress.self, IncomeSchedule.self, IncomeChange.self,
+        PlannedObligationReserve.self
     ]
 
     static func makeContainer() throws -> ModelContainer {

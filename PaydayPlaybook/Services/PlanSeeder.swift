@@ -13,8 +13,14 @@ struct PlanSeeder {
         let wasAlreadySeeded: Bool
     }
 
+    /// `applySchemaUpgrade` exists for tests that need a faithful 0.1.x
+    /// (schema-1-shaped) store to migrate from; the app always upgrades.
     @discardableResult
-    static func seedIfNeeded(context: ModelContext, bundle: Bundle = .main) throws -> SeedSummary {
+    static func seedIfNeeded(
+        context: ModelContext,
+        bundle: Bundle = .main,
+        applySchemaUpgrade: Bool = true
+    ) throws -> SeedSummary {
         if let existing = try existingBaseline(context: context),
            try isComplete(existing, context: context) {
             return SeedSummary(
@@ -33,6 +39,12 @@ struct PlanSeeder {
             try removePlanGraph(existing, context: context)
         }
         let plan = try insert(seed: seed, context: context)
+        // Bring the freshly seeded v1-shaped graph up to schema 2 (accounts,
+        // obligations, reserve rows, stamps) in the same save, so template
+        // loads land complete and a 0.1.x-style seed never persists half-old.
+        if applySchemaUpgrade {
+            try MigrationService.applyLogicalUpgrade(context: context)
+        }
         try context.save()
         return SeedSummary(
             planVersion: plan,
@@ -43,8 +55,14 @@ struct PlanSeeder {
     }
 
     static func existingBaseline(context: ModelContext) throws -> PlanVersion? {
+        // Keyed on the contract name, not the isOriginalBaseline flag:
+        // onboarding-generated plans carry that flag too (§4.9 / A-04), and a
+        // generated plan must never be mistaken for the seeded template —
+        // isComplete would fail on its shape and removePlanGraph would
+        // destroy the user's own plan.
+        let templateName = PlanContract.planName
         let descriptor = FetchDescriptor<PlanVersion>(
-            predicate: #Predicate { $0.isOriginalBaseline == true }
+            predicate: #Predicate { $0.name == templateName }
         )
         return try context.fetch(descriptor).first
     }
@@ -73,14 +91,32 @@ struct PlanSeeder {
         where paydayIDs.contains(balance.paydayPlanItemID) {
             context.delete(balance)
         }
+        for reserve in try context.fetch(FetchDescriptor<PlannedObligationReserve>())
+        where paydayIDs.contains(reserve.paydayPlanItemID) {
+            context.delete(reserve)
+        }
         for payday in paydays { context.delete(payday) }
         for rule in try context.fetch(
             FetchDescriptor<IncomeRule>(predicate: #Predicate { $0.planVersionID == planID })
         ) {
             context.delete(rule)
         }
-        for debt in try context.fetch(FetchDescriptor<DebtAccount>()) { context.delete(debt) }
-        for milestone in try context.fetch(FetchDescriptor<Milestone>()) { context.delete(milestone) }
+        // Only rows the template itself seeded are removed: its debts (keyed
+        // by the plan's own avalanche order) and its milestones. Debts or
+        // milestones created outside the template graph survive a repair.
+        let seedDebtIDs = Set(plan.avalancheOrder)
+        for debt in try context.fetch(FetchDescriptor<DebtAccount>())
+        where seedDebtIDs.contains(debt.planID) {
+            context.delete(debt)
+        }
+        for milestone in try context.fetch(FetchDescriptor<Milestone>()) {
+            let ownsCard = milestone.relatedDebtPlanID.map { seedDebtIDs.contains($0) } ?? false
+            let ownsDebtFree = milestone.type == .debtFree
+                && milestone.baselineDate == plan.baselinePayoffDate
+            if ownsCard || ownsDebtFree || milestone.type == .amountEliminated {
+                context.delete(milestone)
+            }
+        }
         context.delete(plan)
     }
 
