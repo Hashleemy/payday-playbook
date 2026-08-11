@@ -205,6 +205,105 @@ final class NotificationSchedulerTests: XCTestCase {
         XCTAssertTrue(changed.toRemove.isEmpty, "same identifier is replaced in place, not removed then added")
     }
 
+    // Review regression: the fingerprint must cover the whole fire moment.
+    // An identifier can keep its name while its date moves — raising
+    // due-soon lead days does exactly that — and the old trigger must not
+    // survive as "unchanged".
+    func testChangingLeadDaysMovesTheReminderInsteadOfLeavingItStale() async throws {
+        let (context, provider) = try makeStore()
+        let center = FakeNotificationCenter()
+        let scheduler = NotificationScheduler(center: center)
+        let debt = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
+        debt.dueDayOfMonth = 20
+        try context.save()
+
+        await scheduler.rescheduleAll(context: context, dateProvider: provider)
+        let identifier = "debt-due-soon-\(debt.id.uuidString)-20260820"
+        let before = try XCTUnwrap(center.pendingByIdentifier[identifier])
+        XCTAssertEqual(
+            (before.trigger as? UNCalendarNotificationTrigger)?.dateComponents.day, 17,
+            "3 days of lead from Aug 20"
+        )
+
+        let pref = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<NotificationPreference>()).first { $0.type == .cardDueSoon }
+        )
+        pref.leadDays = 6
+        try context.save()
+        await scheduler.rescheduleAll(context: context, dateProvider: provider)
+
+        let after = try XCTUnwrap(center.pendingByIdentifier[identifier])
+        XCTAssertEqual(
+            (after.trigger as? UNCalendarNotificationTrigger)?.dateComponents.day, 14,
+            "the reminder must move to the new lead day, not keep the stale trigger"
+        )
+        // Card B is the only debt with a due day; the 45-day window holds
+        // its Aug 20 and Sep 20 occurrences, so exactly two move.
+        XCTAssertEqual(scheduler.lastReconciliation?.toAdd.count, 2, "one re-add per moved due-soon reminder")
+    }
+
+    func testFingerprintDistinguishesFireDatesThatShareEverythingElse() throws {
+        let (context, provider) = try makeStore()
+        let entry = try XCTUnwrap(try plan(context, provider).notifications.first)
+        var moved = entry
+        var components = entry.dateComponents
+        components.day = (components.day ?? 1) + 1
+        moved = PlannedNotification(
+            identifier: entry.identifier, family: entry.family,
+            dateComponents: components, fireDate: DateMath.addingDays(1, to: entry.fireDate),
+            title: entry.title, body: entry.body, route: entry.route, reference: entry.reference
+        )
+        XCTAssertNotEqual(entry.fingerprint, moved.fingerprint)
+
+        let reconciliation = NotificationPlanner.reconcile(
+            desired: [moved],
+            pending: [(identifier: entry.identifier, fingerprint: entry.fingerprint)]
+        )
+        XCTAssertEqual(reconciliation.toAdd.map(\.identifier), [entry.identifier])
+    }
+
+    // Review regression: a due day is a day *of month*, so the obligation's
+    // cadence decides which months it lands in.
+    func testObligationCadenceControlsHowOftenRemindersFire() throws {
+        let (context, provider) = try makeStore()
+        let quarterly = RecurringObligation(
+            name: "Insurance", amount: TestSupport.money("450.00"),
+            cadence: .quarterly, dueDay: 10,
+            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+        )
+        let monthly = RecurringObligation(
+            name: "Rent", amount: TestSupport.money("1200.00"),
+            cadence: .monthly, dueDay: 10,
+            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+        )
+        let weekly = RecurringObligation(
+            name: "Transit", amount: TestSupport.money("30.00"),
+            cadence: .weekly, dueDay: 10,
+            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+        )
+        context.insert(quarterly)
+        context.insert(monthly)
+        context.insert(weekly)
+        try context.save()
+
+        let notifications = try plan(context, provider).notifications
+            .filter { $0.family == .obligationDueToday }
+        func days(_ obligation: RecurringObligation) -> [String] {
+            notifications
+                .filter { $0.identifier.contains(obligation.id.uuidString) }
+                .map { String($0.identifier.suffix(8)) }
+                .sorted()
+        }
+        // "Now" is midnight on Aug 10, so today's 9:00 reminder is still
+        // ahead. The window runs 45 days, to Sep 24.
+        XCTAssertEqual(days(monthly), ["20260810", "20260910"])
+        // Quarterly is anchored on its August creation month, so August
+        // qualifies and September does not — the point being that the same
+        // due day yields fewer reminders than the monthly bill.
+        XCTAssertEqual(days(quarterly), ["20260810"], "a quarterly bill must not fire every month")
+        XCTAssertTrue(days(weekly).isEmpty, "a weekly bill has no meaningful day-of-month")
+    }
+
     func testReconcileRemovesLegacyIdentifiersButLeavesForeignOnesAlone() throws {
         let (context, provider) = try makeStore()
         let desired = try plan(context, provider).notifications

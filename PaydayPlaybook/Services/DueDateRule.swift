@@ -71,6 +71,56 @@ enum DueDateRule {
             .filter { $0 >= windowStart && $0 < windowEnd }
     }
 
+    /// Occurrences of an obligation's due day, honoring its cadence.
+    ///
+    /// A `dueDay` is a day *of month*, so it only describes cadences that
+    /// recur on a monthly grid. Quarterly / semiannual / annual bills fall
+    /// every 3 / 6 / 12 months, counted from `anchor`'s month (the row's
+    /// creation month — the model carries no separate due-date anchor).
+    /// Weekly and biweekly obligations have no meaningful day-of-month, so
+    /// they get no due-date occurrences at all: their per-paycheck reserve
+    /// is what the plan actually acts on, and inventing twelve annual
+    /// markers for a weekly bill would be worse than showing none.
+    static func occurrences(
+        dueDay: Int,
+        cadence: ObligationCadence,
+        anchor: Date,
+        from start: Date,
+        to end: Date,
+        shift: DueDateShiftRule = .exactDay
+    ) -> [Date] {
+        guard let interval = monthInterval(for: cadence) else { return [] }
+        let all = occurrences(dueDay: dueDay, from: start, to: end, shift: shift)
+        guard interval > 1 else { return all }
+        let anchorIndex = monthIndex(of: anchor)
+        return all.filter { date in
+            // The shift can move an occurrence into an adjacent month, so
+            // phase is measured on the unshifted day-of-month position.
+            let unshifted = occurrence(dueDay: dueDay, inMonthOf: date)
+            let candidate = abs(date.timeIntervalSince(unshifted)) <= 4 * 86_400 ? unshifted : date
+            let offset = monthIndex(of: candidate) - anchorIndex
+            return offset % interval == 0
+        }
+    }
+
+    /// Months between occurrences; nil when the cadence has no day-of-month
+    /// meaning (weekly, biweekly).
+    static func monthInterval(for cadence: ObligationCadence) -> Int? {
+        switch cadence {
+        case .weekly, .biweekly: return nil
+        case .monthly: return 1
+        case .quarterly: return 3
+        case .semiannual: return 6
+        case .annual: return 12
+        }
+    }
+
+    /// Absolute month number, so month differences work across years.
+    private static func monthIndex(of date: Date) -> Int {
+        let c = DateMath.calendar.dateComponents([.year, .month], from: date)
+        return (c.year ?? 0) * 12 + ((c.month ?? 1) - 1)
+    }
+
     /// The next occurrence (after shifting) on or after `date`.
     static func nextOccurrence(dueDay: Int, onOrAfter date: Date, shift: DueDateShiftRule = .exactDay) -> Date {
         let floor = DateMath.startOfDay(date)

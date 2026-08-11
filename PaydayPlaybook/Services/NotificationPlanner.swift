@@ -78,8 +78,18 @@ struct PlannedNotification: Equatable, Identifiable {
     /// Content fingerprint: when copy or timing changes for an identifier
     /// that already exists, the reconciler re-adds it rather than assuming
     /// the pending request is still correct.
+    ///
+    /// The whole fire moment is included, not just the time of day. An
+    /// identifier can keep its name while its date moves — raising
+    /// due-soon lead days, or a reforecast moving a milestone — and those
+    /// reminders must be rewritten, not left firing on the old trigger.
     var fingerprint: String {
-        "\(title)|\(body)|\(route.rawValue)|\(reference)|\(dateComponents.hour ?? -1):\(dateComponents.minute ?? -1)"
+        let c = dateComponents
+        let stamp = String(
+            format: "%04d%02d%02dT%02d%02d",
+            c.year ?? 0, c.month ?? 0, c.day ?? 0, c.hour ?? 0, c.minute ?? 0
+        )
+        return "\(title)|\(body)|\(route.rawValue)|\(reference)|\(stamp)"
     }
 }
 
@@ -121,6 +131,11 @@ struct NotificationScheduleInput: Equatable {
         var amount: Decimal
         var dueDay: Int?
         var shiftRule: DueDateShiftRule
+        /// A due day is a day *of month*; the cadence decides which months
+        /// it actually falls in (quarterly, annual, …).
+        var cadence: ObligationCadence
+        /// Phase anchor for cadences longer than monthly.
+        var anchor: Date
     }
 
     struct Milestone: Equatable {
@@ -245,7 +260,10 @@ enum NotificationPlanner {
             for obligation in input.obligations {
                 guard let dueDay = obligation.dueDay else { continue }
                 let scanEnd = DateMath.addingDays(windowDays + 40, to: today)
-                for due in DueDateRule.occurrences(dueDay: dueDay, from: today, to: scanEnd, shift: obligation.shiftRule) {
+                for due in DueDateRule.occurrences(
+                    dueDay: dueDay, cadence: obligation.cadence, anchor: obligation.anchor,
+                    from: today, to: scanEnd, shift: obligation.shiftRule
+                ) {
                     let occurrence = CalendarEventService.dayKey(due)
                     if let pref = obligationSoon {
                         let leadDay = DateMath.addingDays(-max(pref.leadDays, 1), to: due)
@@ -425,7 +443,8 @@ enum NotificationPlanner {
             .map {
                 NotificationScheduleInput.Obligation(
                     id: $0.id, name: $0.name, amount: $0.amount,
-                    dueDay: $0.dueDay, shiftRule: $0.dueDateShiftRule
+                    dueDay: $0.dueDay, shiftRule: $0.dueDateShiftRule,
+                    cadence: $0.cadence, anchor: $0.createdAt
                 )
             }
             .sorted { $0.name < $1.name }

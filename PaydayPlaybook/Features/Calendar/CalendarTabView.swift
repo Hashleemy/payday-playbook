@@ -61,8 +61,13 @@ struct CalendarTabView: View {
                 }
             }
             .onAppear {
-                displayedMonth = DateMath.startOfDay(appEnvironment.dateProvider.now)
-                selectedDay = DateMath.startOfDay(appEnvironment.dateProvider.now)
+                // Only center on today the first time the tab is shown;
+                // re-appearing must not throw away the month the user was
+                // browsing, or a deep link that just selected a due date.
+                if selectedDay == nil {
+                    displayedMonth = DateMath.startOfDay(appEnvironment.dateProvider.now)
+                    selectedDay = DateMath.startOfDay(appEnvironment.dateProvider.now)
+                }
                 reload()
                 revealObligation(router.pendingObligationID)
             }
@@ -449,9 +454,18 @@ struct CalendarTabView: View {
 
     // MARK: - Actions
 
+    /// Moves the month *and* the selection: the selected-day panel and the
+    /// week strip both read from `selectedDay`, so leaving it behind in the
+    /// previous month would show an empty day outside the loaded window.
+    /// Landing on today when the new month contains it, otherwise the 1st.
     private func shiftMonth(_ direction: Int) {
-        if let next = calendar.date(byAdding: .month, value: direction, to: displayedMonth) {
-            displayedMonth = next
+        guard let next = calendar.date(byAdding: .month, value: direction, to: displayedMonth) else { return }
+        displayedMonth = next
+        let today = DateMath.startOfDay(appEnvironment.dateProvider.now)
+        if calendar.isDate(today, equalTo: next, toGranularity: .month) {
+            selectedDay = today
+        } else if let interval = calendar.dateInterval(of: .month, for: next) {
+            selectedDay = DateMath.startOfDay(interval.start)
         }
     }
 

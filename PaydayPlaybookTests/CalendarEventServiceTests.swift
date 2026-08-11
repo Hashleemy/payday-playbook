@@ -188,6 +188,94 @@ final class CalendarEventServiceTests: XCTestCase {
         XCTAssertFalse(events.contains { $0.kind == .obligationDue && $0.title.contains("Rent") })
     }
 
+    // Review regression: a due day is a day *of month*; the cadence decides
+    // which months it lands in.
+    func testObligationCadenceControlsHowOftenItIsDrawn() throws {
+        let (service, context) = try makeService()
+        let quarterly = RecurringObligation(
+            name: "Insurance", amount: TestSupport.money("450.00"),
+            cadence: .quarterly, dueDay: 10,
+            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+        )
+        let annual = RecurringObligation(
+            name: "Domain", amount: TestSupport.money("20.00"),
+            cadence: .annual, dueDay: 10,
+            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+        )
+        let biweekly = RecurringObligation(
+            name: "Transit", amount: TestSupport.money("30.00"),
+            cadence: .biweekly, dueDay: 10,
+            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+        )
+        context.insert(quarterly)
+        context.insert(annual)
+        context.insert(biweekly)
+        try context.save()
+
+        func months(_ obligation: RecurringObligation) throws -> [Date] {
+            try service.events(from: TestSupport.date(2026, 8, 1), to: TestSupport.date(2027, 7, 31))
+                .filter { $0.kind == .obligationDue && $0.id.contains(obligation.id.uuidString) }
+                .map(\.date)
+        }
+        // Anchored on the August creation month: Aug, Nov, Feb, May.
+        XCTAssertEqual(try months(quarterly), [
+            TestSupport.date(2026, 8, 10), TestSupport.date(2026, 11, 10),
+            TestSupport.date(2027, 2, 10), TestSupport.date(2027, 5, 10)
+        ])
+        XCTAssertEqual(try months(annual), [TestSupport.date(2026, 8, 10)])
+        XCTAssertTrue(try months(biweekly).isEmpty,
+                      "a day-of-month is meaningless for a biweekly bill; the per-paycheck reserve carries it")
+    }
+
+    // Review regression: an edit is prospective. Past months must not be
+    // redrawn with a due day that was not in force then.
+    func testEditingADueDayDoesNotRewritePastOccurrences() throws {
+        let (service, context) = try makeService(today: TestSupport.date(2026, 10, 5))
+        let debt = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
+        debt.dueDayOfMonth = 20
+        try context.save()
+
+        // Before any edit the due day describes history too.
+        XCTAssertEqual(
+            try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30))
+                .filter { $0.kind == .debtDue }.map(\.date),
+            [TestSupport.date(2026, 9, 20)]
+        )
+
+        // The user moves it to the 5th, effective today (Oct 5).
+        debt.dueDayOfMonth = 5
+        debt.dueDayEffectiveFrom = TestSupport.date(2026, 10, 5)
+        try context.save()
+
+        XCTAssertTrue(
+            try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30))
+                .filter { $0.kind == .debtDue }.isEmpty,
+            "September must not be redrawn on the 5th — that was never its due day"
+        )
+        XCTAssertEqual(
+            try service.events(from: TestSupport.date(2026, 11, 1), to: TestSupport.date(2026, 11, 30))
+                .filter { $0.kind == .debtDue }.map(\.date),
+            [TestSupport.date(2026, 11, 5)],
+            "future months use the new due day"
+        )
+    }
+
+    // Review regression: a past due date is not a record of anything, so it
+    // must not claim Actual status or appear under the Actual filter.
+    func testPastDueDatesStayPlannedAndOutOfTheActualFilter() throws {
+        let (service, context) = try makeService(today: TestSupport.date(2026, 8, 31))
+        let debt = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
+        debt.dueDayOfMonth = 5
+        try context.save()
+
+        let events = try augustEvents(service)
+        let due = try XCTUnwrap(events.first { $0.kind == .debtDue })
+        XCTAssertEqual(due.date, TestSupport.date(2026, 8, 5), "in the past relative to Aug 31")
+        XCTAssertEqual(due.status, .planned, "nothing recorded a payment; do not call it Actual")
+        XCTAssertFalse(CalendarEventService.Filter.actualEntries.includes(due))
+        XCTAssertTrue(CalendarEventService.Filter.dueDates.includes(due))
+    }
+
     // MARK: - Reforecast markers
 
     func testReforecastSnapshotRendersMarkerButInitialSeedDoesNot() throws {

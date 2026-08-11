@@ -149,7 +149,9 @@ struct CalendarEventService {
             case .milestones:
                 return event.kind == .milestone
             case .actualEntries:
-                return event.kind == .entry || event.status == .actual || event.status == .completed
+                // Only real records: ledger entries, balance snapshots, and
+                // completed check-in work. A past due date is not a record.
+                return event.kind == .entry || event.status == .completed
             case .needsAttention:
                 return event.status == .needsAttention
             case .reforecasts:
@@ -370,13 +372,21 @@ struct CalendarEventService {
         let windowEnd = DateMath.addingDays(1, to: endDay)
         for debt in debts where !debt.isArchived {
             guard let dueDay = debt.dueDayOfMonth else { continue }
-            for due in DueDateRule.occurrences(dueDay: dueDay, from: startDay, to: windowEnd, shift: debt.dueDateShiftRule) {
+            // Prospective edits (V2-11): once a due day has been changed,
+            // months before the change are left blank rather than redrawn
+            // with a day that was not in effect then.
+            let from = Self.effectiveWindowStart(startDay, effectiveFrom: debt.dueDayEffectiveFrom)
+            for due in DueDateRule.occurrences(dueDay: dueDay, from: from, to: windowEnd, shift: debt.dueDateShiftRule) {
                 let minimum = debt.minimumAmount.map { "Minimum \(MoneyFormat.string($0))" } ?? "Statement minimum"
                 let clampedNote = DueDateRule.isClamped(dueDay: dueDay, inMonthOf: due) ? " · day \(dueDay) → last day" : ""
                 events.append(Event(
                     id: "debt-due-\(debt.id.uuidString)-\(Self.dayKey(due))",
                     date: due, kind: .debtDue,
-                    status: due < today ? .actual : .planned,
+                    // A due date is a scheduled obligation, not a record of
+                    // anything: it stays Planned even once it is past. The
+                    // app has no payment-matching, so calling a past due
+                    // date "Actual" would claim knowledge it does not have.
+                    status: .planned,
                     title: "\(debt.displayName) due",
                     detail: minimum + clampedNote,
                     link: .debt(planID: debt.planID)
@@ -385,17 +395,28 @@ struct CalendarEventService {
         }
         for obligation in obligations where !obligation.isArchived {
             guard let dueDay = obligation.dueDay else { continue }
-            for due in DueDateRule.occurrences(dueDay: dueDay, from: startDay, to: windowEnd, shift: obligation.dueDateShiftRule) {
+            let from = Self.effectiveWindowStart(startDay, effectiveFrom: obligation.dueDayEffectiveFrom)
+            // Cadence-aware: a quarterly or annual bill is not due monthly.
+            for due in DueDateRule.occurrences(
+                dueDay: dueDay, cadence: obligation.cadence, anchor: obligation.createdAt,
+                from: from, to: windowEnd, shift: obligation.dueDateShiftRule
+            ) {
                 events.append(Event(
                     id: "obligation-due-\(obligation.id.uuidString)-\(Self.dayKey(due))",
                     date: due, kind: .obligationDue,
-                    status: due < today ? .actual : .planned,
+                    status: .planned,
                     title: "\(obligation.name) due",
                     detail: "\(MoneyFormat.string(obligation.amount)) · \(obligation.cadence.displayName)",
                     link: nil
                 ))
             }
         }
+    }
+
+    /// Clips a render window to the date the current due day took effect.
+    static func effectiveWindowStart(_ windowStart: Date, effectiveFrom: Date?) -> Date {
+        guard let effectiveFrom else { return windowStart }
+        return max(windowStart, DateMath.startOfDay(effectiveFrom))
     }
 
     // MARK: - Milestones & projected payoffs
