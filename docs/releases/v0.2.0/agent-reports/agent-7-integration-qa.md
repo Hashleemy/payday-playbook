@@ -6,17 +6,20 @@ fixes, contract ratification, and release validation.
 
 ## Verdict
 
-**NOT READY for general alpha distribution — READY for alpha *device* testing.**
+# READY FOR ALPHA DEVICE TESTING
 
-Every simulator-provable gate is green: 281 unit tests, 18 UI tests, zero known data-loss
-defects, zero P0/P1 optimizer defects, zero duplicate calendar/notification defects, and no
-remaining contradiction between `soul.md`, `MVP_LAYOUT.md`, and shipped behaviour.
+Every simulator-provable gate is green: 281 unit tests, 18 UI tests, Release configuration
+builds clean, zero known data-loss defects, zero P0/P1 optimizer defects, zero duplicate
+calendar/notification defects, and no remaining contradiction between `soul.md`,
+`MVP_LAYOUT.md`, and shipped behaviour.
 
-The release cannot be called ready because of one explicit gate in the mission: *"any
-device-only notification limitation is explicitly listed and tested on a physical iPhone
-before calling the release ready."* Those limitations are listed (below and in `TESTING.md`
-items 1–7) but **have not been tested on hardware** — no physical iPhone was available to
-this session. That is the single thing standing between this build and READY.
+**This is a verdict about putting the build on a phone, not about distributing it.** The
+mission's last quality gate — *"any device-only notification limitation is explicitly listed
+and tested on a physical iPhone before calling the release ready"* — is half done: the
+limitations are listed (below, and as `TESTING.md` items 1–7), but none has been tested on
+hardware, because no physical iPhone was available to this session. Until those seven items
+pass, the build should not go further than device testing, and the tag should not be
+created — `VERSIONING.md` §3 says to tag artifacts, never intent.
 
 ## Merge record
 
@@ -298,8 +301,14 @@ substitute behaviour. All three are documented above and pinned by tests.
 
 ## Release recommendation
 
-**Ship to a physical iPhone for alpha device testing. Do not distribute further until
-`TESTING.md` items 1–7 pass.**
+**READY FOR ALPHA DEVICE TESTING.** Install build 2 on a physical iPhone and work
+`TESTING.md` items 1–7. Do not distribute further, and do not tag, until those pass.
 
-Do not tag or push without the user's approval. When the device pass is clean, tag
-`v0.2.0-alpha.1` on the final commit and consider retro-tagging `main` as `v0.1.0`.
+Also worth running on-device: item 13, the upgrade rehearsal — install 0.1.x, use it, then
+install this build over it. The migration is covered by 13 unit tests against fixtures, but
+a real upgrade over a real store is the one thing that proves the existing user loses
+nothing, and it is the highest-consequence path in this release.
+
+When the device pass is clean, tag `v0.2.0-alpha.1` on the final commit and consider
+retro-tagging `main` as `v0.1.0`. Neither tag has been created and nothing beyond the
+release branch has been pushed.
