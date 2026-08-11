@@ -3,17 +3,23 @@ import SwiftData
 
 /// Ordered onboarding steps (V2-01). Raw values are persisted; the order is
 /// given by `sortIndex` so cases can be renamed only with a data migration.
+///
+/// The sequence follows the v0.2.0 onboarding mission: welcome → goal (with
+/// floor and allowance folded in) → accounts → debts → income → obligations →
+/// reminders preview → review → generate. This supersedes MVP_LAYOUT §4's
+/// step table (income/obligations/floor before debts, notifications after
+/// review) — recorded as a deviation in the Agent 4 report, not a silent
+/// edit.
 enum OnboardingStep: String, Codable, CaseIterable, Identifiable {
     case none
     case welcome
     case goals
     case accounts
+    case debts
     case income
     case obligations
-    case floorAndAllowance
-    case debts
-    case review
     case notifications
+    case review
     case finished
 
     var id: String { rawValue }

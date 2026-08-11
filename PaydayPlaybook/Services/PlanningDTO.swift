@@ -77,6 +77,15 @@ struct PlanningDebt: Equatable {
     var creditLimit: Decimal?
     var dueDayOfMonth: Int?
     var originalPrincipal: Decimal?
+    /// Tri-state prepayment eligibility (V2-05). Nil (older snapshots) falls
+    /// back to `isExtraPrincipalEligible`; `.unknown` withholds extra
+    /// principal with a confirm-me warning instead of risking a penalty.
+    var prepayment: PrepaymentEligibility? = nil
+
+    /// The value the engine allocates on.
+    var effectivePrepayment: PrepaymentEligibility {
+        prepayment ?? (isExtraPrincipalEligible ? .eligible : .ineligible)
+    }
 }
 
 /// Everything the calc-v2 generator needs, captured at generation time.
@@ -102,6 +111,10 @@ struct PlanInputSnapshot: Equatable {
     /// R-01 generation cap (A-05). Hitting it flags the result, never loops.
     var paycheckCap: Int
     var timeZoneID: String
+    /// Start-of-day generation date, stored so a regeneration reproduces the
+    /// engine call (and its `generatedAsOf` label) exactly. Nil on snapshots
+    /// written before this field existed; callers then supply their own.
+    var asOf: Date? = nil
 
     static let defaultPaycheckCap = 600
 }
@@ -215,6 +228,7 @@ extension PlanningDebt: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, displayID, name, debtType, currentBalance, apr, minimumAmount
         case isExtraPrincipalEligible, creditLimit, dueDayOfMonth, originalPrincipal
+        case prepayment
     }
 
     init(from decoder: Decoder) throws {
@@ -230,6 +244,7 @@ extension PlanningDebt: Codable {
         creditLimit = try container.moneyIfPresent(forKey: .creditLimit)
         dueDayOfMonth = try container.decodeIfPresent(Int.self, forKey: .dueDayOfMonth)
         originalPrincipal = try container.moneyIfPresent(forKey: .originalPrincipal)
+        prepayment = try container.decodeIfPresent(PrepaymentEligibility.self, forKey: .prepayment)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -245,6 +260,7 @@ extension PlanningDebt: Codable {
         try container.encodeMoneyIfPresent(creditLimit, forKey: .creditLimit)
         try container.encodeIfPresent(dueDayOfMonth, forKey: .dueDayOfMonth)
         try container.encodeMoneyIfPresent(originalPrincipal, forKey: .originalPrincipal)
+        try container.encodeIfPresent(prepayment, forKey: .prepayment)
     }
 }
 
@@ -253,7 +269,7 @@ extension PlanInputSnapshot: Codable {
         case calculationVersion, cadence, monthlyPayDay, semimonthlyPayDay1, semimonthlyPayDay2
         case nextPayday, baseTakeHome, incomeChanges
         case spendingStartingBalance, protectedFloor, allowanceCap, firstCheckBufferAdd
-        case obligations, debts, paycheckCap, timeZoneID
+        case obligations, debts, paycheckCap, timeZoneID, asOf
     }
 
     init(from decoder: Decoder) throws {
@@ -274,6 +290,7 @@ extension PlanInputSnapshot: Codable {
         debts = try container.decode([PlanningDebt].self, forKey: .debts)
         paycheckCap = try container.decode(Int.self, forKey: .paycheckCap)
         timeZoneID = try container.decode(String.self, forKey: .timeZoneID)
+        asOf = try container.decodeIfPresent(Date.self, forKey: .asOf)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -294,6 +311,7 @@ extension PlanInputSnapshot: Codable {
         try container.encode(debts, forKey: .debts)
         try container.encode(paycheckCap, forKey: .paycheckCap)
         try container.encode(timeZoneID, forKey: .timeZoneID)
+        try container.encodeIfPresent(asOf, forKey: .asOf)
     }
 }
 
