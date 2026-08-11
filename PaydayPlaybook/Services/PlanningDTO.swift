@@ -2,11 +2,11 @@ import Foundation
 
 // MARK: - Shared planning contract (Agent 2 ↔ Agent 3 boundary)
 //
-// `PlanningInput` and `PlanningResult` are the storage-independent DTOs the
+// `PlanInputSnapshot` and `PlanResultSnapshot` are the storage-independent DTOs the
 // calc-v2 generator consumes and produces. Foundation only — the calculation
 // engine must never import SwiftData or touch a ModelContext. The data layer
-// builds `PlanningInput` from models (`PlanningInputBuilder`), persists a
-// `PlanningResult` as an immutable `PlanVersion` graph (`PlanPersister`), and
+// builds `PlanInputSnapshot` from models (`PlanningInputBuilder`), persists a
+// `PlanResultSnapshot` as an immutable `PlanVersion` graph (`PlanPersister`), and
 // stores the encoded input on `PlanVersion.inputSnapshotData` so every
 // generated plan is reproducible.
 //
@@ -43,7 +43,7 @@ extension KeyedDecodingContainer {
     }
 }
 
-// MARK: - PlanningInput
+// MARK: - PlanInputSnapshot
 
 /// A future take-home change, effective on its date (V2-06).
 struct PlanningIncomeChange: Equatable {
@@ -80,7 +80,7 @@ struct PlanningDebt: Equatable {
 }
 
 /// Everything the calc-v2 generator needs, captured at generation time.
-struct PlanningInput: Equatable {
+struct PlanInputSnapshot: Equatable {
     var calculationVersion: Int
     var cadence: PayCadence
     /// Day of month for `.monthly`; both days for `.semimonthly` (R-11 clamped).
@@ -106,7 +106,7 @@ struct PlanningInput: Equatable {
     static let defaultPaycheckCap = 600
 }
 
-// MARK: - PlanningResult
+// MARK: - PlanResultSnapshot
 
 /// A per-paycheck obligation reserve line (frozen R-04 output).
 struct PlanningObligationReserve: Equatable {
@@ -143,7 +143,7 @@ struct PlanningDebtPayoff: Equatable {
 
 /// The generated plan. Persisting this (with its input) creates an immutable
 /// baseline `PlanVersion`; the result itself never mutates.
-struct PlanningResult: Equatable {
+struct PlanResultSnapshot: Equatable {
     var calculationVersion: Int
     var paydays: [PlanningPayday]
     var payoffDate: Date?
@@ -248,7 +248,7 @@ extension PlanningDebt: Codable {
     }
 }
 
-extension PlanningInput: Codable {
+extension PlanInputSnapshot: Codable {
     private enum CodingKeys: String, CodingKey {
         case calculationVersion, cadence, monthlyPayDay, semimonthlyPayDay1, semimonthlyPayDay2
         case nextPayday, baseTakeHome, incomeChanges
@@ -382,7 +382,7 @@ extension PlanningDebtPayoff: Codable {
     }
 }
 
-extension PlanningResult: Codable {
+extension PlanResultSnapshot: Codable {
     private enum CodingKeys: String, CodingKey {
         case calculationVersion, paydays, payoffDate, totalEstimatedInterest
         case paycheckCount, debtPayoffs, cappedAtPaycheckLimit
@@ -416,16 +416,16 @@ extension PlanningResult: Codable {
 /// Canonical encoder/decoder for `PlanVersion.inputSnapshotData` — sorted
 /// keys and ISO-8601 dates so identical inputs produce identical bytes.
 enum PlanningSnapshotCoder {
-    static func encode(_ input: PlanningInput) throws -> Data {
+    static func encode(_ input: PlanInputSnapshot) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return try encoder.encode(input)
     }
 
-    static func decode(_ data: Data) throws -> PlanningInput {
+    static func decode(_ data: Data) throws -> PlanInputSnapshot {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(PlanningInput.self, from: data)
+        return try decoder.decode(PlanInputSnapshot.self, from: data)
     }
 }

@@ -46,10 +46,10 @@ final class OnboardingProgressTests: XCTestCase {
 
     // MARK: - Atomic, duplicate-proof finish
 
-    private func lemStyleFixture() -> (PlanningInput, PlanningResult) {
+    private func lemStyleFixture() -> (PlanInputSnapshot, PlanResultSnapshot) {
         let debtID = UUID()
         let obligationID = UUID()
-        let input = PlanningInput(
+        let input = PlanInputSnapshot(
             calculationVersion: 2,
             cadence: .biweekly,
             monthlyPayDay: nil, semimonthlyPayDay1: nil, semimonthlyPayDay2: nil,
@@ -96,7 +96,7 @@ final class OnboardingProgressTests: XCTestCase {
                 shortfallAmount: nil
             )
         }
-        let result = PlanningResult(
+        let result = PlanResultSnapshot(
             calculationVersion: 2,
             paydays: paydays,
             payoffDate: TestSupport.date(2026, 9, 15),
