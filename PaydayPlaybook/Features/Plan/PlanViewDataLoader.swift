@@ -312,14 +312,8 @@ enum PlanViewDataLoader {
         let hundred = Decimal(100)
         var candidates: [(String, String, Decimal?, Decimal?)] = []
 
-        if storedInput.allowanceCap >= hundred {
-            candidates.append((
-                "Allowance \(MoneyFormat.whole(storedInput.allowanceCap - hundred)) per paycheck",
-                "\(MoneyFormat.whole(hundred)) less set aside as available-not-spent each payday.",
-                nil,
-                storedInput.allowanceCap - hundred
-            ))
-        }
+        // Two scenarios, one per guardrail: each is a full engine run, so the
+        // set is deliberately small enough to stay responsive on device.
         candidates.append((
             "Allowance \(MoneyFormat.whole(storedInput.allowanceCap + hundred)) per paycheck",
             "\(MoneyFormat.whole(hundred)) more available for you each payday.",
@@ -333,14 +327,6 @@ enum PlanViewDataLoader {
             storedInput.protectedFloor + floorStep,
             nil
         ))
-        if storedInput.protectedFloor >= floorStep {
-            candidates.append((
-                "Protected floor \(MoneyFormat.whole(storedInput.protectedFloor - floorStep))",
-                "A thinner cushion, with more going to debt sooner.",
-                storedInput.protectedFloor - floorStep,
-                nil
-            ))
-        }
 
         return candidates.compactMap { title, detail, floor, allowance in
             guard let result = try? GeneratedPlanService.whatIfResult(
