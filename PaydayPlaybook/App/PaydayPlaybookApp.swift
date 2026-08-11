@@ -18,7 +18,10 @@ struct PaydayPlaybookApp: App {
             PaydayPlanItem.self, PlannedCardBalance.self,
             PaydayCheckIn.self, CheckInCardPayment.self,
             LedgerEntry.self, BalanceSnapshot.self, ForecastSnapshot.self,
-            NotificationPreference.self, Milestone.self, AppSettings.self
+            NotificationPreference.self, Milestone.self, AppSettings.self,
+            CashAccount.self, RecurringObligation.self, UserGoalProfile.self,
+            OnboardingProgress.self, IncomeSchedule.self, IncomeChange.self,
+            PlannedObligationReserve.self
         ])
         var configuration = ModelConfiguration(schema: schema)
         #if DEBUG
@@ -47,6 +50,16 @@ struct PaydayPlaybookApp: App {
             container = try ModelContainer(for: schema, configurations: [configuration])
         } catch {
             fatalError("Could not create SwiftData container: \(error)")
+        }
+        // Schema 1→2 logical upgrade, before any UI reads the store. A
+        // failure rolls back and the untouched store retries next launch
+        // (MVP_LAYOUT §7); the app still opens on the existing data.
+        do {
+            try MigrationService.migrateIfNeeded(context: container.mainContext)
+        } catch {
+            #if DEBUG
+            print("Migration deferred: \(error.localizedDescription)")
+            #endif
         }
         // The delegate must exist before launch finishes so a notification tap
         // that starts the app still deep-links (the route is buffered until the

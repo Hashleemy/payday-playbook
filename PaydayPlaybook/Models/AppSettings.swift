@@ -35,6 +35,10 @@ final class AppSettings {
     var phaseTwoNote: String?
     var seedSchemaVersion: Int
     var createdAt: Date
+    /// Set once by the schema 1→2 migration; nil on native v2 installs.
+    var migratedAt: Date?
+    /// Human-readable audit note recorded by the migration (MVP_LAYOUT §7.8).
+    var migrationAuditNote: String?
 
     var phaseTwoGoal: PhaseTwoGoal? {
         get { phaseTwoGoalRaw.flatMap(PhaseTwoGoal.init(rawValue:)) }
