@@ -1,91 +1,6 @@
 import SwiftUI
 import SwiftData
 
-/// Assembled state for the five-second dashboard.
-struct TodayState {
-    var plan: PlanVersion?
-    var planItems: [PaydayPlanItem] = []
-    var currentItem: PaydayPlanItem?      // payday on/before today without completion, or today's payday
-    var nextItem: PaydayPlanItem?         // next payday strictly after today
-    var currentCheckIn: PaydayCheckIn?
-    var totalDebt: Decimal = .zero
-    var plannedDebtToday: Decimal = .zero
-    var percentEliminated: Decimal = .zero
-    var statusKind: StatusBadge.Kind = .onTrack
-    var targetDebt: AccountBalanceService.DebtBalance?
-    var debtBalances: [AccountBalanceService.DebtBalance] = []
-    var forecast: ForecastSnapshot?
-    var checking1: AccountBalanceService.Checking1State?
-    var checking2: AccountBalanceService.Checking2State?
-    var isDebtFree = false
-
-    @MainActor
-    static func load(context: ModelContext, environment: AppEnvironment) -> TodayState {
-        var state = TodayState()
-        do {
-            guard let plan = try PlanSeeder.existingBaseline(context: context) else { return state }
-            state.plan = plan
-            let planID = plan.id
-            let today = DateMath.startOfDay(environment.dateProvider.now)
-
-            let items = try context.fetch(
-                FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planID })
-            ).sorted { $0.sequenceNumber < $1.sequenceNumber }
-            state.planItems = items
-
-            let checkIns = try context.fetch(FetchDescriptor<PaydayCheckIn>())
-            let checkInsByItem = Dictionary(grouping: checkIns, by: \.paydayCheckInKey)
-
-            let pastItems = items.filter { DateMath.startOfDay($0.date) <= today }
-            let openPast = pastItems.filter { item in
-                let status = checkInsByItem[item.id]?.first?.status
-                return status != .completed && status != .needsAttention
-            }
-            // Earliest open payday first so missed check-ins stay reachable.
-            state.currentItem = openPast.first ?? pastItems.last
-            state.nextItem = items.first { DateMath.startOfDay($0.date) > today }
-            if let current = state.currentItem {
-                state.currentCheckIn = checkInsByItem[current.id]?.first
-            }
-
-            let balanceService = environment.balanceService(context: context)
-            let balances = try balanceService.debtBalances()
-            state.debtBalances = balances
-            state.totalDebt = balances.reduce(Decimal.zero) { $0 + $1.balance }.rounded2
-            let startingTotal = balances.reduce(Decimal.zero) { $0 + $1.debt.startingBalance }
-            if startingTotal > 0 {
-                state.percentEliminated = ((startingTotal - state.totalDebt) / startingTotal * 100).rounded2
-            }
-            state.isDebtFree = state.totalDebt.isZeroMoney
-
-            let plannedToday = pastItems.last?.plannedDebtAfter ?? PlanContract.startingDebtTotal
-            state.plannedDebtToday = plannedToday
-            let variance = (plannedToday - state.totalDebt).rounded2
-            if state.currentCheckIn?.status == .needsAttention {
-                state.statusKind = .needsAttention
-            } else if variance >= Decimal(string: "0.01")! {
-                state.statusKind = .ahead(variance)
-            } else if variance <= Decimal(string: "-0.01")! {
-                state.statusKind = .behind(-variance)
-            } else {
-                state.statusKind = .onTrack
-            }
-
-            state.targetDebt = balances.first { !$0.isPaidOff }
-            state.forecast = try environment.reforecastService(context: context).latestForecast()
-            state.checking1 = try balanceService.checking1State(plan: plan, planItems: items)
-            state.checking2 = try balanceService.checking2State()
-        } catch {
-            // Leave partial state; the dashboard renders what it can.
-        }
-        return state
-    }
-}
-
-private extension PaydayCheckIn {
-    var paydayCheckInKey: UUID { paydayPlanItemID }
-}
-
 struct TodayView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appEnvironment: AppEnvironment
@@ -94,6 +9,10 @@ struct TodayView: View {
     @Query private var ledgerEntries: [LedgerEntry]
     @Query private var snapshots: [BalanceSnapshot]
     @Query private var allSettings: [AppSettings]
+    @Query private var planVersions: [PlanVersion]
+    @Query private var debts: [DebtAccount]
+    @Query private var obligations: [RecurringObligation]
+    @Query private var incomeSchedules: [IncomeSchedule]
 
     @State private var state = TodayState()
     @State private var checkInItem: PaydayPlanItem?
@@ -102,78 +21,87 @@ struct TodayView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    statusHeader
-                    todaysPlayCard
-                    if let target = state.targetDebt {
-                        targetCard(target)
-                    }
-                    if let c1 = state.checking1, let plan = state.plan {
-                        Checking1Card(state: c1, plan: plan)
-                    }
-                    if let c2 = state.checking2 {
-                        Checking2Card(state: c2)
-                    }
-                    upcomingStrip
-                    if state.isDebtFree {
-                        if let settings = allSettings.first, settings.debtFreeConfirmedAt != nil {
-                            PhaseTwoCard(settings: settings, releasedPerPaycheck: releasedPerPaycheck)
-                            phaseTwoEditButton
-                        } else {
-                            debtFreeCard
-                        }
-                    }
+            scrollContent
+                .background(Color(.systemGroupedBackground))
+                .navigationTitle(todayTitle)
+                .toolbar { toolbarContent }
+                .onAppear(perform: handleAppear)
+                .onChange(of: refreshToken) { _, _ in reload() }
+                .onChange(of: router.pendingCheckInItemID) { _, itemID in
+                    openPendingCheckIn(itemID)
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 24)
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle(todayTitle)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showAddSheet = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                    }
-                    .accessibilityLabel("Add entry")
+                .sheet(item: $checkInItem, onDismiss: reload) { item in
+                    CheckInFlowView(planItem: item)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        SettingsView()
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .accessibilityLabel("Settings")
+                .sheet(isPresented: $showAddSheet, onDismiss: reload) {
+                    QuickAddSheet()
+                }
+                .sheet(isPresented: $showDebtFreeFlow, onDismiss: reload) {
+                    DebtFreeTransitionView()
+                }
+        }
+    }
+
+    private var scrollContent: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                if state.hasPlan {
+                    planSections
+                    accountSections
+                    closingSections
+                } else {
+                    noPlanCard
                 }
             }
-            .onAppear {
-                reload()
-                if let pending = router.pendingCheckInItemID {
-                    router.pendingCheckInItemID = nil
-                    checkInItem = state.planItems.first { $0.id == pending }
-                }
+            .padding(.horizontal)
+            .padding(.bottom, 24)
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                showAddSheet = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
             }
-            .onChange(of: checkIns.count) { _, _ in reload() }
-            .onChange(of: ledgerEntries.count) { _, _ in reload() }
-            .onChange(of: snapshots.count) { _, _ in reload() }
-            .onChange(of: router.pendingCheckInItemID) { _, itemID in
-                guard let itemID else { return }
-                router.pendingCheckInItemID = nil
-                if let item = state.planItems.first(where: { $0.id == itemID }) {
-                    checkInItem = item
-                }
+            .accessibilityLabel("Add entry")
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink {
+                SettingsView()
+            } label: {
+                Image(systemName: "gearshape")
             }
-            .sheet(item: $checkInItem, onDismiss: reload) { item in
-                CheckInFlowView(planItem: item)
-            }
-            .sheet(isPresented: $showAddSheet, onDismiss: reload) {
-                QuickAddSheet()
-            }
-            .sheet(isPresented: $showDebtFreeFlow, onDismiss: reload) {
-                DebtFreeTransitionView()
-            }
+            .accessibilityLabel("Settings")
+        }
+    }
+
+    /// Every stored change that can move a dashboard number: actuals,
+    /// balances, plan activation, and the setup rows the plan is built from.
+    private var refreshToken: String {
+        let activeID = planVersions.first(where: \.isActive)?.id.uuidString ?? "none"
+        return [
+            "\(checkIns.count)", "\(ledgerEntries.count)", "\(snapshots.count)",
+            "\(planVersions.count)", "\(debts.count)", "\(obligations.count)",
+            "\(incomeSchedules.count)", activeID
+        ].joined(separator: "|")
+    }
+
+    private func handleAppear() {
+        reload()
+        if let pending = router.pendingCheckInItemID {
+            router.pendingCheckInItemID = nil
+            checkInItem = state.planItems.first { $0.id == pending }
+        }
+    }
+
+    private func openPendingCheckIn(_ itemID: UUID?) {
+        guard let itemID else { return }
+        router.pendingCheckInItemID = nil
+        if let item = state.planItems.first(where: { $0.id == itemID }) {
+            checkInItem = item
         }
     }
 
@@ -183,6 +111,85 @@ struct TodayView: View {
 
     private func reload() {
         state = TodayState.load(context: modelContext, environment: appEnvironment)
+    }
+
+    /// "Card B" for cards, the type name otherwise — resolved from the plan's
+    /// stable debt identifier.
+    private func debtReference(_ planID: String) -> String {
+        guard let debt = state.debtBalances.first(where: { $0.debt.planID == planID })?.debt else {
+            return planID
+        }
+        return debt.debtType.shortReference(planID: planID)
+    }
+
+    // MARK: - Section groups
+
+    @ViewBuilder
+    private var planSections: some View {
+        statusHeader
+        if let warning = state.calculationWarning {
+            calculationWarningCard(warning)
+        }
+        todaysPlayCard
+        if let target = state.targetDebt {
+            targetCard(target)
+        }
+        planForecastCard
+    }
+
+    @ViewBuilder
+    private var accountSections: some View {
+        if let c1 = state.checking1, let plan = state.plan {
+            Checking1Card(state: c1, plan: plan, title: spendingCardTitle)
+        }
+        if let c2 = state.checking2 {
+            Checking2Card(state: c2, title: reservesCardTitle, reserveLines: state.reserveLines)
+        }
+        otherAccountsCard
+    }
+
+    @ViewBuilder
+    private var closingSections: some View {
+        upcomingStrip
+        insightCard
+        if state.isDebtFree {
+            if let settings = allSettings.first, settings.debtFreeConfirmedAt != nil {
+                PhaseTwoCard(settings: settings, releasedPerPaycheck: releasedPerPaycheck)
+                phaseTwoEditButton
+            } else {
+                debtFreeCard
+            }
+        }
+    }
+
+    // MARK: - Recovery / warning states
+
+    private var noPlanCard: some View {
+        DashboardCard(title: "No plan yet", systemImage: "map") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Your plan isn't set up on this device. Nothing has been lost — your entries stay exactly as recorded.")
+                    .font(.subheadline)
+                Text("Restore a backup from Settings → Backup & export, or load a plan from Settings → Plan versions.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    Text("Open Settings")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private func calculationWarningCard(_ message: String) -> some View {
+        DashboardCard(title: "Worth a look", systemImage: "exclamationmark.triangle") {
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: - Sections
@@ -197,9 +204,17 @@ struct TodayView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                Text("\(state.percentEliminated.asDouble, specifier: "%.1f")% of the original \(MoneyFormat.string(PlanContract.startingDebtTotal)) eliminated")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                if state.startingPrincipal > 0 {
+                    Text("\(state.percentEliminated.asDouble, specifier: "%.1f")% of the original \(MoneyFormat.string(state.startingPrincipal)) eliminated")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                if let goal = state.goalText, !goal.isEmpty {
+                    Text(goal)
+                        .font(.subheadline)
+                        .italic()
+                        .foregroundStyle(.secondary)
+                }
                 Divider()
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -219,10 +234,10 @@ struct TodayView: View {
     }
 
     private var forecastDateText: String {
-        if let forecast = state.forecast {
-            if let date = forecast.projectedPayoffDate {
-                return DateMath.mediumString(date)
-            }
+        if let date = state.forecastPayoffDate {
+            return DateMath.mediumString(date)
+        }
+        if state.hasPlan && (state.forecast != nil || state.calculationWarning != nil) {
             // The engine reported the current budget cannot retire the debt.
             return "Beyond current budget"
         }
@@ -233,14 +248,18 @@ struct TodayView: View {
         DashboardCard(title: "Today's play", systemImage: "figure.run") {
             VStack(alignment: .leading, spacing: 10) {
                 if let current = state.currentItem, isToday(current.date) || isOpen(current) {
-                    PaydayPlaySummary(item: current)
+                    PaydayPlaySummary(
+                        item: current,
+                        reserveTotal: reserveTotal(for: current),
+                        targetReference: debtReference(current.plannedTargetDebtID)
+                    )
                     checkInButton(for: current)
                 } else if let next = state.nextItem {
                     let days = DateMath.days(from: appEnvironment.dateProvider.now, to: next.date)
                     Text("Next payday: \(DateMath.mediumString(next.date)) — \(days) day\(days == 1 ? "" : "s") away")
                         .font(.subheadline)
-                    if let target = state.targetDebt {
-                        Text("Current avalanche card: \(target.debt.displayName). Next planned payment \(MoneyFormat.string(next.plannedCardBudget)) toward card \(next.plannedTargetDebtID).")
+                    if state.targetDebt != nil {
+                        Text("Next target: \(debtReference(next.plannedTargetDebtID)). Next planned payment \(MoneyFormat.string(next.plannedCardBudget)).")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -257,6 +276,12 @@ struct TodayView: View {
                 }
             }
         }
+    }
+
+    private func reserveTotal(for item: PaydayPlanItem) -> Decimal {
+        let legacy = item.plannedCarReserve + item.plannedTrainReserve
+        if legacy > 0 { return legacy }
+        return state.reserveLines.reduce(Decimal.zero) { $0 + $1.amount }
     }
 
     private func isToday(_ date: Date) -> Bool {
@@ -308,20 +333,31 @@ struct TodayView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(target.debt.displayName)
                             .font(.title3.weight(.semibold))
-                        Text("Card \(target.debt.planID) · \(aprText(target.debt.apr)) APR")
+                        Text("\(target.debt.debtType.shortReference(planID: target.debt.planID)) · \(DebtFormat.aprText(target.debt.apr)) APR")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    MoneyText(amount: target.balance, font: .title3.weight(.bold))
+                    VStack(alignment: .trailing, spacing: 4) {
+                        MoneyText(amount: target.balance, font: .title3.weight(.bold))
+                        if let utilization = target.debt.utilization(currentBalance: target.balance) {
+                            UtilizationBadge(utilization: utilization)
+                        }
+                    }
+                }
+                if let reason = state.targetReason {
+                    Text(reason)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if let next = nextPlannedItemForDisplay {
-                    Text("Planned attack this check: \(MoneyFormat.string(next.plannedCardBudget)) toward card \(next.plannedTargetDebtID)")
+                    Text("Planned attack this check: \(MoneyFormat.string(next.plannedCardBudget)) toward \(debtReference(next.plannedTargetDebtID))")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 if let dueDay = target.debt.dueDayOfMonth {
-                    Text("Statement due day: \(dueDay)")
+                    Text("\(target.debt.debtType.dueDayLabel): \(dueDay)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -341,8 +377,102 @@ struct TodayView: View {
         return state.nextItem
     }
 
-    private func aprText(_ apr: Decimal) -> String {
-        "\((apr * 100) as NSDecimalNumber)%"
+    /// Payoff forecast, paychecks remaining, remaining interest, and the
+    /// interest-saved estimate when the engine supports it (V2-14).
+    private var planForecastCard: some View {
+        DashboardCard(title: "The finish line", systemImage: "flag.filled.and.flag.crossed") {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Forecast payoff")
+                    Spacer()
+                    Text(forecastDateText)
+                        .font(.subheadline.weight(.semibold))
+                }
+                if let paychecks = state.paychecksRemaining {
+                    HStack {
+                        Text("Paychecks remaining")
+                        Spacer()
+                        Text("\(paychecks)")
+                            .font(.subheadline.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                }
+                if let interest = state.estimatedRemainingInterest {
+                    HStack {
+                        Text("Estimated interest ahead")
+                        Spacer()
+                        MoneyText(amount: interest, font: .subheadline.weight(.semibold))
+                    }
+                }
+                if let saved = state.interestSaved, saved > 0 {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Estimated interest saved vs. minimums only")
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        MoneyText(amount: saved, font: .subheadline.weight(.semibold), color: .mint)
+                    }
+                }
+                Text("Projections are estimates, not guarantees.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let plan = state.plan {
+                    NavigationLink {
+                        PlanOverviewView(plan: plan)
+                    } label: {
+                        Text("View Full Plan")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("today.viewPlanButton")
+                }
+            }
+            .font(.subheadline)
+        }
+    }
+
+    private var spendingCardTitle: String {
+        if let name = state.spendingAccount?.account.name, !name.isEmpty {
+            return "\(name) — flex cash"
+        }
+        return "Checking 1 — flex cash"
+    }
+
+    private var reservesCardTitle: String {
+        if let name = state.reservesAccount?.account.name, !name.isEmpty {
+            return "\(name) — bills + debt"
+        }
+        return "Checking 2 — bills + debt"
+    }
+
+    @ViewBuilder
+    private var otherAccountsCard: some View {
+        if !state.otherAccounts.isEmpty {
+            DashboardCard(title: "Other accounts", systemImage: "building.columns") {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(state.otherAccounts, id: \.account.id) { item in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.account.name)
+                                Text(roleText(item.account))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            MoneyText(amount: item.balance)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(item.account.name), \(roleText(item.account)), balance \(MoneyFormat.string(item.balance))")
+                    }
+                }
+                .font(.subheadline)
+            }
+        }
+    }
+
+    private func roleText(_ account: CashAccount) -> String {
+        var parts = account.roles.map(\.displayName).sorted()
+        if account.isDefaultIncome { parts.append("Default income") }
+        return parts.joined(separator: " · ")
     }
 
     private var upcomingStrip: some View {
@@ -352,7 +482,7 @@ struct TodayView: View {
                     Label("Next payday \(DateMath.mediumString(next.date))", systemImage: "banknote")
                         .font(.subheadline)
                 }
-                if let nextDue = nextCardDueText {
+                if let nextDue = nextDueText {
                     Label(nextDue, systemImage: "creditcard")
                         .font(.subheadline)
                 }
@@ -364,24 +494,55 @@ struct TodayView: View {
         }
     }
 
-    private var nextCardDueText: String? {
+    /// Earliest upcoming due item across every debt type and obligation.
+    private var nextDueText: String? {
         let today = DateMath.startOfDay(appEnvironment.dateProvider.now)
         let calendar = DateMath.calendar
-        var best: (Date, String)?
-        for balance in state.debtBalances {
-            guard !balance.isPaidOff, let dueDay = balance.debt.dueDayOfMonth else { continue }
+
+        func nextOccurrence(day: Int) -> Date? {
             for offset in 0...1 {
                 guard let monthDate = calendar.date(byAdding: .month, value: offset, to: today) else { continue }
                 var components = calendar.dateComponents([.year, .month], from: monthDate)
-                components.day = min(dueDay, 28)
+                let range = calendar.range(of: .day, in: .month, for: monthDate)
+                components.day = min(day, range?.count ?? 28)
                 guard let due = calendar.date(from: components), DateMath.startOfDay(due) >= today else { continue }
-                if best == nil || due < best!.0 {
-                    best = (due, balance.debt.displayName)
-                }
-                break
+                return due
+            }
+            return nil
+        }
+
+        var best: (Date, String)?
+        for balance in state.debtBalances {
+            guard !balance.isPaidOff, let dueDay = balance.debt.dueDayOfMonth,
+                  let due = nextOccurrence(day: dueDay) else { continue }
+            if best == nil || due < best!.0 {
+                best = (due, balance.debt.displayName)
+            }
+        }
+        for line in obligationDueLines {
+            if best == nil || line.0 < best!.0 {
+                best = line
             }
         }
         return best.map { "\($0.1) due \(DateMath.mediumString($0.0))" }
+    }
+
+    private var obligationDueLines: [(Date, String)] {
+        let today = DateMath.startOfDay(appEnvironment.dateProvider.now)
+        let calendar = DateMath.calendar
+        return obligations.compactMap { obligation in
+            guard !obligation.isArchived, let dueDay = obligation.dueDay else { return nil }
+            for offset in 0...1 {
+                guard let monthDate = calendar.date(byAdding: .month, value: offset, to: today) else { continue }
+                var components = calendar.dateComponents([.year, .month], from: monthDate)
+                let range = calendar.range(of: .day, in: .month, for: monthDate)
+                components.day = min(dueDay, range?.count ?? 28)
+                if let due = calendar.date(from: components), DateMath.startOfDay(due) >= today {
+                    return (due, obligation.name)
+                }
+            }
+            return nil
+        }
     }
 
     private var nextProjectedPayoffText: String? {
@@ -390,7 +551,15 @@ struct TodayView: View {
         let upcoming = forecast.perCardPayoffDates
             .filter { DateMath.startOfDay($0.payoffDate) >= today }
             .min { $0.payoffDate < $1.payoffDate }
-        return upcoming.map { "Card \($0.debtPlanID) projected payoff \(DateMath.mediumString($0.payoffDate))" }
+        return upcoming.map { "\(debtReference($0.debtPlanID)) projected payoff \(DateMath.mediumString($0.payoffDate))" }
+    }
+
+    private var insightCard: some View {
+        DashboardCard(title: "Insight", systemImage: "sparkles") {
+            Text(state.insightLine ?? "On track. Nothing needs your attention today.")
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var releasedPerPaycheck: Decimal {
@@ -415,7 +584,7 @@ struct TodayView: View {
     private var debtFreeCard: some View {
         DashboardCard(title: "Debt-free", systemImage: "party.popper") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Every card reads $0.00. Confirm to celebrate and set up Phase II.")
+                Text("Every debt reads $0.00. Confirm to celebrate and set up Phase II.")
                     .font(.subheadline)
                 Button {
                     showDebtFreeFlow = true
@@ -431,6 +600,8 @@ struct TodayView: View {
 
 private struct PaydayPlaySummary: View {
     let item: PaydayPlanItem
+    let reserveTotal: Decimal
+    let targetReference: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -447,7 +618,7 @@ private struct PaydayPlaySummary: View {
                 }
                 GridRow {
                     Label("Reserve", systemImage: "3.circle.fill")
-                    MoneyText(amount: item.plannedCarReserve + item.plannedTrainReserve, font: .subheadline.weight(.medium))
+                    MoneyText(amount: reserveTotal, font: .subheadline.weight(.medium))
                 }
                 GridRow {
                     Label("Pay → \(item.plannedTargetDebtID)", systemImage: "4.circle.fill")
@@ -457,16 +628,17 @@ private struct PaydayPlaySummary: View {
             .font(.subheadline)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Payday \(item.sequenceNumber): keep \(MoneyFormat.string(item.plannedC1Keep)), move \(MoneyFormat.string(item.plannedC2Transfer)), reserve \(MoneyFormat.string(item.plannedCarReserve + item.plannedTrainReserve)), pay \(MoneyFormat.string(item.plannedCardBudget)) toward card \(item.plannedTargetDebtID)")
+        .accessibilityLabel("Payday \(item.sequenceNumber): keep \(MoneyFormat.string(item.plannedC1Keep)), move \(MoneyFormat.string(item.plannedC2Transfer)), reserve \(MoneyFormat.string(reserveTotal)), pay \(MoneyFormat.string(item.plannedCardBudget)) toward \(targetReference)")
     }
 }
 
 struct Checking1Card: View {
     let state: AccountBalanceService.Checking1State
     let plan: PlanVersion
+    var title: String = "Checking 1 — flex cash"
 
     var body: some View {
-        DashboardCard(title: "Checking 1 — flex cash", systemImage: "1.circle") {
+        DashboardCard(title: title, systemImage: "1.circle") {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Actual balance")
@@ -482,6 +654,10 @@ struct Checking1Card: View {
                     Label("Below the protected floor", systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.orange)
+                } else {
+                    Label("Protected cash intact", systemImage: "checkmark.shield")
+                        .font(.caption)
+                        .foregroundStyle(.mint)
                 }
                 Divider()
                 HStack {
@@ -490,7 +666,7 @@ struct Checking1Card: View {
                     MoneyText(amount: state.protectedFloor)
                 }
                 HStack {
-                    Text("Allowance available")
+                    Text("Available — not spent")
                     Spacer()
                     if state.allowanceActive {
                         MoneyText(amount: state.allowanceAvailable, color: .orange)
@@ -522,9 +698,17 @@ struct Checking1Card: View {
 
 struct Checking2Card: View {
     let state: AccountBalanceService.Checking2State
+    var title: String = "Checking 2 — bills + debt"
+    var reserveLines: [(id: UUID, name: String, amount: Decimal)] = []
+
+    /// Legacy car/train buckets only exist on migrated stores; generated
+    /// plans carry named obligation reserves instead.
+    private var hasLegacyBuckets: Bool {
+        state.carReserved != 0 || state.trainReserved != 0
+    }
 
     var body: some View {
-        DashboardCard(title: "Checking 2 — bills + debt", systemImage: "2.circle") {
+        DashboardCard(title: title, systemImage: "2.circle") {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Balance")
@@ -532,23 +716,36 @@ struct Checking2Card: View {
                     MoneyText(amount: state.totalBalance, font: .body.weight(.semibold))
                 }
                 Divider()
-                HStack {
-                    Text("Reserved for car")
-                    Spacer()
-                    MoneyText(amount: state.carReserved)
+                if hasLegacyBuckets {
+                    HStack {
+                        Text("Reserved for car")
+                        Spacer()
+                        MoneyText(amount: state.carReserved)
+                    }
+                    HStack {
+                        Text("Reserved for train")
+                        Spacer()
+                        MoneyText(amount: state.trainReserved)
+                    }
+                } else {
+                    ForEach(reserveLines, id: \.id) { line in
+                        HStack {
+                            Text("Reserve for \(line.name) each paycheck")
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer()
+                            MoneyText(amount: line.amount)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Reserve \(MoneyFormat.string(line.amount)) for \(line.name) each paycheck")
+                    }
                 }
                 HStack {
-                    Text("Reserved for train")
-                    Spacer()
-                    MoneyText(amount: state.trainReserved)
-                }
-                HStack {
-                    Text("Available for cards")
+                    Text("Available for debts")
                     Spacer()
                     MoneyText(amount: state.availableForDebt, color: state.availableForDebt.isNegative ? .red : .primary)
                 }
                 if state.hasNegativeBucket {
-                    Label("A bucket is overallocated — more is earmarked or spent than Checking 2 holds.", systemImage: "exclamationmark.triangle")
+                    Label("A bucket is overallocated — more is earmarked or spent than the account holds.", systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
