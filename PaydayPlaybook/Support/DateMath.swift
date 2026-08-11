@@ -28,7 +28,16 @@ enum DateMath {
     }
 
     static func days(from start: Date, to end: Date) -> Int {
-        calendar.dateComponents([.day], from: startOfDay(start), to: startOfDay(end)).day ?? 0
+        // Anchor both endpoints at noon before diffing: in timezones whose
+        // DST transition falls at midnight (e.g. America/Santiago), the
+        // transition day has no 00:00 and startOfDay lands at 01:00, which
+        // would make a component-based diff drop a calendar day. Noon always
+        // exists, and rounding absorbs the ±1h DST offset.
+        guard let startNoon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: startOfDay(start)),
+              let endNoon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: startOfDay(end)) else {
+            return calendar.dateComponents([.day], from: startOfDay(start), to: startOfDay(end)).day ?? 0
+        }
+        return Int((endNoon.timeIntervalSince(startNoon) / 86_400).rounded())
     }
 
     static func isSameDay(_ lhs: Date, _ rhs: Date) -> Bool {
