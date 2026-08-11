@@ -241,9 +241,9 @@ struct ObligationEditorView: View {
                         value: $amount,
                         requirement: .required,
                         help: "What you pay each time, not per month, if they differ.",
-                        error: amountError
+                        error: amountError,
+                        fieldIdentifier: "obligation.amount"
                     )
-                    .accessibilityIdentifier("obligation.amount")
 
                     SetupField(title: "How often", requirement: .required) {
                         Picker("Cadence", selection: $cadence) {

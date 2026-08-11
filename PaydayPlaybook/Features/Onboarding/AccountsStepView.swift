@@ -214,9 +214,9 @@ struct AccountEditorView: View {
                         value: $balance,
                         requirement: .required,
                         help: "What's in it right now. You can update it any time.",
-                        error: balanceError
+                        error: balanceError,
+                        fieldIdentifier: "account.balance"
                     )
-                    .accessibilityIdentifier("account.balance")
 
                     SetupField(
                         title: "What this account is for",

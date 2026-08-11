@@ -22,7 +22,7 @@ struct DebtFreeTransitionView: View {
 
     private var releasedPerPaycheck: Decimal {
         // Cash freed per check once cards are gone: income − allowance − reserves.
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else {
+        guard let plan = (try? PlanSeeder.currentPlan(context: modelContext)) ?? nil else {
             return PlanContract.raisedCardBudget
         }
         let income = (try? ReforecastService.currentIncome(
