@@ -601,7 +601,7 @@ struct CheckInFlowView: View {
                 .reforecast(trigger: .paydayCompleted, varianceContext: varianceNote)
             try? appEnvironment.milestoneService(context: modelContext).refreshAchievements()
 
-            notificationScheduler.cancelEveningReminder(sequenceNumber: planItem.sequenceNumber)
+            notificationScheduler.cancelPaydayReminders(itemID: planItem.id)
             Task {
                 await notificationScheduler.rescheduleAll(
                     context: modelContext,

@@ -478,4 +478,53 @@ struct CalendarEventService {
         let c = DateMath.calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d%02d%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
+
+    // MARK: - Deep-link resolution
+
+    /// What a tapped deep link should actually do, once the target has been
+    /// checked against the store.
+    enum LinkResolution: Equatable {
+        case openCheckIn(item: UUID)
+        case openDebt(planID: String)
+        case openEntry(entryID: UUID)
+        case openMilestone(milestoneID: UUID)
+        /// The target is archived or gone; the message is user-facing copy.
+        case unavailable(message: String)
+    }
+
+    /// Resolves a link against current data. Plan edits, archiving, and
+    /// deletion all happen between rendering an event and tapping it, so
+    /// every target is re-checked rather than trusted (V2-11).
+    func resolve(_ link: DeepLink) throws -> LinkResolution {
+        switch link {
+        case .checkIn(let itemID):
+            let exists = try context.fetchCount(
+                FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.id == itemID })
+            ) > 0
+            return exists
+                ? .openCheckIn(item: itemID)
+                : .unavailable(message: "This payday belongs to an older plan version and can't be opened.")
+        case .debt(let planID):
+            let matches = try context.fetch(
+                FetchDescriptor<DebtAccount>(predicate: #Predicate { $0.planID == planID })
+            )
+            if matches.contains(where: { !$0.isArchived }) { return .openDebt(planID: planID) }
+            if matches.isEmpty { return .unavailable(message: "This debt no longer exists.") }
+            return .unavailable(message: "This debt is archived. You can find it under Debts once unarchived.")
+        case .entry(let entryID):
+            let exists = try context.fetchCount(
+                FetchDescriptor<LedgerEntry>(predicate: #Predicate { $0.id == entryID })
+            ) > 0
+            return exists
+                ? .openEntry(entryID: entryID)
+                : .unavailable(message: "This entry has been removed from the ledger.")
+        case .milestone(let milestoneID):
+            let exists = try context.fetchCount(
+                FetchDescriptor<Milestone>(predicate: #Predicate { $0.id == milestoneID })
+            ) > 0
+            return exists
+                ? .openMilestone(milestoneID: milestoneID)
+                : .unavailable(message: "This milestone belongs to an older plan version.")
+        }
+    }
 }
