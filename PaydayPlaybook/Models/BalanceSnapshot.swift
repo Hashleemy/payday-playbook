@@ -43,6 +43,9 @@ final class BalanceSnapshot {
     /// Snapshots are append-only; corrections link back to the corrected snapshot.
     var correctsSnapshotID: UUID?
     var auditNote: String?
+    /// Schema-2 reference to a `CashAccount` row. Migration fills it from the
+    /// legacy checking1/checking2 raw, which stays untouched beside it.
+    var cashAccountID: UUID?
 
     var sourceType: SnapshotSourceType {
         get { SnapshotSourceType(rawValue: sourceTypeRaw) ?? .userEntry }
