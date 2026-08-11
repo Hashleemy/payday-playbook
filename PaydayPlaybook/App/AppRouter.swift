@@ -43,9 +43,10 @@ final class AppRouter: ObservableObject {
             selectedTab = .debts
             pendingDebtPlanID = reference
         case .obligation:
-            // Obligations live in Settings; Today carries the reserves card,
-            // which is the useful landing spot for a bill reminder.
-            selectedTab = .today
+            // The calendar is where a bill's due date lives, alongside the
+            // rest of that day's play; it selects the obligation's next
+            // occurrence.
+            selectedTab = .calendar
             if let reference, let id = UUID(uuidString: reference) {
                 pendingObligationID = id
             }

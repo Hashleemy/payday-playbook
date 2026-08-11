@@ -56,11 +56,11 @@ final class AppRouterTests: XCTestCase {
         let milestoneID = UUID()
         let obligationID = UUID()
         let cases: [(NotificationRoute, String, AppTab)] = [
-            (.checkIn, itemID.uuidString, .today),          // payday morning + evening
-            (.debt, "C", .debts),                           // debt due soon + due today
-            (.obligation, obligationID.uuidString, .today), // obligation due soon + today
+            (.checkIn, itemID.uuidString, .today),             // payday morning + evening
+            (.debt, "C", .debts),                              // debt due soon + due today
+            (.obligation, obligationID.uuidString, .calendar), // obligation due soon + today
             (.milestone, milestoneID.uuidString, .progress),
-            (.progress, "", .progress),                     // weekly summary
+            (.progress, "", .progress),                        // weekly summary
             (.today, "", .today)
         ]
         for (route, reference, expectedTab) in cases {

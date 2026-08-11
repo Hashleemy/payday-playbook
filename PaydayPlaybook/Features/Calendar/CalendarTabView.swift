@@ -64,9 +64,13 @@ struct CalendarTabView: View {
                 displayedMonth = DateMath.startOfDay(appEnvironment.dateProvider.now)
                 selectedDay = DateMath.startOfDay(appEnvironment.dateProvider.now)
                 reload()
+                revealObligation(router.pendingObligationID)
             }
             .onChange(of: displayedMonth) { _, _ in reload() }
             .onChange(of: mode) { _, _ in reload() }
+            .onChange(of: router.pendingObligationID) { _, obligationID in
+                revealObligation(obligationID)
+            }
             .onChange(of: checkIns.count) { _, _ in reload() }
             .onChange(of: ledgerEntries.count) { _, _ in reload() }
             .sheet(item: $checkInItem, onDismiss: reload) { item in
@@ -457,6 +461,23 @@ struct CalendarTabView: View {
             selectedDay = DateMath.startOfDay(next)
             displayedMonth = DateMath.startOfDay(next)
         }
+    }
+
+    /// A bill-due deep link selects that obligation's next occurrence, so
+    /// the day panel opens on the bill the reminder was about. An
+    /// obligation that was archived or deleted in the meantime leaves the
+    /// calendar on today rather than jumping somewhere arbitrary.
+    private func revealObligation(_ obligationID: UUID?) {
+        guard let obligationID else { return }
+        router.pendingObligationID = nil
+        let obligations = (try? modelContext.fetch(FetchDescriptor<RecurringObligation>())) ?? []
+        guard let obligation = obligations.first(where: { $0.id == obligationID && !$0.isArchived }),
+              let dueDay = obligation.dueDay else { return }
+        jump(to: DueDateRule.nextOccurrence(
+            dueDay: dueDay,
+            onOrAfter: appEnvironment.dateProvider.now,
+            shift: obligation.dueDateShiftRule
+        ))
     }
 
     private func jump(to date: Date) {
