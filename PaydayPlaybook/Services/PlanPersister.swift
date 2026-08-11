@@ -32,7 +32,10 @@ struct PlanningInputBuilder {
 
     /// Assembles the generator input from the live onboarding/settings rows.
     /// Every value is the user's own; nothing is defaulted silently.
-    func build(calculationVersion: Int = PlanContract.currentCalculationVersion) throws -> StoredPlanInput {
+    func build(
+        calculationVersion: Int = PlanContract.currentCalculationVersion,
+        asOf: Date? = nil
+    ) throws -> StoredPlanInput {
         guard let schedule = try context.fetch(
             FetchDescriptor<IncomeSchedule>(predicate: #Predicate { !$0.isArchived })
         ).first else {
@@ -51,8 +54,12 @@ struct PlanningInputBuilder {
             FetchDescriptor<IncomeChange>(predicate: #Predicate { $0.scheduleID == scheduleID })
         ).sorted { $0.effectiveDate < $1.effectiveDate }
 
+        // Only essential obligations are reserved from every paycheck (V2-07);
+        // the rest are the user's own record and never enter the generator.
         let obligations = try context.fetch(
-            FetchDescriptor<RecurringObligation>(predicate: #Predicate { !$0.isArchived })
+            FetchDescriptor<RecurringObligation>(
+                predicate: #Predicate { !$0.isArchived && $0.isEssential }
+            )
         ).sorted { ($0.createdAt, $0.name) < ($1.createdAt, $1.name) }
 
         let debts = try context.fetch(
@@ -87,11 +94,13 @@ struct PlanningInputBuilder {
                     apr: $0.apr, minimumAmount: $0.minimumAmount,
                     isExtraPrincipalEligible: $0.isExtraPrincipalEligible,
                     creditLimit: $0.creditLimit, dueDayOfMonth: $0.dueDayOfMonth,
-                    originalPrincipal: $0.originalPrincipal
+                    originalPrincipal: $0.originalPrincipal,
+                    prepayment: $0.prepayment
                 )
             },
             paycheckCap: StoredPlanInput.defaultPaycheckCap,
-            timeZoneID: TimeZone.current.identifier
+            timeZoneID: TimeZone.current.identifier,
+            asOf: asOf
         )
     }
 }

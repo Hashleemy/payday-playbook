@@ -50,6 +50,10 @@ final class RecurringObligation {
     var dueDay: Int?
     /// Cash account the obligation is paid from (usually a reserves account).
     var accountID: UUID?
+    /// Must-pay (V2-07). Essential obligations are reserved from every
+    /// paycheck before any debt money; non-essential ones are recorded for
+    /// the user's own picture and left out of the generator input.
+    var isEssential: Bool = true
     var isArchived: Bool = false
     /// Set only by migration for Lem's car/train rows: "car" / "train".
     /// Maps legacy fixed-reserve fields and ledger entry types to this row.

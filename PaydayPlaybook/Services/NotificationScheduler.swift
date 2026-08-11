@@ -75,7 +75,7 @@ final class NotificationScheduler: ObservableObject {
         let today = DateMath.startOfDay(dateProvider.now)
         let windowEnd = DateMath.addingDays(windowDays, to: today)
 
-        guard let plan = try PlanSeeder.existingBaseline(context: context) else { return requests }
+        guard let plan = try PlanSeeder.currentPlan(context: context) else { return requests }
         let planID = plan.id
         let planItems = try context.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planID })

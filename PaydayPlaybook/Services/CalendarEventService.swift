@@ -92,7 +92,7 @@ struct CalendarEventService {
         let startDay = DateMath.startOfDay(start)
         let endDay = DateMath.startOfDay(end)
 
-        guard let plan = try PlanSeeder.existingBaseline(context: context) else { return [] }
+        guard let plan = try PlanSeeder.currentPlan(context: context) else { return [] }
         let planID = plan.id
         let planItems = try context.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planID })
