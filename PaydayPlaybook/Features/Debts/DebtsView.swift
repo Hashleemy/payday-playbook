@@ -30,8 +30,14 @@ struct DebtsView: View {
         NavigationStack {
             List {
                 Section("Avalanche order") {
-                    if active.isEmpty && !balances.isEmpty {
-                        Label("All cards are paid off", systemImage: "party.popper")
+                    if balances.isEmpty {
+                        EmptyStateView(
+                            title: "No debts yet",
+                            message: "Debts you add in setup appear here in payoff order.",
+                            symbolName: "creditcard"
+                        )
+                    } else if active.isEmpty {
+                        Label("All debts are paid off", systemImage: "party.popper")
                             .font(.headline)
                             .foregroundStyle(.mint)
                     }
@@ -89,23 +95,33 @@ struct DebtRow: View {
     let item: AccountBalanceService.DebtBalance
 
     private var subtitle: String {
-        let apr = "\((item.debt.apr * 100) as NSDecimalNumber)% APR"
+        let apr = "\(DebtFormat.aprText(item.debt.apr)) APR"
         let due = item.debt.dueDayOfMonth.map { " · due day \($0)" } ?? ""
-        return "Card \(item.debt.planID) · \(apr)\(due)"
+        return "\(item.debt.debtType.shortReference(planID: item.debt.planID)) · \(apr)\(due)"
     }
 
     private var percentPaidText: String {
         "\((item.percentPaid * 100).rounded2) % paid"
     }
 
+    private var utilization: Decimal? {
+        item.debt.utilization(currentBalance: item.balance)
+    }
+
     var body: some View {
         HStack {
+            Image(systemName: item.debt.debtType.iconSystemName)
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.debt.displayName)
                     .font(.body.weight(.medium))
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let utilization {
+                    UtilizationBadge(utilization: utilization)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -116,7 +132,21 @@ struct DebtRow: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(verbatim: "\(item.debt.displayName), balance \(MoneyFormat.string(item.balance)), \(percentPaidText)"))
+        .accessibilityLabel(Text(verbatim: accessibilityText))
+    }
+
+    private var accessibilityText: String {
+        var parts = [
+            item.debt.displayName,
+            item.debt.debtType.displayName,
+            "balance \(MoneyFormat.string(item.balance))",
+            percentPaidText
+        ]
+        if let utilization {
+            let percent = (utilization * 100) as NSDecimalNumber
+            parts.append("using \(Int(truncating: percent)) percent of its limit")
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -132,6 +162,7 @@ struct DebtDetailView: View {
     @State private var item: AccountBalanceService.DebtBalance?
     @State private var baselineToday: Decimal?
     @State private var forecastPayoff: Date?
+    @State private var baselinePayoff: Date?
     @State private var showEdit = false
 
     var body: some View {
@@ -152,30 +183,61 @@ struct DebtDetailView: View {
                     }
                 }
                 Section("Numbers") {
-                    LabeledContent("Original starting balance") {
+                    LabeledContent(item.debt.debtType.showsOriginalPrincipal
+                                   ? "Principal when this plan started"
+                                   : "Balance when this plan started") {
                         MoneyText(amount: item.debt.startingBalance)
+                    }
+                    if item.debt.debtType.showsOriginalPrincipal {
+                        LabeledContent("Original principal") {
+                            if let original = item.debt.originalPrincipal {
+                                MoneyText(amount: original)
+                            } else {
+                                Text("Not recorded").foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    if let limit = item.debt.creditLimit, limit > 0 {
+                        LabeledContent("Credit limit") { MoneyText(amount: limit) }
+                        if let utilization = item.debt.utilization(currentBalance: item.balance) {
+                            LabeledContent("Utilization") {
+                                UtilizationBadge(utilization: utilization)
+                            }
+                        }
+                    } else if item.debt.debtType.supportsCreditLimit {
+                        LabeledContent("Credit limit") {
+                            Text("Not recorded").foregroundStyle(.secondary)
+                        }
                     }
                     if let baselineToday {
                         LabeledContent("Baseline balance for today") {
                             MoneyText(amount: baselineToday)
                         }
                     }
+                    LabeledContent("Debt type") { Text(item.debt.debtType.displayName) }
                     LabeledContent("APR") {
-                        Text("\((item.debt.apr * 100) as NSDecimalNumber)%")
+                        Text(DebtFormat.aprText(item.debt.apr))
                     }
-                    LabeledContent("Minimum") {
+                    LabeledContent(item.debt.debtType.minimumLabel) {
                         if let minimum = item.debt.minimumAmount {
                             MoneyText(amount: minimum)
+                        } else if item.debt.debtType.requiresEnteredMinimum {
+                            Text("Needs an amount").foregroundStyle(.orange)
                         } else {
-                            Text("Baseline estimate").foregroundStyle(.secondary)
+                            Text("Estimated").foregroundStyle(.secondary)
                         }
                     }
                     if let dueDay = item.debt.dueDayOfMonth {
-                        LabeledContent("Due day") { Text("\(dueDay)") }
+                        LabeledContent(item.debt.debtType.dueDayLabel) { Text("\(dueDay)") }
                     }
                     LabeledContent("Avalanche priority") { Text("#\(item.debt.priority)") }
+                    if !item.debt.isExtraPrincipalEligible {
+                        LabeledContent("Extra principal") {
+                            Text("Minimums only").foregroundStyle(.secondary)
+                        }
+                    }
                     LabeledContent("Baseline payoff") {
-                        Text(PlanContract.baselinePayoffDates[planID].map(DateMath.mediumString) ?? "—")
+                        Text(baselinePayoff.map(DateMath.mediumString) ?? "—")
                     }
                     LabeledContent("Forecast payoff") {
                         Text(forecastPayoff.map(DateMath.mediumString) ?? "—")
@@ -195,16 +257,16 @@ struct DebtDetailView: View {
                     Button {
                         showEdit = true
                     } label: {
-                        Label("Edit Card", systemImage: "pencil")
+                        Label("Edit Debt", systemImage: "pencil")
                     }
                 }
                 paymentHistorySection
                 snapshotHistorySection
             } else {
-                EmptyStateView(title: "Card not found", message: "This card is not part of the plan.")
+                EmptyStateView(title: "Debt not found", message: "This debt is not part of the plan.")
             }
         }
-        .navigationTitle(item?.debt.displayName ?? "Card \(planID)")
+        .navigationTitle(item?.debt.displayName ?? "Debt \(planID)")
         .onAppear(perform: reload)
         .onChange(of: ledgerEntries.count) { _, _ in reload() }
         .onChange(of: allSnapshots.count) { _, _ in reload() }
@@ -272,12 +334,22 @@ struct DebtDetailView: View {
         baselineToday = baselineBalanceToday()
         forecastPayoff = (try? appEnvironment.reforecastService(context: modelContext).latestForecast())?
             .perCardPayoffDates.first { $0.debtPlanID == planID }?.payoffDate
+        // Baseline payoff comes from this install's own milestones, so it is
+        // right for generated plans too — not only Original Plan v1.
+        let milestones = (try? modelContext.fetch(FetchDescriptor<Milestone>())) ?? []
+        baselinePayoff = milestones
+            .first { $0.type == .cardPaidOff && $0.relatedDebtPlanID == planID }?
+            .baselineDate
+            ?? PlanContract.baselinePayoffDates[planID]
     }
 
-    /// Baseline (Original Plan v1) balance for this card as of today.
+    /// Planned balance for this debt as of today, from the plan that owns the
+    /// schedule (the active plan version, else the stored baseline).
     private func baselineBalanceToday() -> Decimal? {
         let today = DateMath.startOfDay(appEnvironment.dateProvider.now)
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return nil }
+        let plans = (try? modelContext.fetch(FetchDescriptor<PlanVersion>())) ?? []
+        let baseline = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil
+        guard let plan = plans.first(where: \.isActive) ?? baseline else { return nil }
         let planVersionID = plan.id
         let items = (try? modelContext.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planVersionID })
@@ -296,55 +368,81 @@ struct DebtDetailView: View {
     }
 }
 
-/// Editing card metadata never touches seeded balances or APR history silently;
-/// APR/minimum edits flow into the next reforecast. Fields edit local state so
-/// Cancel discards cleanly.
+/// Editing debt metadata never touches recorded balances or history silently;
+/// APR/minimum/due-date edits flow into the next reforecast. Fields edit local
+/// state so Cancel discards cleanly. Per-type fields follow MVP_LAYOUT §4.7.
 struct DebtEditView: View {
     let debt: DebtAccount
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appEnvironment: AppEnvironment
 
+    @State private var debtType: DebtType = .creditCard
     @State private var nameText = ""
     @State private var lastFourText = ""
     @State private var aprText = ""
     @State private var minimumText = ""
     @State private var dueDayText = ""
+    @State private var creditLimitText = ""
+    @State private var originalPrincipalText = ""
+    @State private var extraPrincipalEligible = true
     @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Card") {
+                Section("Debt") {
+                    Picker("Type", selection: $debtType) {
+                        ForEach(DebtType.allCases) { type in
+                            Label(type.displayName, systemImage: type.iconSystemName).tag(type)
+                        }
+                    }
+                    .accessibilityIdentifier("debt.typePicker")
                     TextField("Nickname / issuer", text: $nameText)
                     TextField("Last four digits (optional)", text: $lastFourText)
                         .keyboardType(.numberPad)
                 }
                 Section("Terms") {
-                    HStack {
-                        Text("APR %")
-                        Spacer()
-                        TextField("APR", text: $aprText)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 100)
+                    fieldRow("APR %", placeholder: "APR", text: $aprText, keyboard: .decimalPad)
+                    fieldRow(
+                        debtType.minimumLabel,
+                        placeholder: debtType.requiresEnteredMinimum ? "Required" : "Optional",
+                        text: $minimumText,
+                        keyboard: .decimalPad
+                    )
+                    if debtType.requiresEnteredMinimum {
+                        Text("Installment debts need their contractual payment — it isn't estimated.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    HStack {
-                        Text("Minimum payment")
-                        Spacer()
-                        TextField("Optional", text: $minimumText)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 100)
+                    fieldRow(debtType.dueDayLabel, placeholder: "1–31", text: $dueDayText, keyboard: .numberPad)
+                    Text("Days 29–31 fall on the last day of shorter months.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if debtType.supportsCreditLimit {
+                    Section("Credit card") {
+                        fieldRow("Credit limit (optional)", placeholder: "Optional", text: $creditLimitText, keyboard: .decimalPad)
+                        Text("Used to show utilization. It never changes how payments are allocated.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    HStack {
-                        Text("Statement due day")
-                        Spacer()
-                        TextField("1–28", text: $dueDayText)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 100)
+                }
+                if debtType.showsOriginalPrincipal {
+                    Section("Principal") {
+                        fieldRow("Original principal (optional)", placeholder: "Optional", text: $originalPrincipalText, keyboard: .decimalPad)
+                        Text("Used for percent-paid display only.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
+                }
+                Section {
+                    Toggle("Extra principal allowed", isOn: $extraPrincipalEligible)
+                    Text(extraPrincipalEligible
+                         ? "Extra money can go here once it's the top-priority debt."
+                         : "This debt receives its minimum only — nothing extra, in any plan.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 if let errorMessage {
                     Section {
@@ -363,7 +461,7 @@ struct DebtEditView: View {
                 }
                 .listRowBackground(Color.clear)
             }
-            .navigationTitle("Edit card")
+            .navigationTitle("Edit debt")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -371,12 +469,34 @@ struct DebtEditView: View {
                 }
             }
             .onAppear {
+                debtType = debt.debtType
                 nameText = debt.displayName
                 lastFourText = debt.lastFour ?? ""
                 aprText = MoneyFormat.editingString(debt.apr * 100)
                 minimumText = debt.minimumAmount.map(MoneyFormat.editingString) ?? ""
                 dueDayText = debt.dueDayOfMonth.map(String.init) ?? ""
+                creditLimitText = debt.creditLimit.map(MoneyFormat.editingString) ?? ""
+                originalPrincipalText = debt.originalPrincipal.map(MoneyFormat.editingString) ?? ""
+                extraPrincipalEligible = debt.isExtraPrincipalEligible
             }
+        }
+    }
+
+    private func fieldRow(
+        _ label: String,
+        placeholder: String,
+        text: Binding<String>,
+        keyboard: UIKeyboardType
+    ) -> some View {
+        HStack {
+            Text(label)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            TextField(placeholder, text: text)
+                .keyboardType(keyboard)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 120)
+                .accessibilityLabel(label)
         }
     }
 
@@ -385,33 +505,73 @@ struct DebtEditView: View {
             errorMessage = "Enter an APR between 0 and 100."
             return
         }
-        if !minimumText.isEmpty {
-            guard let minimum = MoneyFormat.parse(minimumText), !minimum.isNegative else {
-                errorMessage = "The minimum payment cannot be negative."
-                return
-            }
-            debt.minimumAmount = minimum
-        } else {
-            debt.minimumAmount = nil
+        let minimum: Decimal? = minimumText.isEmpty ? nil : MoneyFormat.parse(minimumText)
+        if !minimumText.isEmpty && minimum == nil {
+            errorMessage = "Enter a valid \(debtType.minimumLabel.lowercased())."
+            return
         }
+        var dueDay: Int?
         if !dueDayText.isEmpty {
-            guard let day = Int(dueDayText), (1...28).contains(day) else {
-                errorMessage = "Enter a due day between 1 and 28."
+            guard let day = Int(dueDayText) else {
+                errorMessage = "Enter a due day between 1 and 31."
                 return
             }
-            debt.dueDayOfMonth = day
-        } else {
-            debt.dueDayOfMonth = nil
+            dueDay = day
+        }
+        let creditLimit: Decimal? = debtType.supportsCreditLimit && !creditLimitText.isEmpty
+            ? MoneyFormat.parse(creditLimitText)
+            : nil
+        if debtType.supportsCreditLimit && !creditLimitText.isEmpty && creditLimit == nil {
+            errorMessage = "Enter a valid credit limit."
+            return
+        }
+        let originalPrincipal: Decimal? = originalPrincipalText.isEmpty
+            ? nil
+            : MoneyFormat.parse(originalPrincipalText)
+        if !originalPrincipalText.isEmpty && originalPrincipal == nil {
+            errorMessage = "Enter a valid original principal."
+            return
         }
         let trimmedName = nameText.trimmingCharacters(in: .whitespaces)
-        debt.displayName = trimmedName.isEmpty ? "Card \(debt.planID)" : trimmedName
+        let resolvedName = trimmedName.isEmpty
+            ? debtType.shortReference(planID: debt.planID)
+            : trimmedName
+
+        // One validation path with the model layer, so the UI can never store
+        // a combination the plan generator would reject.
+        do {
+            try ModelValidation.validateDebt(
+                type: debtType,
+                displayName: resolvedName,
+                currentBalance: debt.startingBalance,
+                originalPrincipal: originalPrincipal,
+                apr: aprPercent / 100,
+                minimumAmount: minimum,
+                creditLimit: creditLimit,
+                dueDayOfMonth: dueDay,
+                lastFour: String(lastFourText.filter(\.isNumber).prefix(4))
+            )
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return
+        }
+
+        let dueDayChanged = debt.dueDayOfMonth != dueDay
+        debt.debtType = debtType
+        debt.displayName = resolvedName
         let digits = String(lastFourText.filter(\.isNumber).prefix(4))
         debt.lastFour = digits.isEmpty ? nil : digits
         debt.apr = aprPercent / 100
+        debt.minimumAmount = minimum
+        debt.dueDayOfMonth = dueDay
+        debt.creditLimit = debtType.supportsCreditLimit ? creditLimit : nil
+        debt.originalPrincipal = originalPrincipal
+        debt.isExtraPrincipalEligible = extraPrincipalEligible
         debt.updatedAt = Date()
         do {
             try modelContext.save()
-            _ = try? appEnvironment.reforecastService(context: modelContext).reforecast(trigger: .aprChange)
+            _ = try? appEnvironment.reforecastService(context: modelContext)
+                .reforecast(trigger: dueDayChanged ? .planEdit : .aprChange)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
