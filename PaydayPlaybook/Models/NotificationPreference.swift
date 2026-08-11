@@ -8,6 +8,8 @@ enum NotificationKind: String, Codable, CaseIterable, Identifiable {
     case cardDueToday
     case weeklySummary
     case milestoneApproaching
+    case obligationDueSoon
+    case obligationDueToday
 
     var id: String { rawValue }
 
@@ -15,10 +17,12 @@ enum NotificationKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .paydayMorning: return "Payday play"
         case .paydayEveningIncomplete: return "Incomplete payday reminder"
-        case .cardDueSoon: return "Card due soon"
-        case .cardDueToday: return "Card due today"
+        case .cardDueSoon: return "Debt due soon"
+        case .cardDueToday: return "Debt due today"
         case .weeklySummary: return "Weekly summary"
         case .milestoneApproaching: return "Milestone approaching"
+        case .obligationDueSoon: return "Obligation due soon"
+        case .obligationDueToday: return "Obligation due today"
         }
     }
 }
@@ -65,7 +69,16 @@ final class NotificationPreference {
             NotificationPreference(type: .cardDueSoon, enabled: true, hour: 9, leadDays: 3),
             NotificationPreference(type: .cardDueToday, enabled: true, hour: 9),
             NotificationPreference(type: .weeklySummary, enabled: true, hour: 18),
-            NotificationPreference(type: .milestoneApproaching, enabled: true, hour: 9, leadDays: 1)
+            NotificationPreference(type: .milestoneApproaching, enabled: true, hour: 9, leadDays: 1),
+            NotificationPreference(type: .obligationDueSoon, enabled: true, hour: 9, leadDays: 3),
+            NotificationPreference(type: .obligationDueToday, enabled: true, hour: 9)
         ]
+    }
+
+    /// Default rows for kinds missing from an existing store — added by the
+    /// schema-2 upgrade without touching any existing preference row.
+    static func missingDefaults(existing: [NotificationPreference]) -> [NotificationPreference] {
+        let present = Set(existing.map(\.typeRaw))
+        return seedDefaults().filter { !present.contains($0.typeRaw) }
     }
 }
