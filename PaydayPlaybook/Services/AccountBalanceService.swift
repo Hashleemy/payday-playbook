@@ -205,4 +205,71 @@ struct AccountBalanceService {
     func totalActualDebt() throws -> Decimal {
         try debtBalances().reduce(Decimal.zero) { $0 + $1.balance }.rounded2
     }
+
+    // MARK: - Named accounts (V2-03, V2-13)
+
+    struct NamedAccountState {
+        let account: CashAccount
+        let balance: Decimal
+        /// Date of the authoritative confirmation the balance is based on,
+        /// nil when it derives from the onboarding-entered balance.
+        let asOfDate: Date?
+    }
+
+    /// Balance per user-named account, for dashboard account cards.
+    ///
+    /// Accounts migrated from the 0.1.x Checking 1/2 pair keep their derived
+    /// legacy-ledger balances (`checking1State`/`checking2State` remain the
+    /// truth for those raws). Accounts created in v0.2.0 onboarding derive
+    /// from the entered balance, overridden by authoritative
+    /// `BalanceSnapshot.cashAccountID` confirmations, plus account-linked
+    /// ledger deltas after the base date.
+    func namedAccountStates(plan: PlanVersion?, planItems: [PaydayPlanItem]) throws -> [NamedAccountState] {
+        let accounts = try CashAccountRepository(context: context).activeAccounts()
+        guard !accounts.isEmpty else { return [] }
+
+        let today = DateMath.startOfDay(dateProvider.now)
+        let snapshots = try context.fetch(FetchDescriptor<BalanceSnapshot>())
+        let entries = try context.fetch(FetchDescriptor<LedgerEntry>())
+
+        return try accounts.map { account in
+            switch account.legacyKind {
+            case .checking1:
+                if let plan {
+                    let state = try checking1State(plan: plan, planItems: planItems)
+                    return NamedAccountState(account: account, balance: state.actualBalance, asOfDate: state.asOfDate)
+                }
+                return NamedAccountState(account: account, balance: account.currentBalance, asOfDate: nil)
+            case .checking2:
+                let state = try checking2State()
+                return NamedAccountState(account: account, balance: state.totalBalance, asOfDate: nil)
+            case nil:
+                let accountID = account.id
+                let authoritative = snapshots
+                    .filter { snapshot in
+                        snapshot.cashAccountID == accountID
+                            && snapshot.isAuthoritative
+                            && DateMath.startOfDay(snapshot.effectiveDate) <= today
+                    }
+                    .max { lhs, rhs in
+                        if lhs.effectiveDate != rhs.effectiveDate { return lhs.effectiveDate < rhs.effectiveDate }
+                        return lhs.createdAt < rhs.createdAt
+                    }
+                let baseAmount = authoritative?.amount ?? account.currentBalance
+                let baseCreatedAt = authoritative?.createdAt ?? account.updatedAt
+
+                var balance = baseAmount
+                for entry in entries where DateMath.startOfDay(entry.effectiveDate) <= today {
+                    guard entry.createdAt > baseCreatedAt else { continue }
+                    if entry.destinationAccountID == accountID { balance += entry.amount }
+                    if entry.sourceAccountID == accountID { balance -= entry.amount }
+                }
+                return NamedAccountState(
+                    account: account,
+                    balance: balance.rounded2,
+                    asOfDate: authoritative?.effectiveDate
+                )
+            }
+        }
+    }
 }

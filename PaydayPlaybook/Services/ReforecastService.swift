@@ -17,6 +17,13 @@ struct ReforecastService {
         trigger: ForecastTrigger,
         varianceContext: String? = nil
     ) throws -> ForecastSnapshot? {
+        // Engine dispatch (V2-15): plans stamped calculation version 2 route
+        // through the calc-v2 engine; Original Plan v1 stays on the frozen
+        // calc-v1 path below, untouched.
+        let generatedPlan = try context.fetch(FetchDescriptor<PlanVersion>()).first(where: \.isActive)
+        if let generatedPlan, generatedPlan.calculationVersion >= PlanContract.currentCalculationVersion {
+            return try reforecastCalcV2(plan: generatedPlan, trigger: trigger, varianceContext: varianceContext)
+        }
         guard let plan = try PlanSeeder.existingBaseline(context: context) else { return nil }
         // Schedule dates come from the immutable baseline; allocation amounts
         // come from the active plan version when the user has created one.
@@ -102,6 +109,50 @@ struct ReforecastService {
                 .map { PerCardPayoff(debtPlanID: $0.key, payoffDate: $0.value) }
                 .sorted { $0.debtPlanID < $1.debtPlanID },
             summaryExplanation: result.explanation
+        )
+        context.insert(snapshot)
+        try context.save()
+        return snapshot
+    }
+
+    /// Calc-v2 reforecast: overlays authoritative snapshots on the plan's
+    /// stored input via `AvalanchePlanEngine.reforecast` and records a
+    /// `ForecastSnapshot`. The plan's own rows are never touched (R-15).
+    private func reforecastCalcV2(
+        plan: PlanVersion,
+        trigger: ForecastTrigger,
+        varianceContext: String?
+    ) throws -> ForecastSnapshot? {
+        let service = GeneratedPlanService(context: context, dateProvider: dateProvider)
+        guard let result = try service.reforecastResult(for: plan) else { return nil }
+        let stored = try GeneratedPlanService.storedInput(for: plan)
+        let displayIDs = Dictionary(uniqueKeysWithValues: stored.debts.map { ($0.id, $0.displayID) })
+
+        var explanation = result.notPayableAsConfigured
+            ? "Estimated from your latest confirmed balances. As configured, the remaining budget doesn't retire every debt inside the projection horizon."
+            : "Estimated from your latest confirmed balances."
+        if let varianceContext, !varianceContext.isEmpty {
+            explanation += " " + varianceContext
+        }
+
+        let snapshot = ForecastSnapshot(
+            calculatedAt: dateProvider.now,
+            sourcePlanVersionID: plan.id,
+            triggerType: trigger,
+            projectedPayoffDate: result.forecastPayoffDate,
+            remainingPaychecks: result.paycheckCount,
+            estimatedRemainingInterest: result.estimatedRemainingInterest,
+            perCardPayoffDates: result.debtSummaries
+                .compactMap { summary in
+                    summary.payoffDate.map {
+                        PerCardPayoff(
+                            debtPlanID: displayIDs[summary.debtID] ?? summary.debtID.uuidString,
+                            payoffDate: $0
+                        )
+                    }
+                }
+                .sorted { $0.debtPlanID < $1.debtPlanID },
+            summaryExplanation: explanation
         )
         context.insert(snapshot)
         try context.save()
