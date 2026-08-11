@@ -14,6 +14,9 @@ enum PlanContract {
     static let currentSchemaVersion = 2
     /// Calculation version for newly generated plans (MVP_LAYOUT §5).
     static let currentCalculationVersion = 2
+    /// Name of the baseline a fresh install generates in onboarding (A-04).
+    /// The migrated install's row keeps its historical `planName` instead.
+    static let generatedPlanName = "Plan v1"
 
     static let startingDebtTotal = Decimal(string: "29681.61")!
     static let startingChecking1 = Decimal(string: "900.00")!

@@ -32,34 +32,145 @@ final class PaydayPlaybookUITests: XCTestCase {
         return app
     }
 
-    // Clean install: onboarding shows the exact plan and lands on Today (F-01).
+    /// Types into a field that may need scrolling into view first.
+    private func type(_ text: String, into field: XCUIElement, in app: XCUIApplication) {
+        if !field.isHittable { app.swipeUp() }
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(text)
+    }
+
+    private func tapContinue(_ identifier: String, in app: XCUIApplication) {
+        let button = app.buttons[identifier]
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "\(identifier) should exist")
+        button.tap()
+    }
+
+    // Clean first run: the full setup flow generates a plan from the user's
+    // own numbers and lands on Today (V2-01, V2-10).
     @MainActor
-    func testOnboardingSeedsPlanAndLandsOnToday() throws {
+    func testFirstRunSetupGeneratesAPlanAndLandsOnToday() throws {
         let app = launch()
 
-        let loadPlan = app.buttons["onboarding.loadPlan"]
-        XCTAssertTrue(loadPlan.waitForExistence(timeout: 10))
-        app.swipeUp()
-        loadPlan.tap()
+        // Step 1 — welcome and the privacy promise.
+        XCTAssertTrue(app.buttons["onboarding.setUpPlan"].waitForExistence(timeout: 10))
+        XCTAssertTrue(anyText(app, containing: "stays on this iPhone").exists)
+        app.buttons["onboarding.setUpPlan"].tap()
 
-        // Confirmation screen shows the exact seeded numbers.
-        XCTAssertTrue(anyText(app, containing: "$29,681.61").waitForExistence(timeout: 5))
-        XCTAssertTrue(anyText(app, containing: "Jun 24, 2027").exists)
+        // Step 2 — goal and guardrails come prefilled from the posture.
+        XCTAssertTrue(app.buttons["goal.posture.steady"].waitForExistence(timeout: 5))
+        app.buttons["goal.posture.steady"].tap()
+        tapContinue("onboarding.goalContinue", in: app)
+
+        // Step 3 — one checking account.
+        tapContinue("accounts.add", in: app)
+        type("Everyday", into: app.textFields["account.name"], in: app)
+        type("1200", into: app.textFields["Balance today"], in: app)
+        app.buttons["account.save"].tap()
+        tapContinue("onboarding.accountsContinue", in: app)
+
+        // Steps 4 and 5 — type picker, then the card's own fields.
+        tapContinue("debts.add", in: app)
+        XCTAssertTrue(app.buttons["debtType.creditCard"].waitForExistence(timeout: 5))
+        app.buttons["debtType.creditCard"].tap()
+        type("Blue card", into: app.textFields["debt.name"], in: app)
+        type("2000", into: app.textFields["Balance today"], in: app)
+        type("24.99", into: app.textFields["Interest rate (APR)"], in: app)
+        app.buttons["debt.save"].tap()
+        tapContinue("onboarding.debtsContinue", in: app)
+
+        // Step 6 — income.
+        type("2000", into: app.textFields["Take-home per paycheck"], in: app)
+        tapContinue("onboarding.incomeContinue", in: app)
+
+        // Step 7 — bills can be skipped.
+        tapContinue("onboarding.obligationsContinue", in: app)
+
+        // Step 8 — dates and reminders preview, permission not required.
+        XCTAssertTrue(anyText(app, containing: "Your next paydays").waitForExistence(timeout: 5))
+        tapContinue("onboarding.remindersContinue", in: app)
+
+        // Steps 9 and 10 — review, then generate and commit.
+        XCTAssertTrue(app.buttons["onboarding.generate"].waitForExistence(timeout: 5))
+        app.buttons["onboarding.generate"].tap()
+        XCTAssertTrue(app.buttons["onboarding.usePlan"].waitForExistence(timeout: 15))
         app.buttons["onboarding.usePlan"].tap()
 
-        // Cards can be skipped without blocking.
-        XCTAssertTrue(app.buttons["onboarding.cardsContinue"].waitForExistence(timeout: 5))
-        app.buttons["onboarding.cardsContinue"].tap()
-
-        // Notifications are optional.
-        XCTAssertTrue(app.buttons["onboarding.skipNotifications"].waitForExistence(timeout: 5))
-        app.buttons["onboarding.skipNotifications"].tap()
-
-        // Today dashboard with the payday check-in ready (today is payday #1).
-        let checkInButton = app.buttons["today.checkInButton"]
-        XCTAssertTrue(checkInButton.waitForExistence(timeout: 10))
-        XCTAssertEqual(checkInButton.label, "Start Check-In")
+        // The dashboard, built from the user's own plan.
+        XCTAssertTrue(app.buttons["today.checkInButton"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["Where you stand"].exists)
+    }
+
+    // Setup survives a force-quit mid-flow and resumes on the saved step
+    // with every earlier answer intact (V2-01).
+    @MainActor
+    func testSetupResumesAfterForceQuit() throws {
+        var app = launch()
+
+        XCTAssertTrue(app.buttons["onboarding.setUpPlan"].waitForExistence(timeout: 10))
+        app.buttons["onboarding.setUpPlan"].tap()
+        XCTAssertTrue(app.buttons["goal.posture.fullThrottle"].waitForExistence(timeout: 5))
+        app.buttons["goal.posture.fullThrottle"].tap()
+        tapContinue("onboarding.goalContinue", in: app)
+
+        // Add an account, then kill the app before leaving the step.
+        tapContinue("accounts.add", in: app)
+        type("Everyday", into: app.textFields["account.name"], in: app)
+        type("1200", into: app.textFields["Balance today"], in: app)
+        app.buttons["account.save"].tap()
+        XCTAssertTrue(app.buttons["onboarding.accountsContinue"].waitForExistence(timeout: 5))
+        app.terminate()
+
+        // Relaunch on the same store: resumed, with the account still there.
+        app = launch(reset: false)
+        XCTAssertTrue(app.buttons["onboarding.accountsContinue"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.otherElements["onboarding.resumeBanner"].exists
+            || anyText(app, containing: "Picking up where you left off").exists)
+        XCTAssertTrue(anyText(app, containing: "Everyday").exists)
+
+        // Back to the goal step: the posture answer survived too.
+        app.buttons["onboarding.back"].tap()
+        XCTAssertTrue(app.buttons["goal.posture.fullThrottle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(anyText(app, containing: "$500").exists, "Full-throttle floor suggestion persisted")
+    }
+
+    // The template path still produces the exact Original Plan v1, behind an
+    // explicit warning that it is one person's plan (§4.1).
+    @MainActor
+    func testTemplateLoadShowsWarningAndSeedsOriginalPlan() throws {
+        let app = launch()
+
+        XCTAssertTrue(app.buttons["onboarding.loadTemplate"].waitForExistence(timeout: 10))
+        app.buttons["onboarding.loadTemplate"].tap()
+        XCTAssertTrue(anyText(app, containing: "one specific person's plan").waitForExistence(timeout: 5))
+        app.buttons["Load template"].tap()
+
+        XCTAssertTrue(app.buttons["today.checkInButton"].waitForExistence(timeout: 15))
+        app.tabBars.buttons["Debts"].tap()
+        XCTAssertTrue(anyText(app, containing: "$29,681.61").waitForExistence(timeout: 5)
+            || anyText(app, containing: "Card B").waitForExistence(timeout: 5))
+    }
+
+    // Setup is usable at accessibility text sizes: nothing clipped away, and
+    // every control still carries its label (V2-18).
+    @MainActor
+    func testSetupAtAccessibilityTextSize() throws {
+        let app = launch(extraArguments: [
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityL"
+        ])
+
+        let setUp = app.buttons["onboarding.setUpPlan"]
+        XCTAssertTrue(setUp.waitForExistence(timeout: 10))
+        XCTAssertFalse(setUp.label.isEmpty)
+        setUp.tap()
+
+        // The goal step's controls survive the larger type.
+        XCTAssertTrue(app.buttons["goal.posture.steady"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["goal.posture.steady"].label.isEmpty)
+        let continueButton = app.buttons["onboarding.goalContinue"]
+        XCTAssertTrue(continueButton.exists)
+        XCTAssertTrue(continueButton.isHittable, "Continue stays reachable at accessibility sizes")
     }
 
     // Relaunching after onboarding does not duplicate the seed (F-01) and
@@ -223,7 +334,10 @@ final class PaydayPlaybookUITests: XCTestCase {
         let app = launch(skipOnboarding: true)
         XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 10))
         app.buttons["Settings"].tap()
-        app.buttons["Backup & export"].tap()
+        let backup = app.buttons["Backup & export"]
+        XCTAssertTrue(backup.waitForExistence(timeout: 5))
+        if !backup.isHittable { app.swipeUp() }
+        backup.tap()
         app.buttons["Create JSON backup"].tap()
         let shareRow = app.buttons.matching(NSPredicate(format: "label CONTAINS 'PaydayPlaybook-Backup'")).firstMatch
         XCTAssertTrue(shareRow.waitForExistence(timeout: 5))

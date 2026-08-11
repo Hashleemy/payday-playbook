@@ -68,6 +68,18 @@ final class DebtAccount {
     var creditLimit: Decimal?
     /// V2-05 / R-07. Ineligible debts receive minimums only.
     var isExtraPrincipalEligible: Bool = true
+    /// Optional free-text note captured in setup ("hospital bill, no
+    /// interest until March"). Display only — never an allocation input.
+    var setupNote: String?
+    /// Set when the user picked or confirmed the type themselves. Migrated
+    /// 0.1.x rows leave it nil — they were defaulted to `.creditCard`, which
+    /// was true for the one migrated install but is an assumption, so the
+    /// upgrade checklist offers to confirm it rather than claiming it.
+    var debtTypeConfirmedAt: Date?
+    /// The user explicitly said they don't know this card's limit. Distinct
+    /// from "not asked yet": once marked, the app stops asking and simply
+    /// shows no utilization.
+    var creditLimitMarkedUnknown: Bool = false
     /// V2-05 tri-state for installment debts: "eligible" / "ineligible" /
     /// "unknown" (`PrepaymentEligibility` raw values). Nil falls back to the
     /// boolean above (schema-additive; migrated rows are all credit cards).
