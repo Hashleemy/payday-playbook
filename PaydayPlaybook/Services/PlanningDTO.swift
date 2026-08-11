@@ -2,11 +2,11 @@ import Foundation
 
 // MARK: - Shared planning contract (Agent 2 ↔ Agent 3 boundary)
 //
-// `PlanningInput` and `PlanningResult` are the storage-independent DTOs the
+// `StoredPlanInput` and `StoredPlanResult` are the storage-independent DTOs the
 // calc-v2 generator consumes and produces. Foundation only — the calculation
 // engine must never import SwiftData or touch a ModelContext. The data layer
-// builds `PlanningInput` from models (`PlanningInputBuilder`), persists a
-// `PlanningResult` as an immutable `PlanVersion` graph (`PlanPersister`), and
+// builds `StoredPlanInput` from models (`PlanningInputBuilder`), persists a
+// `StoredPlanResult` as an immutable `PlanVersion` graph (`PlanPersister`), and
 // stores the encoded input on `PlanVersion.inputSnapshotData` so every
 // generated plan is reproducible.
 //
@@ -43,10 +43,11 @@ extension KeyedDecodingContainer {
     }
 }
 
-// MARK: - PlanningInput
+// MARK: - StoredPlanInput
 
-/// A future take-home change, effective on its date (V2-06).
-struct PlanningIncomeChange: Equatable {
+/// A future take-home change, effective on its date (V2-06). Shared by the
+/// stored snapshot format and the calc-v2 engine input (`IncomeInput`).
+struct PlanningIncomeChange: Equatable, Sendable {
     var effectiveDate: Date
     var amount: Decimal
 }
@@ -80,7 +81,7 @@ struct PlanningDebt: Equatable {
 }
 
 /// Everything the calc-v2 generator needs, captured at generation time.
-struct PlanningInput: Equatable {
+struct StoredPlanInput: Equatable {
     var calculationVersion: Int
     var cadence: PayCadence
     /// Day of month for `.monthly`; both days for `.semimonthly` (R-11 clamped).
@@ -106,7 +107,7 @@ struct PlanningInput: Equatable {
     static let defaultPaycheckCap = 600
 }
 
-// MARK: - PlanningResult
+// MARK: - StoredPlanResult
 
 /// A per-paycheck obligation reserve line (frozen R-04 output).
 struct PlanningObligationReserve: Equatable {
@@ -143,7 +144,7 @@ struct PlanningDebtPayoff: Equatable {
 
 /// The generated plan. Persisting this (with its input) creates an immutable
 /// baseline `PlanVersion`; the result itself never mutates.
-struct PlanningResult: Equatable {
+struct StoredPlanResult: Equatable {
     var calculationVersion: Int
     var paydays: [PlanningPayday]
     var payoffDate: Date?
@@ -248,7 +249,7 @@ extension PlanningDebt: Codable {
     }
 }
 
-extension PlanningInput: Codable {
+extension StoredPlanInput: Codable {
     private enum CodingKeys: String, CodingKey {
         case calculationVersion, cadence, monthlyPayDay, semimonthlyPayDay1, semimonthlyPayDay2
         case nextPayday, baseTakeHome, incomeChanges
@@ -382,7 +383,7 @@ extension PlanningDebtPayoff: Codable {
     }
 }
 
-extension PlanningResult: Codable {
+extension StoredPlanResult: Codable {
     private enum CodingKeys: String, CodingKey {
         case calculationVersion, paydays, payoffDate, totalEstimatedInterest
         case paycheckCount, debtPayoffs, cappedAtPaycheckLimit
@@ -416,16 +417,16 @@ extension PlanningResult: Codable {
 /// Canonical encoder/decoder for `PlanVersion.inputSnapshotData` — sorted
 /// keys and ISO-8601 dates so identical inputs produce identical bytes.
 enum PlanningSnapshotCoder {
-    static func encode(_ input: PlanningInput) throws -> Data {
+    static func encode(_ input: StoredPlanInput) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return try encoder.encode(input)
     }
 
-    static func decode(_ data: Data) throws -> PlanningInput {
+    static func decode(_ data: Data) throws -> StoredPlanInput {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(PlanningInput.self, from: data)
+        return try decoder.decode(StoredPlanInput.self, from: data)
     }
 }

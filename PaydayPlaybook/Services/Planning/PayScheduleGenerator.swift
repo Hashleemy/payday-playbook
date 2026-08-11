@@ -48,7 +48,7 @@ enum PayScheduleGenerator {
     /// first configured (clamped) day on/after itself, so a slightly-off
     /// anchor still yields a valid timeline. Weekly/biweekly use the anchor
     /// verbatim.
-    static func paydays(cadence: PayCadence, anchor: Date, count: Int) -> [Date] {
+    static func paydays(cadence: PlanningPayCadence, anchor: Date, count: Int) -> [Date] {
         guard count > 0 else { return [] }
         let start = DateMath.startOfDay(anchor)
         switch cadence {
@@ -91,7 +91,7 @@ enum PayScheduleGenerator {
 
     /// The cadence occurrence immediately before `date` — used to measure the
     /// first paycheck's interest-accrual period.
-    static func previousOccurrence(cadence: PayCadence, before date: Date) -> Date {
+    static func previousOccurrence(cadence: PlanningPayCadence, before date: Date) -> Date {
         let start = DateMath.startOfDay(date)
         switch cadence {
         case .weekly:

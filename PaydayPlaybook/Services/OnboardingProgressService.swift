@@ -55,8 +55,8 @@ struct OnboardingProgressService {
     @discardableResult
     func finish(
         planName: String,
-        input: PlanningInput,
-        result: PlanningResult
+        input: StoredPlanInput,
+        result: StoredPlanResult
     ) throws -> PlanVersion {
         let now = dateProvider.now
         let persister = PlanPersister(context: context)
