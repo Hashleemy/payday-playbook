@@ -68,6 +68,21 @@ final class DebtAccount {
     var creditLimit: Decimal?
     /// V2-05 / R-07. Ineligible debts receive minimums only.
     var isExtraPrincipalEligible: Bool = true
+    /// V2-11: user-selected weekend handling for the due date. Nil means
+    /// `.exactDay` — dates never shift unless the user chose a rule.
+    var dueDateShiftRuleRaw: String?
+    /// V2-11 / MVP_LAYOUT §9: newline-separated audit trail of due-date
+    /// edits, appended prospectively; historical rows are never rewritten.
+    var dueDateAuditLog: String?
+
+    var dueDateShiftRule: DueDateShiftRule {
+        get { dueDateShiftRuleRaw.flatMap(DueDateShiftRule.init(rawValue:)) ?? .exactDay }
+        set { dueDateShiftRuleRaw = newValue == .exactDay ? nil : newValue.rawValue }
+    }
+
+    func appendDueDateAudit(_ note: String) {
+        dueDateAuditLog = dueDateAuditLog.map { $0 + "\n" + note } ?? note
+    }
 
     var debtType: DebtType {
         get { DebtType(rawValue: debtTypeRaw) ?? .creditCard }
