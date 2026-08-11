@@ -74,6 +74,11 @@ final class DebtAccount {
     /// V2-11 / MVP_LAYOUT §9: newline-separated audit trail of due-date
     /// edits, appended prospectively; historical rows are never rewritten.
     var dueDateAuditLog: String?
+    /// V2-11: the date the current due day took effect. Nil means "always"
+    /// — the due day has never been edited, so it describes history too.
+    /// Once edited, occurrences before this date are not rendered: the app
+    /// does not know what the old due day was and will not invent one.
+    var dueDayEffectiveFrom: Date?
 
     var dueDateShiftRule: DueDateShiftRule {
         get { dueDateShiftRuleRaw.flatMap(DueDateShiftRule.init(rawValue:)) ?? .exactDay }

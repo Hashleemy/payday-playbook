@@ -65,7 +65,10 @@ final class AppRouterTests: XCTestCase {
         ]
         for (route, reference, expectedTab) in cases {
             let router = AppRouter()
-            router.selectedTab = .calendar
+            // Start somewhere that is not the expected destination, so the
+            // assertion proves the route moved the tab rather than finding
+            // it already there.
+            router.selectedTab = expectedTab == .debts ? .today : .debts
             router.handleNotificationRoute([
                 NotificationScheduler.routeKey: route.rawValue,
                 NotificationScheduler.referenceKey: reference

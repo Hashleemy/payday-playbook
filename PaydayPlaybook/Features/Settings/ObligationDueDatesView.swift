@@ -132,23 +132,27 @@ struct ObligationDueDateEditView: View {
     }
 
     private func save() {
-        let previousDueDay = obligation.dueDay
+        // Validate before mutating: the obligation is a live SwiftData
+        // object, so an early return after assignment would persist an edit
+        // the user never confirmed.
+        var newDueDay: Int?
         if !dueDayText.isEmpty {
             guard let day = Int(dueDayText), DueDateRule.validDays.contains(day) else {
                 errorMessage = "Enter a due day between 1 and 31, or leave it blank."
                 return
             }
-            obligation.dueDay = day
-        } else {
-            obligation.dueDay = nil
+            newDueDay = day
         }
-        if obligation.dueDay != previousDueDay {
+        let previousDueDay = obligation.dueDay
+        obligation.dueDay = newDueDay
+        if newDueDay != previousDueDay {
             obligation.appendDueDateAudit(DueDateRule.auditNote(
                 field: "due day",
                 from: previousDueDay,
-                to: obligation.dueDay,
+                to: newDueDay,
                 on: appEnvironment.dateProvider.now
             ))
+            obligation.dueDayEffectiveFrom = DateMath.startOfDay(appEnvironment.dateProvider.now)
         }
         obligation.dueDateShiftRule = shiftRule
         obligation.updatedAt = Date()

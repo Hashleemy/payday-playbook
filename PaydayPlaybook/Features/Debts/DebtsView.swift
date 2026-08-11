@@ -396,37 +396,44 @@ struct DebtEditView: View {
     }
 
     private func save() {
+        // Validate everything before touching the model: these are live
+        // SwiftData objects, so a half-applied edit followed by an early
+        // return would persist changes the user never got to confirm.
         guard let aprPercent = MoneyFormat.parse(aprText), aprPercent >= 0, aprPercent <= 100 else {
             errorMessage = "Enter an APR between 0 and 100."
             return
         }
+        var newMinimum: Decimal?
         if !minimumText.isEmpty {
             guard let minimum = MoneyFormat.parse(minimumText), !minimum.isNegative else {
                 errorMessage = "The minimum payment cannot be negative."
                 return
             }
-            debt.minimumAmount = minimum
-        } else {
-            debt.minimumAmount = nil
+            newMinimum = minimum
         }
-        let previousDueDay = debt.dueDayOfMonth
+        var newDueDay: Int?
         if !dueDayText.isEmpty {
             guard let day = Int(dueDayText), DueDateRule.validDays.contains(day) else {
                 errorMessage = "Enter a due day between 1 and 31."
                 return
             }
-            debt.dueDayOfMonth = day
-        } else {
-            debt.dueDayOfMonth = nil
+            newDueDay = day
         }
-        if debt.dueDayOfMonth != previousDueDay {
-            // V2-11 / §9: due-date edits are prospective and audited on the item.
+
+        let previousDueDay = debt.dueDayOfMonth
+        debt.minimumAmount = newMinimum
+        debt.dueDayOfMonth = newDueDay
+        if newDueDay != previousDueDay {
+            // V2-11 / §9: due-date edits are prospective and audited on the
+            // item. The effective date stops past months being redrawn with
+            // a due day that was not in force then.
             debt.appendDueDateAudit(DueDateRule.auditNote(
                 field: "due day",
                 from: previousDueDay,
-                to: debt.dueDayOfMonth,
+                to: newDueDay,
                 on: appEnvironment.dateProvider.now
             ))
+            debt.dueDayEffectiveFrom = DateMath.startOfDay(appEnvironment.dateProvider.now)
         }
         debt.dueDateShiftRule = shiftRule
         let trimmedName = nameText.trimmingCharacters(in: .whitespaces)
