@@ -68,10 +68,36 @@ final class DebtAccount {
     var creditLimit: Decimal?
     /// V2-05 / R-07. Ineligible debts receive minimums only.
     var isExtraPrincipalEligible: Bool = true
+    /// V2-05 tri-state for installment debts: "eligible" / "ineligible" /
+    /// "unknown" (`PrepaymentEligibility` raw values). Nil falls back to the
+    /// boolean above (schema-additive; migrated rows are all credit cards).
+    /// `.unknown` means the user hasn't confirmed whether a prepayment
+    /// restriction exists — the engine then withholds extra principal and
+    /// asks for confirmation rather than risking a penalty.
+    var prepaymentRaw: String?
 
     var debtType: DebtType {
         get { DebtType(rawValue: debtTypeRaw) ?? .creditCard }
         set { debtTypeRaw = newValue.rawValue }
+    }
+
+    /// Effective prepayment eligibility. Credit cards never carry prepayment
+    /// penalties, so they are always eligible; installment types use the
+    /// stored tri-state, falling back to the legacy boolean.
+    var prepayment: PrepaymentEligibility {
+        get {
+            guard debtType != .creditCard else { return .eligible }
+            if let prepaymentRaw, let value = PrepaymentEligibility(rawValue: prepaymentRaw) {
+                return value
+            }
+            return isExtraPrincipalEligible ? .eligible : .ineligible
+        }
+        set {
+            prepaymentRaw = newValue.rawValue
+            // Keep the boolean coherent for readers that predate the
+            // tri-state: only confirmed-eligible debts may receive extra.
+            isExtraPrincipalEligible = newValue == .eligible
+        }
     }
 
     /// Denominator for percent-paid display (never allocation).

@@ -32,7 +32,10 @@ struct PlanningInputBuilder {
 
     /// Assembles the generator input from the live onboarding/settings rows.
     /// Every value is the user's own; nothing is defaulted silently.
-    func build(calculationVersion: Int = PlanContract.currentCalculationVersion) throws -> PlanInputSnapshot {
+    func build(
+        calculationVersion: Int = PlanContract.currentCalculationVersion,
+        asOf: Date? = nil
+    ) throws -> PlanInputSnapshot {
         guard let schedule = try context.fetch(
             FetchDescriptor<IncomeSchedule>(predicate: #Predicate { !$0.isArchived })
         ).first else {
@@ -87,11 +90,13 @@ struct PlanningInputBuilder {
                     apr: $0.apr, minimumAmount: $0.minimumAmount,
                     isExtraPrincipalEligible: $0.isExtraPrincipalEligible,
                     creditLimit: $0.creditLimit, dueDayOfMonth: $0.dueDayOfMonth,
-                    originalPrincipal: $0.originalPrincipal
+                    originalPrincipal: $0.originalPrincipal,
+                    prepayment: $0.prepayment
                 )
             },
             paycheckCap: PlanInputSnapshot.defaultPaycheckCap,
-            timeZoneID: TimeZone.current.identifier
+            timeZoneID: TimeZone.current.identifier,
+            asOf: asOf
         )
     }
 }
