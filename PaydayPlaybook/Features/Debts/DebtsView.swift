@@ -182,6 +182,23 @@ struct DebtDetailView: View {
                         }
                     }
                 }
+                Section {
+                    NavigationLink {
+                        AddPaymentView(preselectedPlanID: planID)
+                    } label: {
+                        Label("Add Payment", systemImage: "plus.circle")
+                    }
+                    NavigationLink {
+                        BalanceUpdateView(preselectedPlanID: planID)
+                    } label: {
+                        Label("Update Balance", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    Button {
+                        showEdit = true
+                    } label: {
+                        Label("Edit Debt", systemImage: "pencil")
+                    }
+                }
                 Section("Numbers") {
                     LabeledContent(item.debt.debtType.showsOriginalPrincipal
                                    ? "Principal when this plan started"
@@ -241,23 +258,6 @@ struct DebtDetailView: View {
                     }
                     LabeledContent("Forecast payoff") {
                         Text(forecastPayoff.map(DateMath.mediumString) ?? "—")
-                    }
-                }
-                Section {
-                    NavigationLink {
-                        AddPaymentView(preselectedPlanID: planID)
-                    } label: {
-                        Label("Add Payment", systemImage: "plus.circle")
-                    }
-                    NavigationLink {
-                        BalanceUpdateView(preselectedPlanID: planID)
-                    } label: {
-                        Label("Update Balance", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    Button {
-                        showEdit = true
-                    } label: {
-                        Label("Edit Debt", systemImage: "pencil")
                     }
                 }
                 paymentHistorySection

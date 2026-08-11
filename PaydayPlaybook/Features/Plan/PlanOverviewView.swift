@@ -16,6 +16,7 @@ struct PlanOverviewView: View {
     @State private var track: PlanTrack = .baseline
     @State private var loaded = false
     @State private var showActivateFlow = false
+    @State private var showAllPaychecks = false
 
     var body: some View {
         ScrollView {
@@ -411,6 +412,7 @@ struct PlanOverviewView: View {
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("plan.trackPicker")
+            .onChange(of: track) { _, _ in showAllPaychecks = false }
             Text(track.explanation)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -419,10 +421,15 @@ struct PlanOverviewView: View {
         .padding(.top, 4)
     }
 
+    /// The playbook can run to hundreds of paychecks; render a readable
+    /// window first and let the user ask for the rest.
+    private static let initialPlaybookRows = 12
+
     private var playbookCard: some View {
         DashboardCard(title: "\(track.displayName) — paycheck by paycheck", systemImage: "list.number") {
-            VStack(alignment: .leading, spacing: 12) {
-                let rows = data.rows(for: track)
+            LazyVStack(alignment: .leading, spacing: 12) {
+                let allRows = data.rows(for: track)
+                let rows = showAllPaychecks ? allRows : Array(allRows.prefix(Self.initialPlaybookRows))
                 if rows.isEmpty {
                     Text(emptyTrackMessage)
                         .font(.subheadline)
@@ -439,6 +446,16 @@ struct PlanOverviewView: View {
                     ForEach(rows) { row in
                         PlanPaycheckRowView(row: row)
                         if row.id != rows.last?.id { Divider() }
+                    }
+                    if allRows.count > rows.count {
+                        Button {
+                            showAllPaychecks = true
+                        } label: {
+                            Text("Show all \(allRows.count) paychecks")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("plan.showAllPaychecks")
                     }
                 }
             }
