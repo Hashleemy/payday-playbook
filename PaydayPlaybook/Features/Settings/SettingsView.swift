@@ -9,8 +9,34 @@ struct SettingsView: View {
     @Query private var allSettings: [AppSettings]
     @Query(sort: \PlanVersion.createdAt) private var planVersions: [PlanVersion]
 
+    /// Count of unresolved setup items, so the row can say how many.
+    private var openSetupItems: Int {
+        (try? SetupCompletenessService(context: modelContext).gaps().count) ?? 0
+    }
+
     var body: some View {
         List {
+            Section("Setup") {
+                NavigationLink {
+                    ReviewSetupView()
+                } label: {
+                    HStack {
+                        Text("Review setup")
+                        if openSetupItems > 0 {
+                            Spacer()
+                            Text("\(openSetupItems)")
+                                .font(.caption.weight(.medium))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.18), in: Capsule())
+                                .accessibilityLabel("\(openSetupItems) items to review")
+                        }
+                    }
+                }
+                .accessibilityIdentifier("settings.reviewSetup")
+                NavigationLink("Accounts") { SettingsAccountsView() }
+                NavigationLink("Essential bills") { SettingsObligationsView() }
+            }
             Section("Plan") {
                 NavigationLink("Plan versions") { PlanVersionsView() }
                 NavigationLink("Pay schedule & paycheck changes") { PayScheduleView() }
@@ -142,6 +168,8 @@ struct OriginalPlanTimelineView: View {
         }
         .navigationTitle("Original Plan v1")
         .onAppear {
+            // Deliberately the template, not the current plan: this screen is
+            // the Original Plan v1 reference itself.
             guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return }
             let planID = plan.id
             items = ((try? modelContext.fetch(
@@ -220,7 +248,7 @@ struct PayScheduleView: View {
             errorMessage = "Enter a paycheck amount greater than zero."
             return
         }
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return }
+        guard let plan = (try? PlanSeeder.currentPlan(context: modelContext)) ?? nil else { return }
         modelContext.insert(IncomeRule(
             planVersionID: plan.id,
             effectiveDate: DateMath.startOfDay(newDate),
@@ -697,6 +725,7 @@ struct PlanVerificationView: View {
     private func verify() {
         var output: [String] = []
         do {
+            // The §3 baseline checklist verifies the template specifically.
             guard let plan = try PlanSeeder.existingBaseline(context: modelContext) else {
                 lines = ["No baseline plan found."]
                 return

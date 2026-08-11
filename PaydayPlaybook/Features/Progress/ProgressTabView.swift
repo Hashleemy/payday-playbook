@@ -328,7 +328,7 @@ struct ProgressTabView: View {
     // MARK: - Data
 
     private func paydayVariances() -> [(Int, Decimal)] {
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return [] }
+        guard let plan = (try? PlanSeeder.currentPlan(context: modelContext)) ?? nil else { return [] }
         let planVersionID = plan.id
         let items = (try? modelContext.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planVersionID })
@@ -379,7 +379,7 @@ struct ProgressTabView: View {
     }
 
     private func buildDebtSeries() -> [DebtPoint] {
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return [] }
+        guard let plan = (try? PlanSeeder.currentPlan(context: modelContext)) ?? nil else { return [] }
         let planVersionID = plan.id
         let items = ((try? modelContext.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planVersionID })
@@ -471,7 +471,7 @@ struct ProgressTabView: View {
     }
 
     private func buildC1Series() -> [DebtPoint] {
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return [] }
+        guard let plan = (try? PlanSeeder.currentPlan(context: modelContext)) ?? nil else { return [] }
         let planVersionID = plan.id
         let items = ((try? modelContext.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planVersionID })

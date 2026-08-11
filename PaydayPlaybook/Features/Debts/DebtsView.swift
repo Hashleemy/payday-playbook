@@ -277,7 +277,7 @@ struct DebtDetailView: View {
     /// Baseline (Original Plan v1) balance for this card as of today.
     private func baselineBalanceToday() -> Decimal? {
         let today = DateMath.startOfDay(appEnvironment.dateProvider.now)
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return nil }
+        guard let plan = (try? PlanSeeder.currentPlan(context: modelContext)) ?? nil else { return nil }
         let planVersionID = plan.id
         let items = (try? modelContext.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planVersionID })

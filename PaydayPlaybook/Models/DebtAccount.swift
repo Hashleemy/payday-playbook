@@ -68,10 +68,48 @@ final class DebtAccount {
     var creditLimit: Decimal?
     /// V2-05 / R-07. Ineligible debts receive minimums only.
     var isExtraPrincipalEligible: Bool = true
+    /// Optional free-text note captured in setup ("hospital bill, no
+    /// interest until March"). Display only — never an allocation input.
+    var setupNote: String?
+    /// Set when the user picked or confirmed the type themselves. Migrated
+    /// 0.1.x rows leave it nil — they were defaulted to `.creditCard`, which
+    /// was true for the one migrated install but is an assumption, so the
+    /// upgrade checklist offers to confirm it rather than claiming it.
+    var debtTypeConfirmedAt: Date?
+    /// The user explicitly said they don't know this card's limit. Distinct
+    /// from "not asked yet": once marked, the app stops asking and simply
+    /// shows no utilization.
+    var creditLimitMarkedUnknown: Bool = false
+    /// V2-05 tri-state for installment debts: "eligible" / "ineligible" /
+    /// "unknown" (`PrepaymentEligibility` raw values). Nil falls back to the
+    /// boolean above (schema-additive; migrated rows are all credit cards).
+    /// `.unknown` means the user hasn't confirmed whether a prepayment
+    /// restriction exists — the engine then withholds extra principal and
+    /// asks for confirmation rather than risking a penalty.
+    var prepaymentRaw: String?
 
     var debtType: DebtType {
         get { DebtType(rawValue: debtTypeRaw) ?? .creditCard }
         set { debtTypeRaw = newValue.rawValue }
+    }
+
+    /// Effective prepayment eligibility. Credit cards never carry prepayment
+    /// penalties, so they are always eligible; installment types use the
+    /// stored tri-state, falling back to the legacy boolean.
+    var prepayment: PrepaymentEligibility {
+        get {
+            guard debtType != .creditCard else { return .eligible }
+            if let prepaymentRaw, let value = PrepaymentEligibility(rawValue: prepaymentRaw) {
+                return value
+            }
+            return isExtraPrincipalEligible ? .eligible : .ineligible
+        }
+        set {
+            prepaymentRaw = newValue.rawValue
+            // Keep the boolean coherent for readers that predate the
+            // tri-state: only confirmed-eligible debts may receive extra.
+            isExtraPrincipalEligible = newValue == .eligible
+        }
     }
 
     /// Denominator for percent-paid display (never allocation).

@@ -13,6 +13,8 @@ enum ModelValidationError: LocalizedError, Equatable {
     case creditLimitOnNonCard(DebtType)
     case lastFourInvalid
     case noRoles
+    case duplicateSemimonthlyDays
+    case payDateInPast
 
     var errorDescription: String? {
         switch self {
@@ -32,6 +34,10 @@ enum ModelValidationError: LocalizedError, Equatable {
             return "Only the last four digits, never a full account number."
         case .noRoles:
             return "Pick at least one role for this account."
+        case .duplicateSemimonthlyDays:
+            return "Twice-a-month paydays need two different days."
+        case .payDateInPast:
+            return "The next payday needs to be today or later."
         }
     }
 }

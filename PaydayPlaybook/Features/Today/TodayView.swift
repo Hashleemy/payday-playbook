@@ -23,7 +23,7 @@ struct TodayState {
     static func load(context: ModelContext, environment: AppEnvironment) -> TodayState {
         var state = TodayState()
         do {
-            guard let plan = try PlanSeeder.existingBaseline(context: context) else { return state }
+            guard let plan = try PlanSeeder.currentPlan(context: context) else { return state }
             state.plan = plan
             let planID = plan.id
             let today = DateMath.startOfDay(environment.dateProvider.now)

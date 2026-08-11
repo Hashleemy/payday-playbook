@@ -25,7 +25,7 @@ final class OnboardingProgressTests: XCTestCase {
         let relaunched = makeService(container)
         XCTAssertEqual(try relaunched.resumeStep(), .accounts)
         try relaunched.markStepCompleted(.accounts)
-        XCTAssertEqual(try relaunched.resumeStep(), .income)
+        XCTAssertEqual(try relaunched.resumeStep(), .debts)
 
         // Only one progress row ever exists.
         let context = ModelContext(container)

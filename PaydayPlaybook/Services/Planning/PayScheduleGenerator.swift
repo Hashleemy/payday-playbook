@@ -58,7 +58,7 @@ enum PayScheduleGenerator {
             return stride(from: 0, to: count, by: 1).map { DateMath.addingDays(14 * $0, to: start) }
         case .monthly(let day):
             var result: [Date] = []
-            var (year, month) = yearMonth(of: start)
+            let (year, month) = yearMonth(of: start)
             // The anchor month's occurrence may fall before the anchor; skip it.
             var offset = 0
             while result.count < count {

@@ -36,6 +36,8 @@ struct ExportService {
             // Schema 2 (optional so version-1 files still decode).
             var debtTypeRaw: String?, originalPrincipal: String?
             var creditLimit: String?, isExtraPrincipalEligible: Bool?
+            var prepaymentRaw: String?, setupNote: String?
+            var debtTypeConfirmedAt: Date?, creditLimitMarkedUnknown: Bool?
         }
         struct PaydayPlanItemDTO: Codable {
             var id: UUID, planVersionID: UUID, sequenceNumber: Int, date: Date
@@ -108,6 +110,7 @@ struct ExportService {
             var id: UUID, name: String, amount: String, cadenceRaw: String
             var dueDay: Int?, accountID: UUID?, isArchived: Bool
             var legacyKey: String?, createdAt: Date, updatedAt: Date
+            var isEssential: Bool?
         }
         struct UserGoalProfileDTO: Codable {
             var id: UUID, goalText: String?, targetDebtFreeDate: Date?, postureRaw: String
@@ -255,7 +258,10 @@ struct ExportService {
                       createdAt: $0.createdAt, updatedAt: $0.updatedAt,
                       debtTypeRaw: $0.debtTypeRaw, originalPrincipal: money($0.originalPrincipal),
                       creditLimit: money($0.creditLimit),
-                      isExtraPrincipalEligible: $0.isExtraPrincipalEligible)
+                      isExtraPrincipalEligible: $0.isExtraPrincipalEligible,
+                      prepaymentRaw: $0.prepaymentRaw, setupNote: $0.setupNote,
+                      debtTypeConfirmedAt: $0.debtTypeConfirmedAt,
+                      creditLimitMarkedUnknown: $0.creditLimitMarkedUnknown)
             },
             paydayPlanItems: items.map {
                 .init(id: $0.id, planVersionID: $0.planVersionID, sequenceNumber: $0.sequenceNumber,
@@ -336,7 +342,8 @@ struct ExportService {
             obligations: obligations.map {
                 .init(id: $0.id, name: $0.name, amount: money($0.amount), cadenceRaw: $0.cadenceRaw,
                       dueDay: $0.dueDay, accountID: $0.accountID, isArchived: $0.isArchived,
-                      legacyKey: $0.legacyKey, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+                      legacyKey: $0.legacyKey, createdAt: $0.createdAt, updatedAt: $0.updatedAt,
+                      isEssential: $0.isEssential)
             },
             userGoalProfiles: profiles.map {
                 .init(id: $0.id, goalText: $0.goalText, targetDebtFreeDate: $0.targetDebtFreeDate,
@@ -483,7 +490,7 @@ struct ExportService {
             ))
         }
         for dto in backup.debts {
-            objects.append(DebtAccount(
+            let debt = DebtAccount(
                 id: dto.id, planID: dto.planID, displayName: dto.displayName,
                 lastFour: dto.lastFour, startingBalance: try decimal(dto.startingBalance),
                 apr: try decimal(dto.apr), minimumAmount: try decimal(dto.minimumAmount),
@@ -493,7 +500,14 @@ struct ExportService {
                 originalPrincipal: try decimal(dto.originalPrincipal),
                 creditLimit: try decimal(dto.creditLimit),
                 isExtraPrincipalEligible: dto.isExtraPrincipalEligible ?? true
-            ))
+            )
+            // Restored verbatim: the tri-state raw stays nil on version-1
+            // files so `prepayment` keeps falling back to the boolean.
+            debt.prepaymentRaw = dto.prepaymentRaw
+            debt.setupNote = dto.setupNote
+            debt.debtTypeConfirmedAt = dto.debtTypeConfirmedAt
+            debt.creditLimitMarkedUnknown = dto.creditLimitMarkedUnknown ?? false
+            objects.append(debt)
         }
         for dto in backup.paydayPlanItems {
             let item = PaydayPlanItem(
@@ -639,6 +653,7 @@ struct ExportService {
                 legacyKey: dto.legacyKey, createdAt: dto.createdAt, updatedAt: dto.updatedAt
             )
             obligation.cadenceRaw = dto.cadenceRaw
+            obligation.isEssential = dto.isEssential ?? true
             objects.append(obligation)
         }
         for dto in backup.userGoalProfiles ?? [] {
@@ -813,22 +828,27 @@ struct ExportService {
             .sorted { $0.priority < $1.priority }
         // Columns are append-only (V2-18): existing names and order intact,
         // schema-2 columns added at the end.
-        var rows = ["planID,displayName,startingBalance,apr,minimum,dueDay,priority,archived,type,originalPrincipal,creditLimit,extraPrincipalEligible"]
+        var rows = ["planID,displayName,startingBalance,apr,minimum,dueDay,priority,archived,type,originalPrincipal,creditLimit,extraPrincipalEligible,prepayment,note"]
         for debt in debts {
-            rows.append([
+            // Built in two halves: one 14-element literal of mixed optionals
+            // and maps pushes the type-checker past its budget.
+            var columns: [String] = [
                 debt.planID,
                 csvEscape(debt.displayName),
                 csvMoney(debt.startingBalance),
                 "\(debt.apr)",
                 debt.minimumAmount.map(csvMoney) ?? "",
                 debt.dueDayOfMonth.map(String.init) ?? "",
-                "\(debt.priority)",
-                debt.isArchived ? "true" : "false",
-                debt.debtTypeRaw,
-                debt.originalPrincipal.map(csvMoney) ?? "",
-                debt.creditLimit.map(csvMoney) ?? "",
-                debt.isExtraPrincipalEligible ? "true" : "false"
-            ].joined(separator: ","))
+                "\(debt.priority)"
+            ]
+            columns.append(debt.isArchived ? "true" : "false")
+            columns.append(debt.debtTypeRaw)
+            columns.append(debt.originalPrincipal.map(csvMoney) ?? "")
+            columns.append(debt.creditLimit.map(csvMoney) ?? "")
+            columns.append(debt.isExtraPrincipalEligible ? "true" : "false")
+            columns.append(debt.prepayment.rawValue)
+            columns.append(debt.setupNote.map(csvEscape) ?? "")
+            rows.append(columns.joined(separator: ","))
         }
         return rows.joined(separator: "\n")
     }
