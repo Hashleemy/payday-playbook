@@ -139,14 +139,25 @@ Replaces the 0.1.x four-screen seeded onboarding for fresh installs. Migrated in
 | # | Step | Feature |
 | --- | --- | --- |
 | 1 | Welcome and privacy promise | V2-17 |
-| 2 | Goals and payoff posture | V2-02 |
+| 2 | Goals, payoff posture, floor and allowance | V2-02, V2-08, V2-09 |
 | 3 | Checking accounts | V2-03 |
-| 4 | Income and paydays | V2-06 |
-| 5 | Essential obligations | V2-07 |
-| 6 | Floor and allowance | V2-08, V2-09 |
-| 7 | Debts (repeatable) | V2-04, V2-05 |
+| 4 | Debts — type picker, then type-specific details (repeatable) | V2-04, V2-05 |
+| 5 | Income and paydays | V2-06 |
+| 6 | Essential obligations | V2-07 |
+| 7 | Dates and reminders preview | (F-11) |
 | 8 | Review and generate plan | V2-10 |
-| 9 | Notifications | (F-11) |
+
+**Amendment (v0.2.0, ratified by the release integrator).** This table
+originally listed income at 4, obligations at 5, a separate floor-and-allowance
+step at 6, debts at 7, review at 8 and notifications at 9. The shipped flow
+is the order above, for two reasons Agent 4 recorded and this release accepts:
+the floor and allowance *are* what R-14's posture suggests, so asking them
+three screens away from the posture choice would show a suggestion whose
+effect the user cannot see; and putting debts directly after accounts
+front-loads the longest data-entry task while attention is highest. Every
+question in the original table is still asked, with the same validation and
+the same resumability contract; `OnboardingStep` has no separate
+`floorAndAllowance` case.
 
 ### 4.1 Step 1 — Welcome
 
@@ -246,7 +257,7 @@ Numbered, testable, and binding. Where a rule reduces to a calc-v1 rule under Le
 - **R-05 Per-paycheck allocation order.** From take-home (plus explicitly assigned windfalls): (1) allowance cap reserved as available-not-spent; (2) spending-account floor top-up to the protected floor; (3) obligation reserves (R-04); (4) minimum payments for all active debts; (5) everything remaining is extra principal to the avalanche target (R-08), rolling to the next eligible debt within the same paycheck when a payoff occurs (calc-v1 rule 5).
 - **R-06 Minimums.** A user-entered minimum is authoritative. Blank minimums are estimated **for credit cards only**: `max($17.50 × daysSincePreviousPayday / 14, postInterestBalance × 0.005)`, capped at the balance — identical to calc v1 under biweekly cadence. Installment types (personal, auto, student, medical, other) require an entered minimum at input; no estimator. *(ASSUMPTION A-06)*
 - **R-07 Extra-principal eligibility.** Ineligible debts never receive more than their minimum. If the top avalanche debt is ineligible, extra principal goes to the highest-APR *eligible* debt.
-- **R-08 Avalanche order.** Active debts sorted by APR descending; ties broken by lower current balance first; remaining ties by creation order. 0% APR debts sort last. The user may still reorder manually; per F-13 that creates a new plan version (or future-dated rule) carrying the manual order — baseline versions are never edited.
+- **R-08 Avalanche order.** Active debts sorted by *effective* APR descending (promo rate while it is in force, R-13); ties broken by earlier due day first, debts without a due day last; then by lower current balance; then by creation order; then by stable ID. 0% APR debts sort last. (**Amendment, v0.2.0:** the due-day key is new in calc v2 — the original rule went straight from APR to balance. Agent 3 proposed it and the release integrator ratifies it: among equal-APR debts, paying the one that comes due first is what a person actually does, and it makes the order deterministic across launches rather than dependent on entry order alone.) The user may still reorder manually; per F-13 that creates a new plan version (or future-dated rule) carrying the manual order — baseline versions are never edited.
 - **R-09 Shortfall.** If floor top-up + obligations + minimums exceed take-home for a paycheck: reduce extra principal to $0, then reduce that paycheck's allowance toward $0, and if still short, mark the paycheck "needs attention" with the exact gap. Minimums are never silently dropped; the plan generates with the flag visible in review, calendar, and dashboard.
 - **R-10 Termination and outputs.** Generation stops when every balance rounds to $0.00 (or R-01's cap). Outputs per paycheck: income, keep-in-spending, transfer-to-reserves, obligation reserve, debt budget, target debt, planned per-debt balances, planned total after, and no-spend ceiling. The ceiling seeds from the spending account's starting balance and increments each paycheck by that paycheck's planned keep-in-spending amount (allowance plus any floor top-up) — the 0.1.x construction: $900 + $400 = $1,300 after check 1, reaching $7,900 at check 23. Whole-plan outputs: payoff date, paycheck count, total estimated interest, per-debt payoff dates.
 - **R-11 Due-day clamping.** A due day greater than the days in a month clamps to the last day (Jan 31 → Feb 28/29). Semimonthly "last day" behaves the same.
@@ -309,7 +320,17 @@ Runs once, before any UI, wrapped in a single transaction with a pre-migration i
 1. Detect schema v1 (`PlanContract.schemaVersion` stamp / store metadata).
 2. Create `CheckingAccount` rows: **"Checking 1"** (roles income + spending, `isDefaultIncome = true`) and **"Checking 2"** (role reserves). Balances derive from the existing C1/C2 bucket state; nothing is invented.
 3. Create `Obligation` rows: Car — $726.00 monthly; Train pass — $111.00 monthly. Verify R-04 reproduces $335.08 and $51.23 exactly; a mismatch aborts migration (it cannot happen while R-04 holds, and the check keeps it that way).
-4. Stamp every existing `DebtAccount` with `debtType = .creditCard`, `originalPrincipal = startingBalance`, `isExtraPrincipalEligible = true`, `creditLimit = nil`.
+4. Stamp every existing `DebtAccount` with `debtType = .creditCard`, `isExtraPrincipalEligible = true`, `creditLimit = nil`, and leave `originalPrincipal = nil`.
+
+   **Amendment (v0.2.0, ratified by the release integrator).** This step
+   originally read `originalPrincipal = startingBalance`. Migration must never
+   fabricate a value the user did not enter, and a 0.1.x store does not record
+   what these debts originally were: the starting balance is where the plan
+   began, not where the debt began. The field stays unknown and the upgrade
+   checklist offers to fill it in. Display is unaffected — `principalBasis`
+   falls back to `startingBalance`, which is exactly how 0.1.x computed
+   percent-paid. Schema-2 backups and the debts CSV therefore export an empty
+   `originalPrincipal` for migrated rows.
 5. Set `PlanVersion.payCadence = .biweekly`, `incomeAccountID` = Checking 1, `generatedFromProfile = false`. **Do not touch** any `PaydayPlanItem` value, check-in, ledger entry, snapshot, forecast, milestone, or notification preference. Original Plan v1 keeps `calculationVersion = 1` and its stored 23-item schedule verbatim.
 6. Add obligation-reserve rows to plan items mirroring the stored car/train amounts (per §6), values copied, not recomputed.
 7. Create a default `UserProfile` (posture `.steady`, no goal text) and a completed `OnboardingState` — the migrated user never re-onboards.
@@ -375,7 +396,7 @@ F-05, F-10, F-12, F-13, F-14, F-16 carry forward unchanged in structure. Deltas:
 - Editing `dueDayOfMonth` on any debt, or `dueDay` on any obligation, immediately: (1) recomputes that item's calendar events (R-11 clamping); (2) cancels and reschedules its pending due-soon/due-today notifications using the existing stable-identifier scheme, so updates replace rather than duplicate; (3) appends an audit note to the item.
 - The reschedule completes before the edit screen is dismissed; the calendar reflects the new date on next render with no stale markers.
 - All 0.1.x notification rules stand (contextual permission, rolling window, completion cancels the evening reminder, discreet lock-screen content by default).
-- Notification identifiers extend to `debt-due-<uuid>` / `obligation-due-<uuid>` families; migration re-registers existing card reminders under the same identifiers they already use (no duplicate fires after upgrade).
+- Notification identifiers extend to `debt-due-<uuid>` / `obligation-due-<uuid>` families. **Amendment (v0.2.0, ratified by the release integrator):** this originally required migration to re-register existing card reminders under the identifiers they already use. It cannot: the 0.1.x scheme keys debt reminders on the plan letter ("B"), which cannot address a generated plan's debts unambiguously, and keys payday reminders on `sequenceNumber`, which a plan edit can silently repoint at the wrong payday. Instead every family declares `ownedPrefixes` that include the 0.1.x spellings (`due-soon-`, `due-today-`, `milestone-`), and reconciliation removes any pending request under an owned prefix that is not in the desired set. The requirement that matters — **no duplicate fires after upgrade** — holds and is tested (`testUpgradeFromLegacyIdentifiersDoesNotDoubleFire`); this approach is strictly stronger because it also cleans up orphaned requests that re-registration would leave behind.
 
 ---
 
