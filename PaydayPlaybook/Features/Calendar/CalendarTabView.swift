@@ -419,40 +419,27 @@ struct CalendarTabView: View {
     /// first; an archived or deleted entity gets a calm explanation instead
     /// of a dead tap (V2-11).
     private func open(_ event: CalendarEventService.Event) {
-        switch event.link {
-        case .checkIn(let itemID):
-            let items = (try? modelContext.fetch(FetchDescriptor<PaydayPlanItem>())) ?? []
-            if let item = items.first(where: { $0.id == itemID }) {
-                checkInItem = item
-            } else {
-                missingTargetMessage = "This payday belongs to an older plan version and can't be opened."
-            }
-        case .debt(let planID):
-            let debts = (try? modelContext.fetch(FetchDescriptor<DebtAccount>())) ?? []
-            if debts.contains(where: { $0.planID == planID && !$0.isArchived }) {
-                router.pendingDebtPlanID = planID
-                router.selectedTab = .debts
-            } else if debts.contains(where: { $0.planID == planID }) {
-                missingTargetMessage = "This debt is archived. You can find it under Debts once unarchived."
-            } else {
-                missingTargetMessage = "This debt no longer exists."
-            }
-        case .entry(let entryID):
-            let entries = (try? modelContext.fetch(FetchDescriptor<LedgerEntry>())) ?? []
-            if let entry = entries.first(where: { $0.id == entryID }) {
-                entryDetail = entry
-            } else {
-                missingTargetMessage = "This entry has been removed from the ledger."
-            }
-        case .milestone(let milestoneID):
-            let milestones = (try? modelContext.fetch(FetchDescriptor<Milestone>())) ?? []
-            if let milestone = milestones.first(where: { $0.id == milestoneID }) {
-                milestoneDetail = milestone
-            } else {
-                missingTargetMessage = "This milestone belongs to an older plan version."
-            }
-        case nil:
-            break
+        guard let link = event.link else { return }
+        let service = appEnvironment.calendarService(context: modelContext)
+        guard let resolution = try? service.resolve(link) else {
+            missingTargetMessage = "That item can't be opened right now."
+            return
+        }
+        switch resolution {
+        case .openCheckIn(let itemID):
+            checkInItem = (try? modelContext.fetch(FetchDescriptor<PaydayPlanItem>()))?
+                .first { $0.id == itemID }
+        case .openDebt(let planID):
+            router.pendingDebtPlanID = planID
+            router.selectedTab = .debts
+        case .openEntry(let entryID):
+            entryDetail = (try? modelContext.fetch(FetchDescriptor<LedgerEntry>()))?
+                .first { $0.id == entryID }
+        case .openMilestone(let milestoneID):
+            milestoneDetail = (try? modelContext.fetch(FetchDescriptor<Milestone>()))?
+                .first { $0.id == milestoneID }
+        case .unavailable(let message):
+            missingTargetMessage = message
         }
     }
 

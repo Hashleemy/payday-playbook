@@ -260,6 +260,77 @@ final class CalendarEventServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - Deep-link resolution (archived / deleted fallback)
+
+    func testLinksResolveToTheirEntityWhileItExists() throws {
+        let (service, context) = try makeService()
+        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let item = try TestSupport.planItems(context, plan: plan)[0]
+        let entry = LedgerEntry(
+            effectiveDate: TestSupport.date(2026, 8, 21), type: .cardPayment,
+            amount: TestSupport.money("100.00"),
+            sourceAccount: .checking2, destinationAccount: .external
+        )
+        context.insert(entry)
+        try context.save()
+        let milestone = try XCTUnwrap(try context.fetch(FetchDescriptor<Milestone>()).first)
+
+        XCTAssertEqual(try service.resolve(.checkIn(itemID: item.id)), .openCheckIn(item: item.id))
+        XCTAssertEqual(try service.resolve(.debt(planID: "B")), .openDebt(planID: "B"))
+        XCTAssertEqual(try service.resolve(.entry(entryID: entry.id)), .openEntry(entryID: entry.id))
+        XCTAssertEqual(
+            try service.resolve(.milestone(milestoneID: milestone.id)),
+            .openMilestone(milestoneID: milestone.id)
+        )
+    }
+
+    func testArchivedDebtLinkExplainsRatherThanDeadEnds() throws {
+        let (service, context) = try makeService()
+        let debt = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
+        debt.isArchived = true
+        try context.save()
+
+        let resolution = try service.resolve(.debt(planID: "B"))
+        guard case .unavailable(let message) = resolution else {
+            return XCTFail("an archived debt must not resolve to an open action")
+        }
+        XCTAssertTrue(message.localizedCaseInsensitiveContains("archived"))
+    }
+
+    func testDeletedTargetsResolveToAnExplanationForEveryLinkType() throws {
+        let (service, context) = try makeService()
+        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let item = try TestSupport.planItems(context, plan: plan)[0]
+        let entry = LedgerEntry(
+            effectiveDate: TestSupport.date(2026, 8, 21), type: .cardPayment,
+            amount: TestSupport.money("100.00"),
+            sourceAccount: .checking2, destinationAccount: .external
+        )
+        context.insert(entry)
+        let milestone = try XCTUnwrap(try context.fetch(FetchDescriptor<Milestone>()).first)
+        try context.save()
+
+        context.delete(item)
+        context.delete(entry)
+        context.delete(milestone)
+        for debt in try context.fetch(FetchDescriptor<DebtAccount>()) where debt.planID == "B" {
+            context.delete(debt)
+        }
+        try context.save()
+
+        for link: CalendarEventService.DeepLink in [
+            .checkIn(itemID: item.id),
+            .debt(planID: "B"),
+            .entry(entryID: entry.id),
+            .milestone(milestoneID: milestone.id)
+        ] {
+            guard case .unavailable(let message) = try service.resolve(link) else {
+                return XCTFail("a deleted target must resolve to an explanation: \(link)")
+            }
+            XCTAssertFalse(message.isEmpty)
+        }
+    }
+
     // MARK: - Filters
 
     func testFiltersPartitionTheTaxonomy() throws {
