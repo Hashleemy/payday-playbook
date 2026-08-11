@@ -108,27 +108,31 @@ struct PlanVersionsView: View {
     var body: some View {
         List {
             ForEach(planVersions) { plan in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(plan.name).font(.body.weight(.medium))
-                        if plan.isOriginalBaseline {
-                            Text("Immutable")
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.15), in: Capsule())
-                                .foregroundStyle(.blue)
+                NavigationLink {
+                    PlanOverviewView(plan: plan)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(plan.name).font(.body.weight(.medium))
+                            if plan.isOriginalBaseline {
+                                Text("Immutable")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(Color.blue.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(.blue)
+                            }
+                            if plan.isActive {
+                                Text("Active")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(Color.mint.opacity(0.2), in: Capsule())
+                                    .foregroundStyle(.mint)
+                            }
                         }
-                        if plan.isActive {
-                            Text("Active")
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color.mint.opacity(0.2), in: Capsule())
-                                .foregroundStyle(.mint)
-                        }
+                        Text("Created \(DateMath.mediumString(plan.createdAt)) · calculation v\(plan.calculationVersion) · allowance \(MoneyFormat.string(plan.allowanceCap))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    Text("Created \(DateMath.mediumString(plan.createdAt)) · allowance \(MoneyFormat.string(plan.allowanceCap)) · reserves \(MoneyFormat.string(plan.totalFixedReservePerCheck))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
         }
