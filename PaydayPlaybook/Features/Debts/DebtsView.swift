@@ -304,12 +304,15 @@ struct DebtEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appEnvironment: AppEnvironment
+    @EnvironmentObject private var notificationScheduler: NotificationScheduler
 
     @State private var nameText = ""
     @State private var lastFourText = ""
     @State private var aprText = ""
     @State private var minimumText = ""
     @State private var dueDayText = ""
+    @State private var shiftRule: DueDateShiftRule = .exactDay
+    @State private var isSaving = false
     @State private var errorMessage: String?
 
     var body: some View {
@@ -340,10 +343,20 @@ struct DebtEditView: View {
                     HStack {
                         Text("Statement due day")
                         Spacer()
-                        TextField("1–28", text: $dueDayText)
+                        TextField("1–31", text: $dueDayText)
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: 100)
+                    }
+                    if !dueDayText.isEmpty {
+                        Picker("Weekend due dates", selection: $shiftRule) {
+                            ForEach(DueDateShiftRule.allCases) { rule in
+                                Text(rule.displayName).tag(rule)
+                            }
+                        }
+                        Text("Days 29–31 fall on the month's last day in shorter months. Due dates only move off weekends if you pick a shift rule.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 if let errorMessage {
@@ -356,10 +369,11 @@ struct DebtEditView: View {
                     Button {
                         save()
                     } label: {
-                        Text("Save")
+                        Text(isSaving ? "Saving…" : "Save")
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(isSaving)
                 }
                 .listRowBackground(Color.clear)
             }
@@ -376,6 +390,7 @@ struct DebtEditView: View {
                 aprText = MoneyFormat.editingString(debt.apr * 100)
                 minimumText = debt.minimumAmount.map(MoneyFormat.editingString) ?? ""
                 dueDayText = debt.dueDayOfMonth.map(String.init) ?? ""
+                shiftRule = debt.dueDateShiftRule
             }
         }
     }
@@ -394,15 +409,26 @@ struct DebtEditView: View {
         } else {
             debt.minimumAmount = nil
         }
+        let previousDueDay = debt.dueDayOfMonth
         if !dueDayText.isEmpty {
-            guard let day = Int(dueDayText), (1...28).contains(day) else {
-                errorMessage = "Enter a due day between 1 and 28."
+            guard let day = Int(dueDayText), DueDateRule.validDays.contains(day) else {
+                errorMessage = "Enter a due day between 1 and 31."
                 return
             }
             debt.dueDayOfMonth = day
         } else {
             debt.dueDayOfMonth = nil
         }
+        if debt.dueDayOfMonth != previousDueDay {
+            // V2-11 / §9: due-date edits are prospective and audited on the item.
+            debt.appendDueDateAudit(DueDateRule.auditNote(
+                field: "due day",
+                from: previousDueDay,
+                to: debt.dueDayOfMonth,
+                on: appEnvironment.dateProvider.now
+            ))
+        }
+        debt.dueDateShiftRule = shiftRule
         let trimmedName = nameText.trimmingCharacters(in: .whitespaces)
         debt.displayName = trimmedName.isEmpty ? "Card \(debt.planID)" : trimmedName
         let digits = String(lastFourText.filter(\.isNumber).prefix(4))
@@ -412,7 +438,18 @@ struct DebtEditView: View {
         do {
             try modelContext.save()
             _ = try? appEnvironment.reforecastService(context: modelContext).reforecast(trigger: .aprChange)
-            dismiss()
+            // V2-11: the notification reschedule completes before the edit
+            // screen is dismissed, so stable identifiers replace the old
+            // due-date reminders with no stale fires and no duplicates.
+            isSaving = true
+            Task {
+                await notificationScheduler.rescheduleAll(
+                    context: modelContext,
+                    dateProvider: appEnvironment.dateProvider
+                )
+                isSaving = false
+                dismiss()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
