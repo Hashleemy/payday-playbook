@@ -361,9 +361,9 @@ struct DebtEditorView: View {
                         value: $balance,
                         requirement: .required,
                         help: "What you owe on it today.",
-                        error: balanceError
+                        error: balanceError,
+                        fieldIdentifier: "debt.balance"
                     )
-                    .accessibilityIdentifier("debt.balance")
 
                     if rules.originalPrincipal != .optional || originalPrincipal != nil || type != .creditCard {
                         SetupMoneyField(
@@ -371,9 +371,9 @@ struct DebtEditorView: View {
                             value: $originalPrincipal,
                             requirement: rules.originalPrincipal,
                             help: "Used to show how far you've come. It never changes a payment.",
-                            error: originalPrincipalError
+                            error: originalPrincipalError,
+                            fieldIdentifier: "debt.originalPrincipal"
                         )
-                        .accessibilityIdentifier("debt.originalPrincipal")
                     }
 
                     SetupPercentField(
@@ -383,18 +383,18 @@ struct DebtEditorView: View {
                         help: type == .medicalDebt
                             ? "Often 0% on medical bills — that's a valid answer."
                             : "From your statement. 0% is fine if it's a promo or interest-free.",
-                        error: aprError
+                        error: aprError,
+                        fieldIdentifier: "debt.apr"
                     )
-                    .accessibilityIdentifier("debt.apr")
 
                     SetupMoneyField(
                         title: rules.minimumLabel,
                         value: $minimum,
                         requirement: rules.minimum,
                         help: rules.minimumHelp,
-                        error: minimumError
+                        error: minimumError,
+                        fieldIdentifier: "debt.minimum"
                     )
-                    .accessibilityIdentifier("debt.minimum")
 
                     SetupDayField(
                         title: "Payment due day",
@@ -479,10 +479,10 @@ struct DebtEditorView: View {
                 value: $creditLimit,
                 requirement: limitUnknown ? .unknown : .required,
                 help: "Used to show how much of the card is in use. It never changes a payment.",
-                error: creditLimitError
+                error: creditLimitError,
+                fieldIdentifier: "debt.creditLimit"
             )
             .disabled(limitUnknown)
-            .accessibilityIdentifier("debt.creditLimit")
 
             Toggle("I don't know the limit", isOn: $limitUnknown)
                 .frame(minHeight: 44)

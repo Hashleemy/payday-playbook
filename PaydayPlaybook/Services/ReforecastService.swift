@@ -17,7 +17,7 @@ struct ReforecastService {
         trigger: ForecastTrigger,
         varianceContext: String? = nil
     ) throws -> ForecastSnapshot? {
-        guard let plan = try PlanSeeder.existingBaseline(context: context) else { return nil }
+        guard let plan = try PlanSeeder.currentPlan(context: context) else { return nil }
         // Schedule dates come from the immutable baseline; allocation amounts
         // come from the active plan version when the user has created one.
         let allPlans = try context.fetch(FetchDescriptor<PlanVersion>())
@@ -115,7 +115,7 @@ struct ReforecastService {
 
     /// Take-home paycheck amount effective on `date`, from stored income rules.
     static func currentIncome(context: ModelContext, on date: Date) throws -> Decimal {
-        guard let plan = try PlanSeeder.existingBaseline(context: context) else {
+        guard let plan = try PlanSeeder.currentPlan(context: context) else {
             return PlanContract.firstIncome
         }
         let planID = plan.id

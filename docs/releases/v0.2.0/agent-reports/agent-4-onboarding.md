@@ -154,16 +154,48 @@ New suites:
   version's own fields, the ledger, the check-in, and every debt balance/APR **unchanged**
   value-for-value.
 
-**UI tests: partially verified — stated plainly.** I rewrote `PaydayPlaybookUITests` for the new
-flow (full first-run through generation; force-quit-and-resume; template path with its warning;
-setup at accessibility text size) and fixed `testBackupCreatesShareableFile`, which my new
-Settings section pushed off-screen. Of these, **`testTemplateLoadShowsWarningAndSeedsOriginalPlan`
-is confirmed passing**. The other three new tests failed only against a cold simulator boot
-("wait for app to idle" timing out before the first assertion) and I did not re-verify them on a
-warm simulator: this machine's simulator is shared with the other v0.2.0 agents' worktrees, and
-re-running the suite cross-contaminates their results. The app itself was verified by hand — built,
-installed, launched, and screenshotted on the welcome screen, which renders correctly. **Someone
-should run the UI suite on an uncontended simulator before the alpha cut.**
+**UI: 12/12 green.**
+
+```bash
+xcodebuild … -only-testing:PaydayPlaybookUITests test    # 12 tests, 0 failures
+```
+
+Four new tests cover the flow end to end: `testFirstRunSetupGeneratesAPlanAndLandsOnToday`
+(welcome → goal → account → card → income → bills → reminders → generate → commit → dashboard),
+`testSetupResumesAfterForceQuit` (kill mid-step, relaunch, resume banner, saved account and floor
+still present), `testTemplateLoadShowsWarningAndSeedsOriginalPlan`, and
+`testSetupAtAccessibilityTextSize`. The eight pre-existing tests still pass;
+`testBackupCreatesShareableFile` needed a scroll because my new Settings section pushed its row
+below the fold.
+
+Two real defects surfaced only under the UI suite, both now fixed:
+
+- **`SetupPercentField` was invisible to VoiceOver as an editable control.** Its
+  `.accessibilityElement(children: .combine)` collapsed the text field into its container, so the
+  APR field could not be individually focused or typed into. The label and value now live on the
+  field itself. This was an accessibility defect, not just a test-harness problem.
+- **Generated plans were invisible to every screen** — see below.
+
+### Cross-agent integration bug: `existingBaseline` vs. the current plan
+
+Agent 2 correctly narrowed `PlanSeeder.existingBaseline` to match on
+`PlanContract.planName` ("Original Plan v1") so a template load can never mistake a generated plan
+for the seeded one and delete it. But **twelve read sites** across Today, Debts, Progress,
+Check-in, Settings, Phase II, `NotificationScheduler`, `CalendarEventService`, and
+`ReforecastService` used that same function to mean "the user's current plan". A generated plan is
+named "Plan v1", so after finishing onboarding the dashboard, calendar, reminders, and reforecast
+all found *nothing*: the flow completed and landed on an empty app. The unit suite could not catch
+this — it is a view-layer lookup — and the first-run UI test failed on exactly that assertion.
+
+Fix: a new `PlanSeeder.currentPlan(context:)` (active plan → template → oldest) beside the
+narrowed `existingBaseline`, with the distinction documented at both declarations. The twelve
+"what is the user's plan?" sites now call it; the three that genuinely mean the template — the
+Original Plan v1 timeline viewer, the debug §3 baseline verification, and `MigrationService` —
+still call `existingBaseline`.
+
+**For the dashboard, calendar, and insights owners:** these were one-line lookup substitutions
+with no logic change, made because generated plans were otherwise unreachable from your surfaces.
+Please sanity-check the call sites in your files.
 
 ## Assumptions
 
@@ -186,6 +218,8 @@ should run the UI suite on an uncontended simulator before the alpha cut.**
   `PlanGenerationService.regenerate(from:)` when they need the rich `PlanningResult` (events,
   warnings, per-paycheck movements). Only the row shape is persisted; the full result is
   reproducible from `inputSnapshotData` and deliberately not stored as a blob.
+- **Use `PlanSeeder.currentPlan(context:)`, never `existingBaseline`,** when you mean "the plan
+  the user is on". `existingBaseline` is template-only by design.
 - **`SetupCompletenessService` is the single source** for "what's missing". If a new field is
   added that the user should be asked about, add a `SetupGap.Kind` there and both the review
   step and the upgrade checklist pick it up.
@@ -200,6 +234,7 @@ should run the UI suite on an uncontended simulator before the alpha cut.**
 ```
 c3236a3  merge: bring calc-v2 avalanche engine onto the schema-2 data layer
 4006e3f  fix(v0.2.0): reconcile the two independently-authored planning contracts
-<next>   feat(v0.2.0): plan generation bridge — store rows to engine to persisted plan
-<next>   feat(v0.2.0): resumable onboarding flow, upgrade checklist, and setup tests
+3045c7a  feat(v0.2.0): plan generation bridge — store rows to engine to persisted plan
+45d2b6d  feat(v0.2.0): resumable onboarding flow, upgrade checklist, and setup tests
+<next>   fix(v0.2.0): make generated plans visible to every screen
 ```

@@ -42,9 +42,9 @@ struct IncomeStepView: View {
                 value: $takeHome,
                 requirement: .required,
                 help: "The deposit amount, not your salary.",
-                error: takeHomeError
+                error: takeHomeError,
+                fieldIdentifier: "income.takeHome"
             )
-            .accessibilityIdentifier("income.takeHome")
 
             SetupField(
                 title: "How often",
@@ -330,9 +330,9 @@ struct IncomeChangeEditorView: View {
                         requirement: .required,
                         help: "What each check will be after the change.",
                         error: (amount ?? 1) <= 0 && amount != nil
-                            ? "The new amount needs to be more than zero." : nil
+                            ? "The new amount needs to be more than zero." : nil,
+                        fieldIdentifier: "incomeChange.amount"
                     )
-                    .accessibilityIdentifier("incomeChange.amount")
 
                     SetupField(
                         title: "Starting when",

@@ -67,6 +67,20 @@ struct PlanSeeder {
         return try context.fetch(descriptor).first
     }
 
+    /// The plan every reader should display: the active one, falling back to
+    /// the template for a migrated install.
+    ///
+    /// Deliberately distinct from `existingBaseline`, which is template-only
+    /// so the seeder can never touch an onboarding-generated plan. Screens
+    /// asking "what is the user's plan?" must use this — a generated plan is
+    /// named "Plan v1" and would be invisible to a template-keyed lookup.
+    static func currentPlan(context: ModelContext) throws -> PlanVersion? {
+        let plans = try context.fetch(FetchDescriptor<PlanVersion>())
+        return plans.first(where: \.isActive)
+            ?? plans.first(where: { $0.name == PlanContract.planName })
+            ?? plans.sorted { $0.createdAt < $1.createdAt }.first
+    }
+
     static func isComplete(_ plan: PlanVersion, context: ModelContext) throws -> Bool {
         let planID = plan.id
         let paydayCount = try context.fetchCount(

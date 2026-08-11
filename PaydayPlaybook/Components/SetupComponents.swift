@@ -104,6 +104,9 @@ struct SetupMoneyField: View {
     var help: String?
     var error: String?
     var placeholder = "$0.00"
+    /// Identifier for the entry field itself. The wrapper's own identifier
+    /// addresses the labeled row; UI tests need to reach the control.
+    var fieldIdentifier: String?
 
     @State private var text = ""
     @FocusState private var focused: Bool
@@ -116,6 +119,7 @@ struct SetupMoneyField: View {
                 .monospacedDigit()
                 .focused($focused)
                 .frame(minHeight: 44)
+                .accessibilityIdentifier(fieldIdentifier ?? title)
                 .accessibilityLabel(title)
                 .accessibilityValue(value.map { MoneyFormat.string($0) } ?? "empty")
                 .onChange(of: text) { _, newText in
@@ -150,6 +154,7 @@ struct SetupPercentField: View {
     var requirement: FieldRequirement = .required
     var help: String?
     var error: String?
+    var fieldIdentifier: String?
 
     @State private var text = ""
     @FocusState private var focused: Bool
@@ -157,19 +162,22 @@ struct SetupPercentField: View {
     var body: some View {
         SetupField(title: title, requirement: requirement, help: help, error: error) {
             HStack(spacing: 8) {
+                // The label and value live on the field itself rather than on
+                // a combined container: collapsing children would leave
+                // VoiceOver with one merged element it cannot type into.
                 TextField("0.00", text: $text)
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
                     .monospacedDigit()
                     .focused($focused)
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier(fieldIdentifier ?? title)
+                    .accessibilityLabel("\(title), percent")
+                    .accessibilityValue(rate.map { Self.percentString($0) + " percent" } ?? "empty")
                 Text("%")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(title)
-            .accessibilityValue(rate.map { Self.percentString($0) + " percent" } ?? "empty")
             .onChange(of: text) { _, newText in
                 rate = Self.parsePercent(newText)
             }

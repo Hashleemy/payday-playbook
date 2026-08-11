@@ -32,10 +32,34 @@ final class PaydayPlaybookUITests: XCTestCase {
         return app
     }
 
-    /// Types into a field that may need scrolling into view first.
-    private func type(_ text: String, into field: XCUIElement, in app: XCUIApplication) {
-        if !field.isHittable { app.swipeUp() }
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+    /// Scrolls until an element materializes. Rows below the fold of a List
+    /// or lazy stack are not in the accessibility tree until scrolled to, so
+    /// `waitForExistence` alone is not enough.
+    @discardableResult
+    private func scrollTo(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 6
+    ) -> Bool {
+        for _ in 0..<maxSwipes {
+            if element.exists && element.isHittable { return true }
+            app.swipeUp()
+        }
+        return element.exists && element.isHittable
+    }
+
+    /// The decimal keypad has no return key, so it stays up and can cover the
+    /// next field. Dropping it before scrolling keeps entry reliable.
+    private func dismissKeyboard(_ app: XCUIApplication) {
+        guard app.keyboards.element.exists else { return }
+        app.navigationBars.firstMatch.staticTexts.firstMatch.tap()
+    }
+
+    /// Types into a field, dropping the keyboard and scrolling first.
+    private func type(_ text: String, into identifier: String, in app: XCUIApplication) {
+        dismissKeyboard(app)
+        let field = app.textFields[identifier]
+        XCTAssertTrue(scrollTo(field, in: app), "\(identifier) should be reachable")
         field.tap()
         field.typeText(text)
     }
@@ -64,8 +88,9 @@ final class PaydayPlaybookUITests: XCTestCase {
 
         // Step 3 — one checking account.
         tapContinue("accounts.add", in: app)
-        type("Everyday", into: app.textFields["account.name"], in: app)
-        type("1200", into: app.textFields["Balance today"], in: app)
+        type("Everyday", into: "account.name", in: app)
+        type("1200", into: "account.balance", in: app)
+        dismissKeyboard(app)
         app.buttons["account.save"].tap()
         tapContinue("onboarding.accountsContinue", in: app)
 
@@ -73,14 +98,16 @@ final class PaydayPlaybookUITests: XCTestCase {
         tapContinue("debts.add", in: app)
         XCTAssertTrue(app.buttons["debtType.creditCard"].waitForExistence(timeout: 5))
         app.buttons["debtType.creditCard"].tap()
-        type("Blue card", into: app.textFields["debt.name"], in: app)
-        type("2000", into: app.textFields["Balance today"], in: app)
-        type("24.99", into: app.textFields["Interest rate (APR)"], in: app)
+        type("Blue card", into: "debt.name", in: app)
+        type("2000", into: "debt.balance", in: app)
+        type("24.99", into: "debt.apr", in: app)
+        dismissKeyboard(app)
         app.buttons["debt.save"].tap()
         tapContinue("onboarding.debtsContinue", in: app)
 
         // Step 6 — income.
-        type("2000", into: app.textFields["Take-home per paycheck"], in: app)
+        type("2000", into: "income.takeHome", in: app)
+        dismissKeyboard(app)
         tapContinue("onboarding.incomeContinue", in: app)
 
         // Step 7 — bills can be skipped.
@@ -115,8 +142,9 @@ final class PaydayPlaybookUITests: XCTestCase {
 
         // Add an account, then kill the app before leaving the step.
         tapContinue("accounts.add", in: app)
-        type("Everyday", into: app.textFields["account.name"], in: app)
-        type("1200", into: app.textFields["Balance today"], in: app)
+        type("Everyday", into: "account.name", in: app)
+        type("1200", into: "account.balance", in: app)
+        dismissKeyboard(app)
         app.buttons["account.save"].tap()
         XCTAssertTrue(app.buttons["onboarding.accountsContinue"].waitForExistence(timeout: 5))
         app.terminate()
@@ -128,10 +156,16 @@ final class PaydayPlaybookUITests: XCTestCase {
             || anyText(app, containing: "Picking up where you left off").exists)
         XCTAssertTrue(anyText(app, containing: "Everyday").exists)
 
-        // Back to the goal step: the posture answer survived too.
+        // Back to the goal step: the posture answer and its floor survived.
         app.buttons["onboarding.back"].tap()
         XCTAssertTrue(app.buttons["goal.posture.fullThrottle"].waitForExistence(timeout: 5))
-        XCTAssertTrue(anyText(app, containing: "$500").exists, "Full-throttle floor suggestion persisted")
+        let floor = app.textFields["goal.floor"]
+        XCTAssertTrue(scrollTo(floor, in: app))
+        // The field reads out its formatted amount for VoiceOver.
+        XCTAssertEqual(
+            floor.value as? String, "$500.00",
+            "The full-throttle floor the user saved is still in the field"
+        )
     }
 
     // The template path still produces the exact Original Plan v1, behind an
@@ -335,8 +369,7 @@ final class PaydayPlaybookUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 10))
         app.buttons["Settings"].tap()
         let backup = app.buttons["Backup & export"]
-        XCTAssertTrue(backup.waitForExistence(timeout: 5))
-        if !backup.isHittable { app.swipeUp() }
+        XCTAssertTrue(scrollTo(backup, in: app), "Backup row is reachable in Settings")
         backup.tap()
         app.buttons["Create JSON backup"].tap()
         let shareRow = app.buttons.matching(NSPredicate(format: "label CONTAINS 'PaydayPlaybook-Backup'")).firstMatch

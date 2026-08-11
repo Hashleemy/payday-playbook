@@ -72,20 +72,20 @@ struct GoalStepView: View {
                 value: $protectedFloor,
                 requirement: .required,
                 help: "The app will never plan your spending account below this. It tops the floor back up before sending anything extra to debt.",
-                error: floorError
+                error: floorError,
+                fieldIdentifier: "goal.floor"
             )
             .onChange(of: protectedFloor) { _, _ in floorTouched = true }
-            .accessibilityIdentifier("goal.floor")
 
             SetupMoneyField(
                 title: "Allowance per paycheck",
                 value: $allowanceCap,
                 requirement: .required,
                 help: "This is available, not spent. We'll never count it as spent unless you tell us.",
-                error: allowanceError
+                error: allowanceError,
+                fieldIdentifier: "goal.allowance"
             )
             .onChange(of: allowanceCap) { _, _ in allowanceTouched = true }
-            .accessibilityIdentifier("goal.allowance")
 
             if let error {
                 Label(error, systemImage: "exclamationmark.circle")
