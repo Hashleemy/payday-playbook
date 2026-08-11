@@ -54,8 +54,12 @@ struct PlanningInputBuilder {
             FetchDescriptor<IncomeChange>(predicate: #Predicate { $0.scheduleID == scheduleID })
         ).sorted { $0.effectiveDate < $1.effectiveDate }
 
+        // Only essential obligations are reserved from every paycheck (V2-07);
+        // the rest are the user's own record and never enter the generator.
         let obligations = try context.fetch(
-            FetchDescriptor<RecurringObligation>(predicate: #Predicate { !$0.isArchived })
+            FetchDescriptor<RecurringObligation>(
+                predicate: #Predicate { !$0.isArchived && $0.isEssential }
+            )
         ).sorted { ($0.createdAt, $0.name) < ($1.createdAt, $1.name) }
 
         let debts = try context.fetch(

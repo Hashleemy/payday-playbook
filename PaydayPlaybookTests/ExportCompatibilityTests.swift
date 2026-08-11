@@ -223,7 +223,15 @@ final class ExportCompatibilityTests: XCTestCase {
 
         let v1Header = "planID,displayName,startingBalance,apr,minimum,dueDay,priority,archived"
         XCTAssertTrue(header.hasPrefix(v1Header), "existing columns keep names and order")
-        XCTAssertEqual(header, v1Header + ",type,originalPrincipal,creditLimit,extraPrincipalEligible")
+        // Append-only, not frozen: schema-2 columns follow the v1 block in a
+        // fixed order, and later columns may be appended after them without
+        // breaking a v1 reader.
+        XCTAssertTrue(
+            header.hasPrefix(v1Header + ",type,originalPrincipal,creditLimit,extraPrincipalEligible"),
+            "schema-2 columns keep their names and order too"
+        )
+        let columns = header.split(separator: ",").map(String.init)
+        XCTAssertEqual(Set(columns).count, columns.count, "no duplicate column names")
 
         let firstRow = try XCTUnwrap(csv.split(separator: "\n").dropFirst().first.map(String.init))
         XCTAssertTrue(firstRow.contains("creditCard"))
