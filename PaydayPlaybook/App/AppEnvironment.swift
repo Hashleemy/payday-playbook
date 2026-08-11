@@ -8,8 +8,10 @@ final class AppEnvironment: ObservableObject {
     let dateProvider: DateProviding
     let notificationScheduler: NotificationScheduler
 
-    init() {
-        self.dateProvider = DateProviderFactory.make()
+    /// `dateProvider` defaults to the launch-argument-aware factory; tests
+    /// inject a fixed provider so dashboard content is deterministic.
+    init(dateProvider: DateProviding? = nil) {
+        self.dateProvider = dateProvider ?? DateProviderFactory.make()
         self.notificationScheduler = NotificationScheduler()
     }
 
