@@ -92,10 +92,12 @@ final class SupportingServiceTests: XCTestCase {
             to: TestSupport.date(2026, 8, 31)
         )
 
-        let paydays = events.filter { $0.kind == .paydayFuture || $0.kind == .paydayDue }
+        // Carried forward from 0.1.x; the v0.2.0 taxonomy renamed the payday
+        // marker kinds into one `.payday` kind carrying an explicit status.
+        let paydays = events.filter { $0.kind == .payday }
         XCTAssertEqual(paydays.count, 1)
         XCTAssertEqual(paydays.first?.date, TestSupport.date(2026, 8, 20))
-        XCTAssertEqual(paydays.first?.kind, .paydayFuture)
+        XCTAssertEqual(paydays.first?.status, .planned)
 
         XCTAssertTrue(events.contains { $0.kind == .milestone })   // Card B baseline payoff Aug 20
         XCTAssertTrue(events.contains { $0.kind == .entry && $0.date == TestSupport.date(2026, 8, 21) })
@@ -111,7 +113,7 @@ final class SupportingServiceTests: XCTestCase {
             from: TestSupport.date(2026, 8, 1),
             to: TestSupport.date(2026, 8, 31)
         )
-        XCTAssertTrue(after.contains { $0.kind == .paydayCompleted })
+        XCTAssertTrue(after.contains { $0.kind == .payday && $0.status == .completed })
     }
 
     func testDebtFreeDetection() throws {

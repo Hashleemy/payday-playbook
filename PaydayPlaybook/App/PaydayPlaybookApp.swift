@@ -85,9 +85,38 @@ struct PaydayPlaybookApp: App {
                     case .background:
                         appLock.lockIfEnabled()
                     case .active:
-                        Task { await appEnvironment.notificationScheduler.refreshAuthorizationStatus() }
+                        // Launch and foreground both reconcile: the rolling
+                        // window advances, and anything that changed while
+                        // the app was away (dates passing, a completed
+                        // payday) is picked up here.
+                        Task {
+                            await appEnvironment.notificationScheduler.refreshAuthorizationStatus()
+                            await appEnvironment.notificationScheduler.rescheduleAll(
+                                context: container.mainContext,
+                                dateProvider: appEnvironment.dateProvider
+                            )
+                        }
                     default:
                         break
+                    }
+                }
+                // A time-zone move or a DST transition changes when a local
+                // wall-clock reminder actually fires; rebuild the schedule
+                // so the intended local times survive the change.
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)) { _ in
+                    Task {
+                        await appEnvironment.notificationScheduler.rescheduleAll(
+                            context: container.mainContext,
+                            dateProvider: appEnvironment.dateProvider
+                        )
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                    Task {
+                        await appEnvironment.notificationScheduler.rescheduleAll(
+                            context: container.mainContext,
+                            dateProvider: appEnvironment.dateProvider
+                        )
                     }
                 }
         }

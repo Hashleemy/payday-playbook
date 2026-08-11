@@ -1,7 +1,9 @@
 import SwiftUI
 import SwiftData
 
-/// Month/list calendar with event markers and a selected-day panel (F-07).
+/// Month / week / agenda calendar with event markers, filters, a
+/// selected-day play-by-play, and typed deep links (F-07, V2-11, V2-12).
+/// Status is always icon + text — color is reinforcement, never the signal.
 struct CalendarTabView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appEnvironment: AppEnvironment
@@ -11,7 +13,8 @@ struct CalendarTabView: View {
 
     enum Mode: String, CaseIterable, Identifiable {
         case month = "Month"
-        case list = "List"
+        case week = "Week"
+        case agenda = "Agenda"
         var id: String { rawValue }
     }
 
@@ -21,7 +24,10 @@ struct CalendarTabView: View {
     @State private var filter: CalendarEventService.Filter = .all
     @State private var events: [CalendarEventService.Event] = []
     @State private var checkInItem: PaydayPlanItem?
+    @State private var entryDetail: LedgerEntry?
+    @State private var milestoneDetail: Milestone?
     @State private var showAddSheet = false
+    @State private var missingTargetMessage: String?
 
     private var calendar: Calendar { DateMath.calendar }
 
@@ -29,12 +35,17 @@ struct CalendarTabView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 controls
-                if mode == .month {
+                switch mode {
+                case .month:
                     monthGrid
                     Divider()
                     selectedDayPanel
-                } else {
-                    eventList
+                case .week:
+                    weekStrip
+                    Divider()
+                    selectedDayPanel
+                case .agenda:
+                    agendaList
                 }
             }
             .navigationTitle("Calendar")
@@ -50,18 +61,48 @@ struct CalendarTabView: View {
                 }
             }
             .onAppear {
-                displayedMonth = DateMath.startOfDay(appEnvironment.dateProvider.now)
-                selectedDay = DateMath.startOfDay(appEnvironment.dateProvider.now)
+                // Only center on today the first time the tab is shown;
+                // re-appearing must not throw away the month the user was
+                // browsing, or a deep link that just selected a due date.
+                if selectedDay == nil {
+                    displayedMonth = DateMath.startOfDay(appEnvironment.dateProvider.now)
+                    selectedDay = DateMath.startOfDay(appEnvironment.dateProvider.now)
+                }
                 reload()
+                revealObligation(router.pendingObligationID)
             }
             .onChange(of: displayedMonth) { _, _ in reload() }
+            .onChange(of: mode) { _, _ in reload() }
+            .onChange(of: router.pendingObligationID) { _, obligationID in
+                revealObligation(obligationID)
+            }
             .onChange(of: checkIns.count) { _, _ in reload() }
             .onChange(of: ledgerEntries.count) { _, _ in reload() }
             .sheet(item: $checkInItem, onDismiss: reload) { item in
                 CheckInFlowView(planItem: item)
             }
+            .sheet(item: $entryDetail) { entry in
+                LedgerEntryDetailSheet(entry: entry)
+            }
+            .sheet(item: $milestoneDetail) { milestone in
+                MilestoneDetailSheet(milestone: milestone) {
+                    milestoneDetail = nil
+                    router.selectedTab = .progress
+                }
+            }
             .sheet(isPresented: $showAddSheet, onDismiss: reload) {
                 QuickAddSheet()
+            }
+            .alert(
+                "Not available",
+                isPresented: Binding(
+                    get: { missingTargetMessage != nil },
+                    set: { if !$0 { missingTargetMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(missingTargetMessage ?? "")
             }
         }
     }
@@ -135,10 +176,51 @@ struct CalendarTabView: View {
         }
     }
 
+    // MARK: - Week strip
+
+    private var weekStrip: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Button {
+                    shiftWeek(-1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("Previous week")
+                Spacer()
+                Text(weekTitle)
+                    .font(.headline)
+                Spacer()
+                Button {
+                    shiftWeek(1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("Next week")
+            }
+            .padding(.horizontal)
+
+            HStack(spacing: 2) {
+                ForEach(weekDays, id: \.self) { day in
+                    VStack(spacing: 2) {
+                        Text(shortWeekdaySymbol(day))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        dayCell(day)
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+        }
+    }
+
     private func dayCell(_ day: Date) -> some View {
         let dayEvents = eventsByDay[day] ?? []
         let isSelected = selectedDay.map { DateMath.isSameDay($0, day) } ?? false
         let isToday = DateMath.isSameDay(day, appEnvironment.dateProvider.now)
+        let needsAttention = dayEvents.contains { $0.status == .needsAttention }
         return Button {
             selectedDay = day
         } label: {
@@ -147,7 +229,12 @@ struct CalendarTabView: View {
                     .font(.subheadline.weight(isToday ? .bold : .regular))
                     .foregroundStyle(isToday ? Color.accentColor : .primary)
                 HStack(spacing: 2) {
-                    ForEach(Array(Set(dayEvents.map(\.kind))).sorted { $0.rawValue < $1.rawValue }.prefix(3), id: \.self) { kind in
+                    if needsAttention {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 7))
+                            .foregroundStyle(.orange)
+                    }
+                    ForEach(Array(Set(dayEvents.map(\.kind))).sorted { $0.dayOrder < $1.dayOrder }.prefix(needsAttention ? 2 : 3), id: \.self) { kind in
                         Image(systemName: kind.symbolName)
                             .font(.system(size: 7))
                             .foregroundStyle(markerColor(kind))
@@ -160,6 +247,12 @@ struct CalendarTabView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
             )
+            .overlay(
+                // Needs-attention ring: paired with the triangle icon above,
+                // so the state reads without color perception.
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(needsAttention ? Color.orange : Color.clear, lineWidth: 1.5)
+            )
         }
         .buttonStyle(.plain)
         .accessibilityLabel(dayAccessibilityLabel(day, events: dayEvents))
@@ -167,12 +260,15 @@ struct CalendarTabView: View {
 
     private func markerColor(_ kind: CalendarEventService.EventKind) -> Color {
         switch kind {
-        case .paydayFuture: return .blue
-        case .paydayCompleted: return .mint
-        case .paydayDue: return .orange
-        case .cardDue: return Color(red: 0.94, green: 0.45, blue: 0.40)
+        case .payday: return .blue
+        case .transfer: return .teal
+        case .reserve: return .indigo
+        case .debtPayment: return .purple
+        case .debtDue: return Color(red: 0.94, green: 0.45, blue: 0.40)
+        case .obligationDue: return .brown
         case .milestone: return .mint
         case .entry: return .gray
+        case .reforecast: return .cyan
         }
     }
 
@@ -181,7 +277,7 @@ struct CalendarTabView: View {
         if events.isEmpty {
             label += ", no events"
         } else {
-            label += ", " + events.map { "\($0.kind.label): \($0.title)" }.joined(separator: ", ")
+            label += ", " + events.map(\.accessibilityDescription).joined(separator: ", ")
         }
         return label
     }
@@ -190,6 +286,16 @@ struct CalendarTabView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM yyyy"
         return formatter.string(from: displayedMonth)
+    }
+
+    private var weekTitle: String {
+        guard let first = weekDays.first, let last = weekDays.last else { return "" }
+        return "\(DateMath.mediumString(first)) – \(DateMath.mediumString(last))"
+    }
+
+    private func shortWeekdaySymbol(_ day: Date) -> String {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        return symbols[calendar.component(.weekday, from: day) - 1]
     }
 
     private var monthDays: [Date?] {
@@ -205,8 +311,16 @@ struct CalendarTabView: View {
         return days
     }
 
+    private var weekDays: [Date] {
+        let anchor = selectedDay ?? DateMath.startOfDay(appEnvironment.dateProvider.now)
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: anchor) else { return [] }
+        return (0..<7).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: interval.start).map(DateMath.startOfDay)
+        }
+    }
+
     private var filteredEvents: [CalendarEventService.Event] {
-        events.filter { filter.includes($0.kind) }
+        events.filter { filter.includes($0) }
     }
 
     private var eventsByDay: [Date: [CalendarEventService.Event]] {
@@ -238,10 +352,15 @@ struct CalendarTabView: View {
         .listStyle(.insetGrouped)
     }
 
-    private var eventList: some View {
+    private var agendaList: some View {
         List {
-            ForEach(filteredEvents) { event in
-                eventRow(event, showDate: true)
+            let days = eventsByDay.keys.sorted()
+            ForEach(days, id: \.self) { day in
+                Section(DateMath.mediumString(day)) {
+                    ForEach(eventsByDay[day] ?? []) { event in
+                        eventRow(event)
+                    }
+                }
             }
             if filteredEvents.isEmpty {
                 EmptyStateView(
@@ -254,7 +373,7 @@ struct CalendarTabView: View {
     }
 
     @ViewBuilder
-    private func eventRow(_ event: CalendarEventService.Event, showDate: Bool = false) -> some View {
+    private func eventRow(_ event: CalendarEventService.Event) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: event.kind.symbolName)
                 .foregroundStyle(markerColor(event.kind))
@@ -263,14 +382,16 @@ struct CalendarTabView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
                     .font(.subheadline.weight(.medium))
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     Text(event.kind.label)
-                    if showDate {
-                        Text("· \(DateMath.mediumString(event.date))")
-                    }
+                    Text("·")
+                    // Status as icon + text, never color alone.
+                    Image(systemName: event.status.symbolName)
+                        .font(.caption2)
+                    Text(event.status.label)
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(event.status == .needsAttention ? Color.orange : Color.secondary)
                 if let detail = event.detail {
                     Text(detail)
                         .font(.caption)
@@ -278,7 +399,7 @@ struct CalendarTabView: View {
                 }
             }
             Spacer()
-            if actionLabel(event) != nil {
+            if event.link != nil {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -286,43 +407,91 @@ struct CalendarTabView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { performAction(event) }
+        .onTapGesture { open(event) }
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(actionLabel(event) != nil ? .isButton : [])
+        .accessibilityLabel(event.accessibilityDescription)
+        .accessibilityAddTraits(event.link != nil ? .isButton : [])
         .accessibilityHint(actionLabel(event) ?? "")
     }
 
     private func actionLabel(_ event: CalendarEventService.Event) -> String? {
-        switch event.kind {
-        case .paydayFuture, .paydayCompleted, .paydayDue: return "Open check-in"
-        case .cardDue: return "Open card"
+        switch event.link {
+        case .checkIn: return "Open check-in"
+        case .debt: return "Open debt"
+        case .entry: return "Open entry"
         case .milestone: return "View milestone"
-        case .entry: return nil
+        case nil: return nil
         }
     }
 
-    private func performAction(_ event: CalendarEventService.Event) {
-        switch event.kind {
-        case .paydayFuture, .paydayCompleted, .paydayDue:
-            guard let reference = event.reference, let itemID = UUID(uuidString: reference) else { return }
-            let items = (try? modelContext.fetch(FetchDescriptor<PaydayPlanItem>())) ?? []
-            checkInItem = items.first { $0.id == itemID }
-        case .cardDue:
-            router.pendingDebtPlanID = event.reference
+    /// Typed deep-link dispatch. Every target is resolved against the store
+    /// first; an archived or deleted entity gets a calm explanation instead
+    /// of a dead tap (V2-11).
+    private func open(_ event: CalendarEventService.Event) {
+        guard let link = event.link else { return }
+        let service = appEnvironment.calendarService(context: modelContext)
+        guard let resolution = try? service.resolve(link) else {
+            missingTargetMessage = "That item can't be opened right now."
+            return
+        }
+        switch resolution {
+        case .openCheckIn(let itemID):
+            checkInItem = (try? modelContext.fetch(FetchDescriptor<PaydayPlanItem>()))?
+                .first { $0.id == itemID }
+        case .openDebt(let planID):
+            router.pendingDebtPlanID = planID
             router.selectedTab = .debts
-        case .milestone:
-            router.selectedTab = .progress
-        case .entry:
-            break
+        case .openEntry(let entryID):
+            entryDetail = (try? modelContext.fetch(FetchDescriptor<LedgerEntry>()))?
+                .first { $0.id == entryID }
+        case .openMilestone(let milestoneID):
+            milestoneDetail = (try? modelContext.fetch(FetchDescriptor<Milestone>()))?
+                .first { $0.id == milestoneID }
+        case .unavailable(let message):
+            missingTargetMessage = message
         }
     }
 
     // MARK: - Actions
 
+    /// Moves the month *and* the selection: the selected-day panel and the
+    /// week strip both read from `selectedDay`, so leaving it behind in the
+    /// previous month would show an empty day outside the loaded window.
+    /// Landing on today when the new month contains it, otherwise the 1st.
     private func shiftMonth(_ direction: Int) {
-        if let next = calendar.date(byAdding: .month, value: direction, to: displayedMonth) {
-            displayedMonth = next
+        guard let next = calendar.date(byAdding: .month, value: direction, to: displayedMonth) else { return }
+        displayedMonth = next
+        let today = DateMath.startOfDay(appEnvironment.dateProvider.now)
+        if calendar.isDate(today, equalTo: next, toGranularity: .month) {
+            selectedDay = today
+        } else if let interval = calendar.dateInterval(of: .month, for: next) {
+            selectedDay = DateMath.startOfDay(interval.start)
         }
+    }
+
+    private func shiftWeek(_ direction: Int) {
+        let anchor = selectedDay ?? DateMath.startOfDay(appEnvironment.dateProvider.now)
+        if let next = calendar.date(byAdding: .day, value: 7 * direction, to: anchor) {
+            selectedDay = DateMath.startOfDay(next)
+            displayedMonth = DateMath.startOfDay(next)
+        }
+    }
+
+    /// A bill-due deep link selects that obligation's next occurrence, so
+    /// the day panel opens on the bill the reminder was about. An
+    /// obligation that was archived or deleted in the meantime leaves the
+    /// calendar on today rather than jumping somewhere arbitrary.
+    private func revealObligation(_ obligationID: UUID?) {
+        guard let obligationID else { return }
+        router.pendingObligationID = nil
+        let obligations = (try? modelContext.fetch(FetchDescriptor<RecurringObligation>())) ?? []
+        guard let obligation = obligations.first(where: { $0.id == obligationID && !$0.isArchived }),
+              let dueDay = obligation.dueDay else { return }
+        jump(to: DueDateRule.nextOccurrence(
+            dueDay: dueDay,
+            onOrAfter: appEnvironment.dateProvider.now,
+            shift: obligation.dueDateShiftRule
+        ))
     }
 
     private func jump(to date: Date) {
@@ -338,11 +507,83 @@ struct CalendarTabView: View {
     }
 
     private func reload() {
+        // Load the whole displayed month plus a week of margin on both
+        // sides, so week mode near a month edge stays populated.
         guard let interval = calendar.dateInterval(of: .month, for: displayedMonth) else { return }
         let service = appEnvironment.calendarService(context: modelContext)
         events = (try? service.events(
-            from: interval.start,
-            to: DateMath.addingDays(-1, to: interval.end)
+            from: DateMath.addingDays(-7, to: interval.start),
+            to: DateMath.addingDays(6, to: interval.end)
         )) ?? []
+    }
+}
+
+/// Read-only detail for a ledger entry opened from the calendar.
+struct LedgerEntryDetailSheet: View {
+    let entry: LedgerEntry
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Entry") {
+                    LabeledContent("Type", value: entry.type.displayName)
+                    LabeledContent("Amount", value: MoneyFormat.string(entry.amount))
+                    LabeledContent("Date", value: DateMath.mediumString(entry.effectiveDate))
+                    if let planID = entry.debtPlanID, !planID.isEmpty {
+                        LabeledContent("Card", value: planID)
+                    }
+                    if let note = entry.note, !note.isEmpty {
+                        LabeledContent("Note", value: note)
+                    }
+                }
+            }
+            .navigationTitle("Ledger entry")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+/// Milestone detail opened from the calendar, with a route to Progress.
+struct MilestoneDetailSheet: View {
+    let milestone: Milestone
+    let onViewProgress: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Milestone") {
+                    LabeledContent("Title", value: milestone.title)
+                    if let achieved = milestone.achievedDate {
+                        LabeledContent("Achieved", value: DateMath.mediumString(achieved))
+                    } else if let forecast = milestone.forecastDate {
+                        LabeledContent("Projected", value: DateMath.mediumString(forecast))
+                    }
+                    if let baseline = milestone.baselineDate {
+                        LabeledContent("Original plan", value: DateMath.mediumString(baseline))
+                    }
+                }
+                Section {
+                    Button {
+                        onViewProgress()
+                    } label: {
+                        Label("View progress", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                }
+            }
+            .navigationTitle("Milestone")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
