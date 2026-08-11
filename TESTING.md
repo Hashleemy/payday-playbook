@@ -1,114 +1,154 @@
 # Payday Playbook — Testing
 
-## Automated coverage
+Applies to **0.2.0-alpha.1** (app 0.2.0 · build 2 · schema 2 · calc 2 · backup 2).
 
-Run everything:
+## Running the suites
 
 ```bash
+# Unit suite — 281 tests
 xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath .build/dd \
+  -only-testing:PaydayPlaybookTests test
+
+# UI suite — 18 tests. Run it ALONE and serially (see below).
+xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath .build/dd-ui \
+  -parallel-testing-enabled NO \
+  -only-testing:PaydayPlaybookUITests test
 ```
 
-### Unit tests (PaydayPlaybookTests, 54 tests)
+**Two rules that are not optional here, both learned the hard way:**
 
-Required tests from MVP_LAYOUT §8 and where they live:
+1. **Give every concurrent checkout its own `-derivedDataPath` and its own
+   simulator** (`xcrun simctl create`). Running `xcodebuild test` from several
+   worktrees against the shared "iPhone 17 Pro" cross-contaminates results —
+   runs have reported failures in test files that do not exist in the checkout
+   under test, and have executed zero of their own tests.
+2. **Run the UI suite alone, with `-parallel-testing-enabled NO`.** Under
+   parallel execution with other simulators booted, `SimRenderServer` crashes
+   and takes app launches with it. The symptom is a handful of tests reported
+   as "failed" with no assertion failure and no app crash log, and a *different*
+   set failing on each run. Serially, on a quiet machine, the suite is green.
 
-| # | Requirement | Test |
-| --- | --- | --- |
-| 1 | Original total equals $29,681.61 | `DebtCalculationEngineTests.testOriginalTotalEquals29681_61` |
-| 2 | Avalanche order B, D, A, F, C, E | `DebtCalculationEngineTests.testAvalancheOrder` |
-| 3 | First paycheck Aug 20, next Sep 3, 2026 | `DebtCalculationEngineTests.testFirstTwoPaydayDates` |
-| 4 | First check keeps $400 / moves $1,694 / reserves $386.31 / budgets $1,307.69 | `PlanSeederTests.testFirstCheckAllocations` |
-| 5 | Checks 2–8 budget $1,407.69 | `PlanSeederTests.testChecks2Through8Budget` |
-| 6 | Dec 10, 2026 income $2,190, budget $1,503.69 | `PlanSeederTests.testDecemberIncomeChange` |
-| 7 | Baseline payoffs B/D/A/F/C/E match dates | `DebtCalculationEngineTests.testBaselinePerCardPayoffDates` |
-| 8 | Final payoff Jun 24, 2027 after 23 checks | `DebtCalculationEngineTests.testBaselineFinalPayoff` |
-| 9 | Modeled interest rounds to $3,461.16 | `DebtCalculationEngineTests.testBaselineModeledInterest` |
-| 10 | No-spend ceiling reaches $7,900 | `PlanSeederTests.testNoSpendCeilingProgression` |
-| 11 | $100 spending lowers actual C1 only, not the ceiling | `ReconciliationServiceTests.testAllowanceSpendingLowersActualOnly` |
-| 12 | Authoritative snapshot changes forecast, not Original Plan v1 | `ReconciliationServiceTests.testSnapshotChangesForecastNotBaseline` |
-| 13 | Payoff remainder rolls to the next avalanche card | `DebtCalculationEngineTests.testPayoffRollsRemainderToNextCard` |
-| 14 | Negative inputs rejected outside refund/reversal/correction | `ReconciliationServiceTests.testNegativeInputsRejected` |
-| 15 | Overallocated income and negative C2 caught | `ReconciliationServiceTests.testOverallocationAndNegativeC2Caught` |
+## Unit tests — 281, all passing
 
-Additional coverage: idempotent/interrupted/persistent seeding, tampered seed
-resource rejection, seeded per-card balances, reforecast reproducing the
-baseline from a clean start, extra payments accelerating payoff, minimum
-formula behavior, atomic check-in completion, exception-gated unreconciled
-completion, C2 bucket derivation, milestone achievement, calendar merge,
-notification defaults and deep-link routing, JSON round trip, schema-version
-rejection, CSV headers/escaping/values, currency rounding, money parsing.
-Review-regression coverage: unfunded payments and skipped C1 confirmations
-require an explanation, outside funds are not double-counted into Checking 2,
-prior-period spending never reduces the new allowance window, already-paid
-cards get no phantom payoff dates, an overdue open payday stays in the
-forecast, money editing text round-trips exactly, a malformed backup cannot
-destroy existing data, and CSV formula characters are neutralized.
+| Suite | Tests | Covers |
+| --- | ---: | --- |
+| `NotificationSchedulerTests` | 24 | Diff-based reconcile, permission states, rolling window and 60-request cap, no double-fire on upgrade |
+| `OnboardingSetupTests` | 23 | Resume at every step boundary, all six debt types, one-default-income invariant, all four cadences, boundary values |
+| `AvalanchePlanEngineTests` | 22 | Allocation order, rollover, shortfall, promo APR, eligibility, utilization, minimum-only comparison |
+| `CalendarEventServiceTests` | 21 | Event taxonomy, statuses, ordering, deep-link resolution, archived/deleted fallback |
+| `DueDateRuleTests` | 16 | Day 29–31 clamping, weekend shift rules, DST and time-zone stability, prospective edits |
+| `MigrationServiceTests` | 13 | Clean-vs-upgrade routing, 23 paydays value-for-value, derived balances, idempotency, induced-failure rollback |
+| `PlanPresentationTests` | 12 | Plan screen data, three-track separation, activation without history loss |
+| `DebtCalculationEngineTests` | 11 | Frozen calc-v1 baseline: order, dates, payoffs, $3,461.16 interest |
+| `AvalancheLemParityTests` | 11 | Calc v2 reproduces the calc-v1 baseline check by check |
+| `PlanSeederTests` | 10 | Template load, allocations, no-spend ceiling to $7,900 |
+| `DebtTypeTests` | 10 | Per-type metadata, validation, utilization, principal basis |
+| `ReviewRegressionTests` | 9 | 0.1.x review findings (unfunded payments, double-counting, CSV neutralisation) |
+| `ReconciliationServiceTests` | 8 | Check-in reconciliation, snapshot-vs-baseline separation, invalid input |
+| `PlanGenerationServiceTests` | 8 | Lem-equivalence through the store bridge, cadences, actionable failures |
+| `PayScheduleGeneratorTests` | 8 | All four cadences, short months, leap years, DST |
+| `CashAccountRepositoryTests` | 8 | Account CRUD and the exactly-one-default-income invariant |
+| `AppRouterTests` | 8 | Notification routes, legacy `card` parsing, tab destinations |
+| `SupportingServiceTests` | 7 | Money formatting/parsing, rounding, date math |
+| `ReleaseIntegrationTests` | 7 | **Merge-only defects** — see below |
+| `PlanningContractTests` | 7 | DTO money exactness, deterministic snapshots, R-08 ordering at persistence |
+| `ExportCompatibilityTests` | 7 | Backup v2 round trip, v1 import through migration, append-only CSV |
+| `DebtPresentationTests` | 7 | Per-type labels/icons, utilization badge, non-colour meaning |
+| `DashboardStateTests` | 7 | Five-second dashboard from production data, empty/error states |
+| `UpgradeChecklistTests` | 5 | Migrated users never re-onboard; answering changes no baseline value |
+| `OnboardingProgressTests` | 5 | Step persistence, resume, duplicate-proof finish |
+| `ExportServiceTests` | 5 | JSON round trip, schema rejection, CSV escaping |
+| `AvalanchePropertyTests` | 2 | Seeded-random invariants: determinism, cent reconciliation, non-negativity |
 
-### UI tests (PaydayPlaybookUITests, 9 tests)
+`ReleaseIntegrationTests` pins defects that existed **only in the merged tree**,
+because each one's two halves arrived from different agent branches: the
+presentation bridge ignoring the snapshot's `asOf`, reversed semimonthly days
+normalising differently on the two bridges, missing pay days defaulting instead
+of failing, the prepayment tri-state collapsing to a boolean, and the income
+lookup reporting the bundled template's $2,094.00 on a generated-plan install.
 
-- Clean install → onboarding shows exact plan → lands on Today (F-01)
-- Relaunch keeps the seed without duplicates; data persists (F-01)
-- Complete the first payday check-in end to end (F-03)
-- Save a draft and resume on the saved step (F-03)
-- Record a card payment and an authoritative balance update (F-04/F-05)
-- Calendar selected-day panel opens the check-in (F-07)
-- Dashboard usable at accessibility text size with labeled controls (F-15)
-- Notification settings render without permission; app fully usable (F-11)
-- Backup screen produces shareable JSON and CSV files (F-14)
+## UI tests — 18, all passing
 
-### Verified environments
+Clean install through onboarding to a generated plan and Today; resume after
+force-quit mid-step; template load with its warning; first payday check-in end
+to end; draft save and resume; card payment and authoritative balance update;
+calendar day panel opening the check-in; dashboard, plan, progress and setup at
+accessibility text sizes; debt detail vocabulary and the type-aware editor;
+plan screen tracks and activation; notification settings without permission;
+backup producing shareable files.
 
-- iPhone 17 Pro simulator, iOS 26.5 — full suite
-- iPhone 15 Pro simulator, iOS 17.0.1 — unit suite (deployment-floor check)
-- Release configuration builds cleanly
+## Device checklist (physical iPhone)
 
-## Manual checklist (physical iPhone)
+**Nothing below has been validated on hardware for this build.** The release is
+not ready for general alpha distribution until items 1–7 pass on a real device;
+everything else in this file is green in the simulator.
 
-Automation cannot cover these; verify on a device before release:
+1. **Notification delivery.** Enable reminders, set a payday morning time a few
+   minutes out, lock the device, confirm the banner arrives and the tap opens
+   the right check-in. Confirm the evening nudge disappears once the check-in
+   is completed.
+2. **The 64-request limit in practice.** With many debts and obligations,
+   confirm iOS accepts all 60 scheduled requests and fires them.
+3. **Lock-screen copy.** With detailed previews off, confirm no amount and no
+   debt nickname appears on the lock screen — including under notification
+   grouping and the "Show Previews" system setting.
+4. **Provisional authorization.** Cannot be entered in the simulator; verify
+   quiet delivery on a device build.
+5. **Time-zone travel and DST.** Change the device time zone and cross a real
+   DST boundary; confirm a 9:00 reminder still fires at 9:00 local and that no
+   duplicates appear.
+6. **Cold-launch deep link.** Tap a delivered notification with the app
+   terminated; confirm it lands on the right screen.
+7. **VoiceOver and Dynamic Type on the new calendar modes.** Week strip and
+   agenda list at accessibility sizes, and the spoken order of combined event
+   rows.
+8. **Notification-denied path.** Deny permission, confirm Settings → Reminders
+   explains it, offers "Open iOS Settings", and the app stays fully usable.
+9. **Face ID lock.** Enable in Settings → Security, background, reopen, confirm
+   the overlay, Face ID unlock, and passcode fallback.
+10. **Backup round trip.** Export JSON and CSVs to Files; re-import the JSON,
+    review the restore summary, confirm the rollback backup lands in Documents,
+    and spot-check that debts, ledger, and completed check-ins survive.
+11. **Relaunch persistence and offline use.** Force-quit and relaunch in
+    airplane mode; entries, drafts, and settings survive and nothing needs the
+    network.
+12. **Reduce Motion.** The debt-free celebration shows without the spring
+    animation.
+13. **Upgrade rehearsal.** Install 0.1.x, use it (complete a check-in, record a
+    payment), then install this build over it. Confirm all 23 paydays, the
+    ledger, and check-ins are unchanged, that onboarding does not reappear, and
+    that no reminder fires twice.
+14. **Plan verification screen** (debug builds): Settings → About → Plan
+    verification — 6 debts, 23 paydays, $29,681.61 total, Jun 24 2027 payoff,
+    $3,461.16 interest, $7,900 ceiling.
 
-1. **Notification delivery**: enable reminders, set a payday morning time a
-   few minutes ahead, background the app, confirm banner arrives and tapping
-   it opens the correct check-in. Confirm the 7 PM reminder disappears after
-   completing the day's check-in.
-2. **Notification-denied path**: deny permission in iOS Settings, open
-   Settings → Reminders, confirm the "Open iOS Settings" guidance shows and
-   the app works fully.
-3. **Face ID lock**: enable in Settings → Security, background the app,
-   reopen, confirm the lock overlay and successful Face ID unlock (and
-   passcode fallback).
-4. **Share sheet**: export JSON and CSVs to Files; re-import the JSON, review
-   the restore summary, confirm rollback backup lands in the app's Documents.
-5. **Restore round trip**: after restore, spot-check debts, ledger, and the
-   completed check-ins survive.
-6. **Dynamic Type**: largest accessibility size across Today, Check-In,
-   Calendar, Debts, Progress — no clipped or overlapping content.
-7. **VoiceOver**: dashboard cards, calendar day cells, chart summaries, and
-   the check-in summary bar read meaningful labels.
-8. **Reduce Motion**: with Reduce Motion on, the debt-free celebration shows
-   without the spring animation.
-9. **Relaunch persistence**: force-quit and relaunch; entries, drafts, and
-   settings survive.
-10. **Plan verification screen** (debug builds): Settings → About → Plan
-    verification — plan name, 6 debts, 23 paydays, $29,681.61 total, milestone
-    dates, Jun 24 2027 payoff, $3,461.16 interest, $7,900 ceiling.
+## Known behaviours and limitations
 
-## Known behaviors and limitations
-
-- Statement due days are clamped to 1–28 to avoid short-month ambiguity. A
-  restored backup carrying 29–31 is clamped to the 28th for reminders and the
-  calendar.
-- The check-in prefills planned values (including the expected C1 balance)
-  into editable fields; completion is the user's confirmation. Payments
-  prefill as minimums plus an avalanche attack that never exceeds a card's
-  balance.
-- The reforecast projects the biweekly cadence past June 2027 if the user
-  falls behind; the explanation sentence always names the shift and cause.
-- Plan dates are interpreted in the device's current time zone. Traveling to
-  a time zone west of the seeding zone can shift day boundaries by one day
-  until returning (PlanVersion stores the seeding zone for a future fix).
-- Milestone titles are formatted at seed time in the seeding locale.
-- Calendar notes are stored as zero-amount Checking 1 adjustments (displayed
-  as "Note" in the ledger) and appear under that type in CSV exports.
+- Due days accept 1–31 and clamp to the last valid day of shorter months
+  (Jan 31 → Feb 28, or Feb 29 in a leap year). **This replaces the 0.1.x
+  1–28 clamp**, which is gone from every call site. Weekend shifting is opt-in;
+  holidays are deliberately unsupported.
+- Editing a due day is prospective. Markers for months before the edit are not
+  drawn, because the app never recorded what the old due day was and will not
+  invent one.
+- Weekly and biweekly obligations get no due-date marker or reminder; a
+  day-of-month cannot describe them. Their per-paycheck reserve is unaffected.
+- Quarterly, semiannual, and annual obligations recur from their creation
+  month; there is no first-due-date field yet.
+- Migrated debts carry no `originalPrincipal`; percent-paid falls back to the
+  starting balance, exactly as 0.1.x computed it.
+- Interest is simple, 365-day, accrued per payday — not daily compounding and
+  not issuer statement cycles. Card minimums without an entered amount use a
+  heuristic. Every plan surfaces these as assumptions in the UI.
+- The plan analysis (baseline + reforecast + two scenarios) runs synchronously
+  on the main thread; fine at 23 paychecks, worth moving off-actor for very
+  long plans.
+- At the largest accessibility sizes, Today's primary action requires a scroll.
 - Balance derivations fetch whole tables and filter in memory — fine at this
-  plan's scale (hundreds of rows), revisit if the app ever outlives Phase II.
+  scale, revisit if the app outlives Phase II.
+- Calendar notes are stored as zero-amount Checking 1 adjustments (shown as
+  "Note" in the ledger) and export under that type.
