@@ -5,8 +5,15 @@ import Foundation
 /// constants before insertion, and unit tests assert both stay in agreement.
 enum PlanContract {
     static let planName = "Original Plan v1"
+    /// Schema/calc version of the frozen v1 seed resource. The bundled JSON
+    /// and Original Plan v1 rows are stamped with these forever.
     static let schemaVersion = 1
     static let calculationVersion = 1
+    /// Current store schema (v0.2.0). `AppSettings.seedSchemaVersion` below
+    /// this value routes the launch through `MigrationService`.
+    static let currentSchemaVersion = 2
+    /// Calculation version for newly generated plans (MVP_LAYOUT §5).
+    static let currentCalculationVersion = 2
 
     static let startingDebtTotal = Decimal(string: "29681.61")!
     static let startingChecking1 = Decimal(string: "900.00")!
