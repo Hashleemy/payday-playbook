@@ -40,6 +40,17 @@ final class NotificationScheduler: ObservableObject {
         authorizationStatus = await center.authorizationStatus()
     }
 
+    #if DEBUG
+    /// Read-only snapshot of what is actually pending, for the debug
+    /// diagnostics screen. The device checklist has to answer "did that edit
+    /// leave a duplicate behind?", and that is not a question the lock screen
+    /// can answer — a stale trigger looks exactly like a correct one until it
+    /// fires on the wrong day. Reads only; schedules and cancels nothing.
+    func pendingSnapshot() async -> [UNNotificationRequest] {
+        await center.pendingRequests()
+    }
+    #endif
+
     /// Requests permission. Callers must have shown the value explanation
     /// first (onboarding step 9 / Settings → Reminders).
     @discardableResult
