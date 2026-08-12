@@ -18,8 +18,7 @@ mission's last quality gate — *"any device-only notification limitation is exp
 and tested on a physical iPhone before calling the release ready"* — is half done: the
 limitations are listed (below, and as `TESTING.md` items 1–7), but none has been tested on
 hardware, because no physical iPhone was available to this session. Until those seven items
-pass, the build should not go further than device testing, and the tag should not be
-created — `VERSIONING.md` §3 says to tag artifacts, never intent.
+pass, the build should not go further than device testing.
 
 ## Merge record
 
@@ -197,11 +196,20 @@ matches the release branch name the mission specified. Schema, calculation, and 
 versions were each bumped only because behaviour genuinely required it; the frozen calc-v1
 engine is untouched and Original Plan v1 is never recomputed.
 
-**Tag: prepared, not created.** No tag has been written and nothing has been pushed.
-When approved:
+**Tag: created locally on the user's instruction, not pushed.** `v0.2.0-alpha.1` is an
+annotated tag on the release branch tip.
+
+`VERSIONING.md` §3 conditions the tag on "build 2, all §11 acceptance criteria green on
+fresh + migrated fixtures". That condition is met: every one of the eighteen v0.2.0
+criteria in §11 is fixture- or simulator-provable, and all eighteen are green. Device
+notification delivery is a *mission* quality gate, not a §11 criterion — an earlier draft of
+this report treated it as blocking the tag, which was stricter than the contract actually
+requires. The tag annotation records the outstanding device work explicitly.
+
+Publishing is a separate step and has not been taken:
 
 ```bash
-git tag -a v0.2.0-alpha.1 -m "Payday Playbook 0.2.0-alpha.1 (build 2)" <final-commit>
+git push origin v0.2.0-alpha.1
 # recommended housekeeping, still outstanding from Agent 1:
 git tag -a v0.1.0 -m "Payday Playbook 0.1.0 (first alpha MVP)" b0e7443
 ```
@@ -302,13 +310,13 @@ substitute behaviour. All three are documented above and pinned by tests.
 ## Release recommendation
 
 **READY FOR ALPHA DEVICE TESTING.** Install build 2 on a physical iPhone and work
-`TESTING.md` items 1–7. Do not distribute further, and do not tag, until those pass.
+`TESTING.md` items 1–7. Do not distribute further until those pass.
 
 Also worth running on-device: item 13, the upgrade rehearsal — install 0.1.x, use it, then
 install this build over it. The migration is covered by 13 unit tests against fixtures, but
 a real upgrade over a real store is the one thing that proves the existing user loses
 nothing, and it is the highest-consequence path in this release.
 
-When the device pass is clean, tag `v0.2.0-alpha.1` on the final commit and consider
-retro-tagging `main` as `v0.1.0`. Neither tag has been created and nothing beyond the
-release branch has been pushed.
+`v0.2.0-alpha.1` is tagged locally on the branch tip. When the device pass is clean, push it
+and consider retro-tagging `main` as `v0.1.0`. Nothing beyond the release branch has been
+pushed.
