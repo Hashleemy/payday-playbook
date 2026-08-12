@@ -8,6 +8,38 @@ App, schema, calculation, backup, and user-plan versions are distinct — see `d
 
 Nothing yet.
 
+## [0.2.0-alpha.2] — 2026-08-11
+
+App version 0.2.0 · **build 3**. Supersedes alpha.1 (build 2), which was tagged before
+device testing. 286 unit tests and 19 UI tests green.
+
+### Changed
+
+- **The Original Plan v1 template no longer ships in distribution builds.** It is one real
+  person's finances, and a resource in the app bundle is readable by anyone who unzips the
+  `.ipa` — so hiding the button was not sufficient. The Release configuration now excludes
+  `OriginalPlanV1.json` from the bundle outright, and a Release build phase fails the build
+  if it is ever present. Availability is derived from the resource existing, so a build
+  without it also draws no "Load a template" affordance. Developer builds keep the
+  template: the crashed-partial-seed migration repair and the seed test suites need it.
+  Resolves the open question Agent 1 raised in the v0.2.0 product contract.
+
+### Fixed
+
+- A clean install could appear to "remember" the user. It did not — the Welcome screen's
+  "Load a template instead" button seeded Original Plan v1 and completed setup in a single
+  tap, and because that template is the current user's own real plan, the result was
+  indistinguishable from the app having restored their data. Found on a physical iPhone
+  during alpha.1 device testing. The onboarding routing itself was never at fault.
+
+### Known limitations
+
+- Unchanged from alpha.1, including the notification device-testing gate. A distribution
+  build that meets a 0.1.x store whose *initial seed had crashed mid-write* can no longer
+  repair it, because that repair re-reads the bundled template. Migration already aborts
+  cleanly and leaves the store untouched in that case, and it cannot arise for an install
+  whose 0.1.x seed completed — which is every real 0.1.x install.
+
 ## [0.2.0-alpha.1] — 2026-08-11
 
 App version 0.2.0 · build 2 · persistence schema 2 · calculation version 2 · backup schema 2.

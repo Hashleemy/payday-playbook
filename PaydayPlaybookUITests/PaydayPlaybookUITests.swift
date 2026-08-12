@@ -73,6 +73,29 @@ final class PaydayPlaybookUITests: XCTestCase {
     // Clean first run: the full setup flow generates a plan from the user's
     // own numbers and lands on Today (V2-01, V2-10).
     @MainActor
+    /// A clean install must open on Welcome and must not be inside the app.
+    ///
+    /// Regression: on a genuinely fresh device install the app was reported as
+    /// opening straight into a populated dashboard. The cause turned out to be
+    /// the Welcome screen's template affordance — one tap seeded Original Plan
+    /// v1 and marked onboarding complete, which reads as "the app remembered
+    /// me" because that template is a real person's real plan. This pins the
+    /// first screen, and `TemplatePrivacyTests` pins the template's absence
+    /// from distribution builds.
+    func testCleanInstallOpensOnWelcomeAndNotInsideTheApp() throws {
+        let app = launch()
+
+        XCTAssertTrue(
+            app.buttons["onboarding.setUpPlan"].waitForExistence(timeout: 10),
+            "A clean install must land on the Welcome step."
+        )
+        XCTAssertFalse(
+            app.buttons["today.checkInButton"].exists,
+            "A clean install must not open inside the app with a plan already in place."
+        )
+        XCTAssertTrue(anyText(app, containing: "stays on this iPhone").exists)
+    }
+
     func testFirstRunSetupGeneratesAPlanAndLandsOnToday() throws {
         let app = launch()
 

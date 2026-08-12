@@ -102,6 +102,7 @@
 				F10000000000000000000001 /* Sources */,
 				F10000000000000000000002 /* Frameworks */,
 				F10000000000000000000003 /* Resources */,
+				F10000000000000000000010 /* Verify no template in distribution builds */,
 			);
 			buildRules = (
 			);
@@ -201,6 +202,24 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		F10000000000000000000010 /* Verify no template in distribution builds */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Verify no template in distribution builds";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Original Plan v1 is one real person's finances — their income, their bills,\n# their six card balances. It is a development and verification fixture only.\n# Any build that leaves this machine must not carry it: a resource in the\n# bundle is readable by anyone who unzips the .ipa, so hiding the UI is not\n# enough.\n#\n# EXCLUDED_SOURCE_FILE_NAMES on the Release configuration is what actually\n# keeps it out. This phase is the guard: it only READS, and fails the build if\n# that exclusion ever regresses. A warning would be the wrong shape here — a\n# silent failure ships the data, which is precisely what this exists to stop.\n#\n# TemplateCatalog derives availability from the file's presence, so a build\n# without it also draws no affordance offering it.\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n  TEMPLATE=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OriginalPlanV1.json\"\n  if [ -e \"$TEMPLATE\" ]; then\n    echo \"error: OriginalPlanV1.json is present in the $CONFIGURATION bundle. It contains a real person's finances and must never ship. Check EXCLUDED_SOURCE_FILE_NAMES on the Release configuration.\"\n    exit 1\n  fi\n  echo \"note: verified OriginalPlanV1.json is absent from the $CONFIGURATION bundle\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXResourcesBuildPhase section */
 		F10000000000000000000003 /* Resources */ = {
@@ -388,7 +407,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 3CLQNQARDH;
 				ENABLE_PREVIEWS = YES;
@@ -424,10 +443,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 3CLQNQARDH;
 				ENABLE_PREVIEWS = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = OriginalPlanV1.json;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Payday Playbook uses Face ID to unlock the app and keep your financial records private.";
@@ -459,7 +479,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.2.0;
@@ -477,7 +497,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.2.0;
@@ -494,7 +514,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.2.0;
@@ -511,7 +531,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.2.0;

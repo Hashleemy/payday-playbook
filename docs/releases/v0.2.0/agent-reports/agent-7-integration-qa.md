@@ -307,6 +307,47 @@ squarely cross-agent — each was a lookup or a duplicated conversion where the 
 the merged tree use the code that already existed and was already tested, not to invent
 substitute behaviour. All three are documented above and pinned by tests.
 
+## Addendum — alpha.1 device testing (build 3)
+
+The first finding from putting alpha.1 on a physical iPhone: a clean install appeared to
+open with the user's data already in place instead of running onboarding.
+
+**It was not an onboarding defect.** The device log confirmed a genuinely fresh container
+(`Library/Application Support` absent, store created by CoreData's recovery path — benign
+first-launch noise). There is no CloudKit in this project, and nothing auto-seeds a fresh
+store. What happened is that Welcome's "Load a template instead" seeds Original Plan v1 and
+marks onboarding complete in a single tap — and because that template *is* this user's own
+real plan, the result is indistinguishable from the app having restored their data.
+
+That made Agent 1's open question 4 concrete rather than theoretical, so it is now resolved
+the way that question proposed:
+
+- **Release builds do not carry the template.** `EXCLUDED_SOURCE_FILE_NAMES` on the Release
+  configuration keeps `OriginalPlanV1.json` out of the bundle. Hiding the button would not
+  have been enough — a bundled resource is readable by anyone who unzips the `.ipa`.
+- **A Release build phase fails the build if it reappears.** Deliberately an error, not a
+  warning: a silent failure here ships the data, which is the whole point of the control.
+  (First attempt tried to *delete* the file post-copy; script sandboxing denied the write
+  and the script reported success anyway. Excluding it at build time is both correct and
+  verifiable, and the phase is now read-only.)
+- **`TemplateCatalog` derives availability from the resource being present**, so the
+  affordance is absent exactly when the template is. No compile-time flag to drift.
+- Developer builds keep it: §7's crashed-partial-seed repair and the §13 seed suites need
+  it.
+
+Tests: `TemplatePrivacyTests` (5) covers availability derivation and — more importantly —
+that the resource-less state is *safe*: seeding refuses with `resourceMissing`, writes
+nothing, leaves no pending inserts, and a fresh store still routes to onboarding. One UI
+test pins that a clean install opens on Welcome and not inside the app.
+
+**Build number is now 3.** Build 2 is tagged `v0.2.0-alpha.1` and published; per
+`VERSIONING.md` §4 the number strictly increases per distributed build and is never reused.
+286 unit tests, 19 UI tests, Release builds clean with the template verified absent.
+
+`RELEASE_NOTES_v0.2.0-alpha.1.md` is left as the record of that tag; it describes the
+template as available, which was true of build 2. A notes file for alpha.2 should be
+generated when that tag is cut.
+
 ## Release recommendation
 
 **READY FOR ALPHA DEVICE TESTING.** Install build 2 on a physical iPhone and work
