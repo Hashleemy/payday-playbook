@@ -21,7 +21,7 @@ is present.
 ## Running the suites
 
 ```bash
-# Unit suite — 286 tests
+# Unit suite — 292 tests
 xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -derivedDataPath .build/dd \
@@ -48,7 +48,7 @@ xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
    as "failed" with no assertion failure and no app crash log, and a *different*
    set failing on each run. Serially, on a quiet machine, the suite is green.
 
-## Unit tests — 286, all passing
+## Unit tests — 292, all passing
 
 | Suite | Tests | Covers |
 | --- | ---: | --- |
@@ -75,6 +75,7 @@ xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
 | `ExportCompatibilityTests` | 7 | Backup v2 round trip, v1 import through migration, append-only CSV |
 | `DebtPresentationTests` | 7 | Per-type labels/icons, utilization badge, non-colour meaning |
 | `DashboardStateTests` | 7 | Five-second dashboard from production data, empty/error states |
+| `NotificationDiagnosticsTests` | 6 | The duplicate detector behind the debug diagnostics screen: 0.1.x leftovers, same-copy-same-moment duplicates, no false alarms |
 | `TemplatePrivacyTests` | 5 | Template absent from distribution builds; the resource-less state is safe and still reaches onboarding |
 | `UpgradeChecklistTests` | 5 | Migrated users never re-onboard; answering changes no baseline value |
 | `OnboardingProgressTests` | 5 | Step persistence, resume, duplicate-proof finish |
@@ -104,6 +105,33 @@ backup producing shareable files.
 **Nothing below has been validated on hardware for this build.** The release is
 not ready for general alpha distribution until items 1–7 pass on a real device;
 everything else in this file is green in the simulator.
+
+### Use the diagnostics screen
+
+**Settings → Notification diagnostics (debug)** is how items 1, 2 and 5 are actually
+judged. A lock screen cannot tell you whether an edit left a duplicate behind — a stale
+trigger looks exactly like a correct one until it fires on the wrong day. The screen shows
+the pending count against the 64-request system limit, `droppedByCap`, the last
+reconciliation's added/removed/unchanged counts, every pending request with its identifier
+and resolved fire time, and a **Findings** section that flags:
+
+- any request still pending under a 0.1.x identifier (`due-soon-…`, `due-today-…`,
+  bare `milestone-…`) — after an upgrade each one is a reminder that will fire twice;
+- any two requests that would reach the user as the same notification at the same minute.
+
+"No duplicates" means that section is empty. **Reconcile now** re-runs the reconcile without
+backgrounding the app, so a change can be observed immediately.
+
+### Run the phases in this order
+
+One delete boundary, and the upgrade rehearsal first — it carries the most risk, and it
+leaves behind the only store where legacy identifiers can collide, which is exactly where
+item 1 has to be proven.
+
+1. **Upgrade rehearsal** (item 13), 2. notification items 1–6 on the migrated store,
+3. accessibility (item 7), 4. delete and do a fresh install, 5. one Release-configuration
+install for the template and lock-screen checks — a Debug build is not the artifact you
+would ship.
 
 1. **Notification delivery.** Enable reminders, set a payday morning time a few
    minutes out, lock the device, confirm the banner arrives and the tap opens
@@ -136,10 +164,18 @@ everything else in this file is green in the simulator.
     network.
 12. **Reduce Motion.** The debt-free celebration shows without the spring
     animation.
-13. **Upgrade rehearsal.** Install 0.1.x, use it (complete a check-in, record a
-    payment), then install this build over it. Confirm all 23 paydays, the
-    ledger, and check-ins are unchanged, that onboarding does not reappear, and
-    that no reminder fires twice.
+13. **Upgrade rehearsal — do this first, and do not skip it.** The only proof outside
+    fixtures that the existing user loses nothing.
+    - Delete the app. Build 0.1.x to the phone from its own worktree so the release branch
+      is undisturbed: `git worktree add .claude/worktrees/pp-0.1.0-device b0e7443 --detach`
+      (already created). It is build 1, same bundle id, and auto-seeds on first launch.
+    - Use it: complete the first check-in, record a card payment, enter an authoritative
+      balance update, and enable reminders so 0.1.x schedules its letter-keyed requests.
+    - **Without deleting**, build this branch (build 3) over it.
+    - Confirm: all 23 paydays and every value unchanged, ledger and check-in intact,
+      onboarding does not reappear, the upgrade checklist asks only about what migration
+      could not know, and the diagnostics screen reports **no** 0.1.x identifiers and no
+      duplicates. Cross-check the numbers against item 14.
 14. **Plan verification screen** (debug builds): Settings → About → Plan
     verification — 6 debts, 23 paydays, $29,681.61 total, Jun 24 2027 payoff,
     $3,461.16 interest, $7,900 ceiling.

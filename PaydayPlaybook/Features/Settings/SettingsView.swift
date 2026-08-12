@@ -61,6 +61,7 @@ struct SettingsView: View {
                 NavigationLink("Calculation assumptions") { AssumptionsView() }
                 #if DEBUG
                 NavigationLink("Plan verification (debug)") { PlanVerificationView() }
+                NavigationLink("Notification diagnostics (debug)") { NotificationDiagnosticsView() }
                 #endif
             }
         }
