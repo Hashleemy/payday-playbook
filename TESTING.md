@@ -1,17 +1,33 @@
 # Payday Playbook — Testing
 
-Applies to **0.2.0-alpha.1** (app 0.2.0 · build 2 · schema 2 · calc 2 · backup 2).
+Applies to **0.2.0-alpha.2** (app 0.2.0 · build 3 · schema 2 · calc 2 · backup 2).
+
+## Distribution check: the template must not ship
+
+Original Plan v1 is a real person's finances and is excluded from Release builds. The
+Release build phase fails the build if it reappears, but verify the artifact directly
+before distributing:
+
+```bash
+unzip -l YourApp.ipa | grep OriginalPlanV1   # must print nothing
+# or, for a local build:
+ls "$(xcodebuild -showBuildSettings -configuration Release | awk -F'= ' '/ BUILT_PRODUCTS_DIR/{print $2}')/PaydayPlaybook.app/OriginalPlanV1.json"
+```
+
+Developer builds intentionally keep it — the crashed-partial-seed migration repair and the
+seed suites need it, and the "Load a template" affordance on Welcome appears only when it
+is present.
 
 ## Running the suites
 
 ```bash
-# Unit suite — 281 tests
+# Unit suite — 286 tests
 xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -derivedDataPath .build/dd \
   -only-testing:PaydayPlaybookTests test
 
-# UI suite — 18 tests. Run it ALONE and serially (see below).
+# UI suite — 19 tests. Run it ALONE and serially (see below).
 xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -derivedDataPath .build/dd-ui \
@@ -32,7 +48,7 @@ xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
    as "failed" with no assertion failure and no app crash log, and a *different*
    set failing on each run. Serially, on a quiet machine, the suite is green.
 
-## Unit tests — 281, all passing
+## Unit tests — 286, all passing
 
 | Suite | Tests | Covers |
 | --- | ---: | --- |
@@ -59,6 +75,7 @@ xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
 | `ExportCompatibilityTests` | 7 | Backup v2 round trip, v1 import through migration, append-only CSV |
 | `DebtPresentationTests` | 7 | Per-type labels/icons, utilization badge, non-colour meaning |
 | `DashboardStateTests` | 7 | Five-second dashboard from production data, empty/error states |
+| `TemplatePrivacyTests` | 5 | Template absent from distribution builds; the resource-less state is safe and still reaches onboarding |
 | `UpgradeChecklistTests` | 5 | Migrated users never re-onboard; answering changes no baseline value |
 | `OnboardingProgressTests` | 5 | Step persistence, resume, duplicate-proof finish |
 | `ExportServiceTests` | 5 | JSON round trip, schema rejection, CSV escaping |
@@ -71,9 +88,10 @@ normalising differently on the two bridges, missing pay days defaulting instead
 of failing, the prepayment tri-state collapsing to a boolean, and the income
 lookup reporting the bundled template's $2,094.00 on a generated-plan install.
 
-## UI tests — 18, all passing
+## UI tests — 19, all passing
 
-Clean install through onboarding to a generated plan and Today; resume after
+A clean install opens on Welcome and **not** inside the app (the alpha.1 device-testing
+regression); clean install through onboarding to a generated plan and Today; resume after
 force-quit mid-step; template load with its warning; first payday check-in end
 to end; draft save and resume; card payment and authoritative balance update;
 calendar day panel opening the check-in; dashboard, plan, progress and setup at

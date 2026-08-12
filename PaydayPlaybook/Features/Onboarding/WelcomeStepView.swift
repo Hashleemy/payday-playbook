@@ -5,6 +5,9 @@ import SwiftUI
 struct WelcomeStepView: View {
     let onContinue: () -> Void
     let onLoadTemplate: () -> Void
+    /// Distribution builds ship no template resource, so the affordance that
+    /// offers it is not drawn at all — see `TemplateCatalog`.
+    var templateAvailable: Bool = TemplateCatalog.isAvailable()
 
     @State private var showTemplateWarning = false
 
@@ -71,10 +74,12 @@ struct WelcomeStepView: View {
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .accessibilityIdentifier("onboarding.setUpPlan")
 
-                Button("Load a template instead") { showTemplateWarning = true }
-                    .font(.footnote)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("onboarding.loadTemplate")
+                if templateAvailable {
+                    Button("Load a template instead") { showTemplateWarning = true }
+                        .font(.footnote)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("onboarding.loadTemplate")
+                }
             }
             .padding()
             .background(.bar)

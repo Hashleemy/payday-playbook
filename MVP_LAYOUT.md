@@ -163,7 +163,9 @@ the same resumability contract; `OnboardingStep` has no separate
 
 - Promise: "Know today's play. Record what happened. See the finish line."
 - Statement that all data stays on this iPhone unless the user exports it; no accounts, no bank logins, ever.
-- Primary: `Set Up My Plan`. Secondary (advanced, de-emphasized): `Load a template` → Original Plan v1 template (§3), shown with Master Lem's headline numbers and an explicit warning that it is a specific person's plan, not a recommendation.
+- Primary: `Set Up My Plan`. Secondary (advanced, de-emphasized, **developer builds only**): `Load a template` → Original Plan v1 template (§3), shown with Master Lem's headline numbers and an explicit warning that it is a specific person's plan, not a recommendation.
+
+  **Amendment (v0.2.0-alpha.2, ratified by the release integrator).** This resolves Agent 1's open question 4. The template is one real person's finances, and a bundled resource is readable by anyone who unzips the `.ipa`, so hiding the button would not have been enough: the Release configuration excludes `OriginalPlanV1.json` from the app bundle entirely (`EXCLUDED_SOURCE_FILE_NAMES`), and a Release build phase fails the build if it is ever present. `TemplateCatalog` derives availability from the resource being present, so a build without it draws no affordance offering it — there is no state in which the app advertises a template it cannot produce. Developer builds keep the template: §7's crashed-partial-seed repair and the §13 seed suites need it. Found during device testing, when a clean install appeared to "remember" the user — it had in fact loaded the template from this button in one tap.
 
 ### 4.2 Step 2 — Goals and payoff posture — V2-02
 
