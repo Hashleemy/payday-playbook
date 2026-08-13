@@ -1,11 +1,13 @@
 # Agent 6 report — Today Dashboard, Generated Plan, Debt Summary & Insights UX (v0.2.0)
 
+*(Edited 2026-08-13 under V3-12: personal financial values and the founding user's name redacted; all technical content, decisions, and results otherwise unchanged.)*
+
 Branch: `feature/v0.2-dashboard-plan` (Agent 3's `f0885d1` + merged Agent 2 `65a9236`) · Date: 2026-08-11
 Scope: presentation layer only. No persistence migration, calculation algorithm, notification scheduler, or calendar code was rewritten.
 
 ## What shipped
 
-The 0.1.x UI was still entirely hard-wired to Master Lem's seeded plan: six credit cards keyed `"A"`–`"F"`, the `MoneyAccount.checking1/checking2` pair, a fixed car/train reserve, and `PlanContract` constants printed as if they were the user's numbers. Every v0.2 model (`CashAccount`, `RecurringObligation`, `IncomeSchedule`, `DebtType`, `creditLimit`, `originalPrincipal`, `isExtraPrincipalEligible`) and the whole calc-v2 engine were unreferenced by any view.
+The 0.1.x UI was still entirely hard-wired to the founding user's seeded plan: a fixed set of letter-keyed seeded credit cards, the `MoneyAccount.checking1/checking2` pair, fixed obligation reserve buckets, and `PlanContract` constants printed as if they were the user's numbers. Every v0.2 model (`CashAccount`, `RecurringObligation`, `IncomeSchedule`, `DebtType`, `creditLimit`, `originalPrincipal`, `isExtraPrincipalEligible`) and the whole calc-v2 engine were unreferenced by any view.
 
 This branch makes Today, the new Plan screen, Debts, and Progress/Insights work for **any** generated plan and **all six** debt types, while the migrated Original Plan v1 keeps rendering value-for-value from its frozen calc-v1 rows.
 
@@ -17,7 +19,7 @@ This branch makes Today, the new Plan screen, Debts, and Progress/Insights work 
 | **Plan overview** (`Features/Plan/PlanOverviewView.swift`) | New | Inputs & assumptions, recommended avalanche order with per-debt detail, projected payoff / paychecks / interest, minimums-only comparison, per-debt payoff timeline, paycheck-by-paycheck playbook behind a **Plan / Actual / Reforecast** selector, principal totals + utilization, buffer & allowance what-if scenarios, warnings, and an explicit **Save & Activate New Plan Version** action. Reached from Today's "View Full Plan" and Settings → Plan versions. |
 | **Plan activation** (`Features/Plan/PlanActivationView.swift`) | New | Previews the plan the current inputs would produce, states exactly what activation does and does not touch, then commits a new `PlanVersion` on an explicit tap. |
 | **Debts list + detail + editor** (`Features/Debts/`) | Extended | Type icon and type-specific reference ("Card B" vs "Car note / auto loan"), utilization badge where a real limit exists, original vs current principal, APR / minimum / due day / priority / baseline + forecast payoff, minimums-only marker, payment and balance history, and a per-type editor validated through `ModelValidation`. Actions moved above the numbers (action-first). |
-| **Progress + Insights** (`Features/Progress/`, `Features/Insights/`) | Extended | An insights card row at the top (V2-14's five cards), and chart summaries / payoff timeline computed from this install's own plan instead of hard-coded Lem sentences. |
+| **Progress + Insights** (`Features/Progress/`, `Features/Insights/`) | Extended | An insights card row at the top (V2-14's five cards), and chart summaries / payoff timeline computed from this install's own plan instead of hard-coded founding-user sentences. |
 
 ## Contract reconciliation (blocking, done first)
 
@@ -77,7 +79,7 @@ Screenshots: not captured. The UI tests assert on accessibility identifiers and 
 ## Accessibility findings
 
 - **The primary action falls below the fold at accessibility sizes.** At `AccessibilityXL` the "Start Check-In" button is off-screen on launch. It stays fully tappable after a scroll (pinned by `testDashboardAndPlanAtAccessibilityTextSize`, which scrolls *until hittable* rather than asserting on-screen), but if product wants the next action visible without scrolling at every text size, the status header needs to condense at `accessibilityLarge`+. Flagged, not silently designed around.
-- Every chart keeps an `AccessibleChartSummary`; the three hard-coded Lem summaries were replaced with computed ones, so the spoken text now matches what is actually plotted.
+- Every chart keeps an `AccessibleChartSummary`; the three hard-coded founding-user summaries were replaced with computed ones, so the spoken text now matches what is actually plotted.
 - Meaning is never colour-only: the utilization badge, plan status, and shortfall rows all carry the state in words.
 - Composite rows (paycheck plays, debt rows, account rows, insight cards) are single a11y elements with hand-written labels including the amounts.
 - All new controls are ≥ 44 pt; money uses `MoneyText` (`monospacedDigit`) throughout and every displayed figure is `Decimal`-derived.
@@ -104,7 +106,7 @@ Screenshots: not captured. The UI tests assert on accessibility identifiers and 
 ## Risks / notes
 
 - **Shared simulator contention.** Running `xcodebuild test` from several worktrees at once cross-contaminates results — this branch saw another worktree's `PaydayPlaybookUITests.swift` reported as failing inside this branch's run. Use a per-worktree `-derivedDataPath`; the totals above come from an isolated run.
-- **Main-thread engine work.** `PlanViewDataLoader.load` runs a baseline generation, a reforecast, and two scenarios synchronously. It is fast for a 23-paycheck plan; a very long plan would benefit from moving the analysis off the main actor. Not done here because `ModelContext` is not `Sendable` and the change belongs with a wider concurrency pass.
+- **Main-thread engine work.** `PlanViewDataLoader.load` runs a baseline generation, a reforecast, and two scenarios synchronously. It is fast at the scale of the baseline schedule; a very long plan would benefit from moving the analysis off the main actor. Not done here because `ModelContext` is not `Sendable` and the change belongs with a wider concurrency pass.
 - `MVP_LAYOUT.md` §8.4's "Edit Card" is now "Edit Debt", and §8.5's insight row landed at the top of Progress as specified. No contract text needed changing; flagged for the doc owner only as vocabulary confirmation.
 
 ## Commit

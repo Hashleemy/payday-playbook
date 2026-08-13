@@ -1,5 +1,7 @@
 # Agent 3 report — Financial Planning, Avalanche Optimization & Insights Engine (v0.2.0)
 
+*(Edited 2026-08-13 under V3-12: personal financial values and the founding user's name redacted; all technical content, decisions, and results otherwise unchanged.)*
+
 Branch: `feature/v0.2-avalanche-engine` · Date: 2026-08-10 · Based on Agent 1's contract
 commit (`07bcf2f`). Pure engine code + tests — no SwiftUI screens, no persistence
 migrations, no notification scheduling touched.
@@ -26,7 +28,7 @@ transition falls at midnight (e.g. America/Santiago) cannot drop an accrual
 day. Behavior is identical in every timezone with a real midnight (verified by
 the untouched v1 baseline suite passing unchanged).
 
-Tests in `PaydayPlaybookTests/`: `PlanningFixtures.swift`, `AvalancheLemParityTests.swift`,
+Tests in `PaydayPlaybookTests/`: `PlanningFixtures.swift`, `AvalancheBaselineParityTests.swift` (renamed under V3-12),
 `PayScheduleGeneratorTests.swift`, `AvalanchePlanEngineTests.swift`,
 `AvalanchePropertyTests.swift`.
 
@@ -38,7 +40,7 @@ stays on calc v1 forever; new plans use calc v2.
 
 All money is `Decimal`. `round2` = 2 decimal places, half-away-from-zero
 (`MoneyMath.rounded2`, shared with calc v1). Internal projection math runs at **full
-precision** (identical mechanics to calc v1 — this is what guarantees Lem parity);
+precision** (identical mechanics to calc v1 — this is what guarantees baseline parity);
 rounding happens only at emission (see the rounding contract below).
 
 - **Interest per paycheck (R-02):** `balance × effectiveAPR × days ÷ 365`, where
@@ -52,8 +54,8 @@ rounding happens only at emission (see the rounding contract below).
 - **Obligation smoothing (R-04):** per-paycheck reserve =
   `round2(amount × occurrencesPerYear ÷ paychecksPerYear)`. Occurrences per year:
   weekly 52, biweekly 26, monthly 12, quarterly 4, semiannual 2, annual 1. Paychecks
-  per year: weekly 52, biweekly 26, semimonthly 24, monthly 12. Reproduces Lem's
-  $335.08 (car $726) and $51.23 (train $111) exactly.
+  per year: weekly 52, biweekly 26, semimonthly 24, monthly 12. Reproduces the
+  baseline's smoothed per-paycheck reserves exactly for both of its obligations.
 - **Card minimum estimate (R-06, when no minimum entered):**
   `max($17.50 × days ÷ 14, 0.005 × postInterestBalance)`, capped at the balance.
   Same constants as calc v1; flagged `.estimatedMinimum` in reason codes.
@@ -168,14 +170,15 @@ rather than producing a wrong plan.
 Two independent guarantees, both tested:
 
 1. **Calc v1 frozen** — `DebtCalculationEngine` is untouched;
-   `testLegacyBaselineRegressionIntact` still reproduces the documented 23-check
-   Aug 20 2026 → Jun 24 2027 schedule ($3,461.16 interest) under
+   `testLegacyBaselineRegressionIntact` still reproduces the documented full
+   baseline schedule, including its modeled interest total, under
    `PlanContract.calculationVersion == 1`.
-2. **Calc v2 parity** — fed Lem-equivalent onboarding inputs (raw values only; the
-   $100 first-check buffer *emerges* as the floor top-up from $900 → $1,000),
-   calc v2 reproduces the baseline **check by check** against the frozen v1
-   engine: every date, interest figure, budget, and per-debt balance
-   (`testLemMatchesLegacyEngineCheckByCheck`).
+2. **Calc v2 parity** — fed baseline-equivalent onboarding inputs (raw values
+   only; the baseline's first-check buffer *emerges* as the floor top-up from
+   the starting balance to the protected floor), calc v2 reproduces the
+   baseline **check by check** against the frozen v1 engine: every date,
+   interest figure, budget, and per-debt balance
+   (`testBaselineMatchesLegacyEngineCheckByCheck`, renamed under V3-12).
 
 ## Test results
 
@@ -189,7 +192,7 @@ mission-required behaviors map to:
 | 1 | Highest effective-APR targeting | `testHighestAPRReceivesAllExtra` |
 | 2 | Minimums scheduled by due date | `testMinimumsFundedByDueDates` |
 | 3 | Shortfall explicit, never silent | `testShortfallExplicitNeverSilent` |
-| 4 | Same-check rollover | `testLemFirstCheckAllocations` + `testRolloverWithinSamePaycheck` |
+| 4 | Same-check rollover | `testBaselineFirstCheckAllocations` (renamed under V3-12) + `testRolloverWithinSamePaycheck` |
 | 5 | Floor/allowance tradeoff | `testHigherFloorOrAllowanceDelaysPayoff` |
 | 6 | Earlier extra ⇒ ≤ interest | `testEarlierWindfallNeverCostsMore` |
 | 7 | Promo expiry priority flip | `testPromoExpirationChangesPriority` |
@@ -202,10 +205,10 @@ mission-required behaviors map to:
 | 14 | Snapshots reforecast-only, plan immutable | `testAuthoritativeBalanceReforecastsOnly` |
 | 15 | Min-only comparison withheld on insufficient inputs | `testMinimumOnlyComparisonRequiresSufficientInputs` |
 | 16 | Cent reconciliation | `testDecimalTotalsReconcileToTheCent` + property suite |
-| 17 | Legacy 23-check regression | `testLegacyBaselineRegressionIntact` + check-by-check parity |
+| 17 | Legacy baseline regression | `testLegacyBaselineRegressionIntact` + check-by-check parity |
 | 18 | Property/invariant tests | `AvalanchePropertyTests` (25 seeded-random inputs: determinism, reconciliation, non-negativity, eligibility, terminal coherence, unique event IDs, Codable round-trip) |
 
-Performance: the full 23-check Lem plan (plus its minimum-only track) generates in
+Performance: the full baseline plan (plus its minimum-only track) generates in
 well under a test-suite timeout — the whole 91-test suite, which generates dozens
 of plans including 600-check horizon runs, completes in seconds on a simulator.
 No allocation-heavy paths; the engine is O(paychecks × debts).
@@ -249,10 +252,11 @@ each with a pinned regression test:
   effective APR → due date → principal → stable ID. This engine inserts the
   due-day key *between* APR and principal exactly as the mission text orders it,
   with "no due day" sorting last. Flagged for Agent 1 to ratify into R-08.
-- **Doc float artifact:** the source plan document prints $929.54 for the final
-  payment; both engines (v1 and v2) produce **$929.59**. Per `ENGINEERING.md`,
-  the doc's target column carries ±$0.01–$0.06 float noise; the clean-Decimal
-  engine value is authoritative. The parity test pins 929.59 with a comment.
+- **Doc float artifact:** the source plan document prints a final-payment amount
+  a few cents different from the value both engines (v1 and v2) agree on. Per
+  `ENGINEERING.md`, the doc's target column carries ±$0.01–$0.06 float noise;
+  the clean-Decimal engine value is authoritative. The parity test pins the
+  engine's value with a comment.
 
 ## Known estimation limits
 

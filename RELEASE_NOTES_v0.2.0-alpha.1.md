@@ -1,5 +1,7 @@
 # Payday Playbook — v0.2.0-alpha.1
 
+*(Edited 2026-08-13 under V3-12: personal financial values redacted; all release facts otherwise unchanged. The original wording remains in Git history under the `v0.2.0-alpha.1` tag.)*
+
 **App version 0.2.0 · build 2 · persistence schema 2 · calculation version 2 · backup schema 2**
 Prerelease for device testing. Not for general distribution — see *Before you trust this build*.
 
@@ -7,16 +9,16 @@ Prerelease for device testing. Not for general distribution — see *Before you 
 
 ## What this release is
 
-0.1.0 executed one person's debt plan. It was hard-wired to it: six credit cards keyed
-"A"–"F", a fixed pair of checking accounts, a car payment and a train pass, and a schedule
-that had been computed once and baked in.
+0.1.0 executed one person's debt plan. It was hard-wired to it: a fixed set of credit
+cards, a fixed pair of checking accounts, fixed recurring bills, and a schedule that had
+been computed once and baked in.
 
 0.2.0 makes the app work for whoever is holding the phone. You set it up with your own
 accounts, your own debts, and your own paycheck, and the app generates your plan — using
 the same avalanche method, the same protected-cash discipline, and the same
 paycheck-by-paycheck honesty that the original plan had.
 
-**If you were already using 0.1.x, nothing you have is disturbed.** Your plan, its 23
+**If you were already using 0.1.x, nothing you have is disturbed.** Your plan, all its
 paydays, your ledger, your check-ins, and your reminders all survive exactly as they were.
 You will not be asked to set the app up again.
 
@@ -81,9 +83,9 @@ Three defects that only existed once the separate workstreams were combined:
   it, so in some cases — reversed twice-monthly pay dates, or a plan viewed some days after
   it was made — **the plan on screen could differ from the plan that was saved**. There is
   now one code path.
-- A newly set-up user could see **$2,094.00 shown as their take-home pay** on Today,
-  Settings, and the debt-free screen. That is the template user's paycheck; it was a
-  fallback that should never have been reachable.
+- A newly set-up user could see **the template user's paycheck shown as their own
+  take-home pay** on Today, Settings, and the debt-free screen. It was a fallback that
+  should never have been reachable.
 - The payday variance chart on Progress was blank for generated plans.
 
 ---

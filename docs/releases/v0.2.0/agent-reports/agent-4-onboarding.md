@@ -1,5 +1,7 @@
 # Agent 4 report — Onboarding, Goals, Accounts, Debts & Income Setup (v0.2.0)
 
+*(Edited 2026-08-13 under V3-12: personal financial values and the founding user's name redacted; all technical content, decisions, and results otherwise unchanged.)*
+
 Branch: `feature/v0.2-onboarding` (Agent 2's `65a9236` + Agent 3's `f0885d1`, merged here) · Date: 2026-08-11
 Scope: `Features/Onboarding`, onboarding-facing Settings, the setup repositories, and the store↔engine bridge. No optimizer math, no migration internals, no calendar scheduling, no dashboard files.
 
@@ -53,8 +55,8 @@ PlanningResult → PlanResultSnapshot → PlanPersister`. Both agents' full suit
 The persisted row's `debtBudget` (calc-v1 `plannedCardBudget`) means *the planned card
 payment* — minimums + extra. The engine's `PaycheckPlan.debtBudget` means *cash available to
 debts*, which on the final check exceeds what is actually sent (the last payment is capped at
-the balance). The bridge maps `minimumsTotal + extraTotal`, which is what reproduces Lem's
-documented final payment of $929.59. Anyone reading either field should know they differ only
+the balance). The bridge maps `minimumsTotal + extraTotal`, which is what reproduces the founding
+user's documented baseline final payment. Anyone reading either field should know they differ only
 on the terminal check.
 
 ## Deviation from MVP_LAYOUT §4: step order
@@ -135,8 +137,9 @@ xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
 
 New suites:
 
-- `PlanGenerationServiceTests` (8) — Lem-equivalence *through the whole store bridge* (23 checks,
-  Jun 24 2027, $3,461.16 interest, $929.59 final, $7,900 ceiling, the $100 first-check buffer
+- `PlanGenerationServiceTests` (8) — baseline equivalence *through the whole store bridge*
+  (every paycheck in the full baseline schedule, the baseline payoff date, the baseline's modeled
+  interest total, the baseline final payment, the baseline ceiling, and the first-check buffer
   emerging from the floor top-up rather than being an input); snapshot-regeneration determinism;
   all four cadences incl. reversed semimonthly normalization; actionable missing-input failures;
   prepayment tri-state; shortfall and horizon-cap mapping.
@@ -150,7 +153,7 @@ New suites:
 - `UpgradeChecklistTests` (5) — a migrated store never re-onboards; the checklist asks *only*
   about what migration could not know (goals, card limits, original principal, debt types) and
   never about what it established (roles, default income, income cadence, obligations); nothing
-  blocks a migrated user; and answering the checklist leaves all 23 baseline paychecks, the plan
+  blocks a migrated user; and answering the checklist leaves every baseline paycheck, the plan
   version's own fields, the ledger, the check-in, and every debt balance/APR **unchanged**
   value-for-value.
 
@@ -209,8 +212,8 @@ Please sanity-check the call sites in your files.
 5. **Posture suggestions re-arm**: switching posture re-applies its floor/allowance suggestion
    unless the user has typed in the field since the last suggestion.
 6. **`firstCheckBufferAdd` is added to the engine's starting balance** rather than passed
-   separately; it is 0 for every generated plan and non-zero only for the Lem template, where the
-   engine's floor top-up reproduces it.
+   separately; it is 0 for every generated plan and non-zero only for the founding user's baseline
+   template, where the engine's floor top-up reproduces it.
 
 ## Risks / notes for downstream agents
 

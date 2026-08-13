@@ -5,7 +5,7 @@
 **Working name:** Payday Playbook
 **Platform:** Native iPhone app
 **Product type:** Offline-first personal debt execution coach
-**Primary user:** Any person with take-home pay and debts to eliminate, configured through onboarding. The first user is Master Lem, whose exact plan (August 20, 2026 through June 24, 2027) is preserved as an immutable personal baseline and bundled template — see "Master Lem's baseline" below.
+**Primary user:** Any person with take-home pay and debts to eliminate, configured through onboarding. The app's founding install predates the v0.3.0 privacy gate; its original plan (known on that device as **Original Plan v1**) remains preserved there as immutable, user-owned data — see "The founding baseline" below.
 
 Payday Playbook exists to turn a financial plan into a simple ritual the user can actually follow. It is not a generic budgeting app, a bank replacement, or a guilt engine. On every payday it should answer, in this order:
 
@@ -19,7 +19,7 @@ Payday Playbook exists to turn a financial plan into a simple ritual the user ca
 
 The app should feel like a calm, friendly playbook. It should reduce decision fatigue, make progress visible, and keep the user connected to their larger goal: becoming debt-free without pretending that every dollar of the personal allowance was spent.
 
-As of v0.2.0 the plan itself is generated from the user's own answers: their checking accounts, income, obligations, protected floor, allowance, and debts. Master Lem's plan is no longer hard-coded as the default for fresh installs; it survives, value for value, for the install that already has it and as an optional template.
+As of v0.2.0 the plan itself is generated from the user's own answers: their checking accounts, income, obligations, protected floor, allowance, and debts. The founding user's plan is no longer hard-coded as the default for fresh installs; it survives, value for value, on the install that already has it. As of v0.3.0 it is also no longer bundled as a template or printed anywhere in the project's tracked artifacts (V3-12): it lives only in that device's local store and in exports its owner deliberately creates.
 
 ---
 
@@ -40,7 +40,7 @@ The home screen must clearly show:
 - reserved amounts for essential obligations;
 - whether the current check-in is complete.
 
-The app never assumes the personal allowance was spent. It records the allowance as **available**. Actual spending or the actual spending-account balance is entered separately. (For Master Lem's baseline the allowance is $300 per paycheck; for other users it is whatever they configured.)
+The app never assumes the personal allowance was spent. It records the allowance as **available**. Actual spending or the actual spending-account balance is entered separately. The allowance amount is whatever the user configured.
 
 ---
 
@@ -48,17 +48,17 @@ The app never assumes the personal allowance was spent. It records the allowance
 
 ### 1. Execution over theory
 
-For a migrated install, the source PDF already contains the strategy; for a new user, onboarding captures their situation and the app generates the strategy once. Either way, the app's job from that point on is execution. Every important screen should end in a clear action, not another layer of analysis.
+For a migrated install, the user's own source plan document (kept outside the repository) already contains the strategy; for a new user, onboarding captures their situation and the app generates the strategy once. Either way, the app's job from that point on is execution. Every important screen should end in a clear action, not another layer of analysis.
 
 ### 2. Planned, actual, and reforecast are different truths
 
 The original plan is an immutable baseline. User entries are the actual record. A reforecast is a current estimate. Never overwrite one with another.
 
-- **Plan:** what was expected when the baseline plan was generated (for Master Lem: August 9, 2026).
+- **Plan:** what was expected when the baseline plan was generated.
 - **Actual:** what the user confirms happened.
 - **Reforecast:** what is now expected based on actual balances and contributions.
 
-This applies identically to generated plans: the first plan a user generates becomes their immutable "Plan v1" baseline, exactly as Original Plan v1 is for Master Lem.
+This applies identically to generated plans: the first plan a user generates becomes their immutable "Plan v1" baseline, exactly as Original Plan v1 is for the founding install. As of v0.3.0 there is also a fourth, throwaway kind of truth: a **scenario preview** exists only on screen until the user deliberately applies it, which creates a new future-effective plan version and changes nothing else (V3-15).
 
 ### 3. Available is not spent
 
@@ -74,7 +74,7 @@ Use neutral language: “needs attention,” “$84 behind plan,” or “next b
 
 ### 6. Local and private by default
 
-The app works without an account, server, subscription, bank login, or internet connection. Financial records remain on the iPhone unless the user explicitly exports a backup.
+The app works without an account, server, subscription, bank login, or internet connection. Financial records remain on the iPhone unless the user explicitly exports a backup. As of v0.3.0 this principle extends to the project itself: no real person's financial data may appear in tracked artifacts — source, fixtures, previews, tests, docs, prompts, logs, screenshots, or reports (V3-12, V3-13).
 
 ### 7. Actual balances are authoritative
 
@@ -90,117 +90,53 @@ First-run setup asks about goals, posture, accounts, income, obligations, floor,
 
 ---
 
-## Master Lem's baseline — Original Plan v1 (immutable personal baseline and template)
+## The founding baseline — Original Plan v1 (immutable, device-local)
 
-This plan was seeded on first launch of the 0.1.x MVP and must remain available forever as **Original Plan v1** on any install that has it. On upgrade to 0.2.0 migration preserves every existing value — every date, amount, milestone, check-in, and ledger entry — adding new fields and rows around them but never altering one. It is **not** seeded on unrelated fresh installs; new users generate their own baseline in onboarding. The plan also ships as a bundled, clearly labeled template ("Original Plan v1 template") that a user may deliberately load instead of generating a plan.
+The first install of Payday Playbook (0.1.x) seeded a complete, hand-computed debt plan — **Original Plan v1** — and the app was originally hard-wired to it. That plan is one real person's finances. Two obligations follow, and both hold forever:
 
-### Starting position
+1. **On the install that has it, it is untouchable.** Original Plan v1 remains available on that device as an immutable baseline plan version. Every payday row, allocation, attack target, milestone, check-in, and ledger entry it accumulated is preserved value-for-value by every migration. It stays stamped `calculationVersion = 1` forever; regenerating it under any later calculation version is forbidden. Its stored schedule is the truth.
+2. **Everywhere else, it does not exist.** As of v0.3.0 (V3-12), no tracked project artifact — source, resource, fixture, preview, test, document, prompt, screenshot, log, or report — may carry its values: no amounts, no dates, no schedule rows, no account or debt inventory, no APRs, no payoff milestones, and no real name. Earlier revisions of this document printed the full plan; those tables are removed, not relocated. The values now live only in the founding device's local store and in exports its owner deliberately creates. (Removing data from the working tree does not erase Git history; history remediation is a separate, owner-decided step — see the v0.3.0 release plan §3.)
 
-| Item | Exact value |
-| --- | ---: |
-| Starting Checking 1 cash before first payday | $900.00 |
-| First payday | August 20, 2026 |
-| Current biweekly take-home | $2,094.00 |
-| Increased biweekly take-home | $2,190.00 beginning December 10, 2026 |
-| Monthly car payment | $726.00 |
-| Monthly train pass | $111.00 |
-| Exact biweekly fixed-expense reserve | $386.31 |
-| Car portion per paycheck | $335.08 |
-| Train portion per paycheck | $51.23 |
-| Protected Checking 1 floor | $1,000.00 |
-| Personal allowance cap | $300.00 per paycheck |
-| Starting credit-card debt | $29,681.61 |
-| Payoff method | Debt avalanche |
-| Baseline projected payoff | June 24, 2027 |
-| Baseline paychecks | 23 |
-| Baseline modeled interest | $3,461.16 |
-| Checking 1 no-spend ceiling at payoff | $7,900.00 |
+The v0.2.0 bundled template ("Original Plan v1 template") is **withdrawn entirely in v0.3.0** — from every build configuration, developer builds included. A real person's plan is not a template. Reusable templates become a user-owned feature instead (V3-10): any user may export their own structure-only template and share it deliberately. Contracted consequences of the withdrawal:
 
-### Debt inventory
+- The 0.1.x crashed-partial-seed repair path, which re-read the bundled resource, is retired. Migration keeps aborting cleanly on such a store — the distribution-build behavior since v0.2.0-alpha.2, and a state that cannot arise for any install whose 0.1.x seed completed.
+- Seed and template test suites re-anchor on clearly fictional fixtures. The founding baseline itself is verified only on its own device, by its owner, against records kept outside the repository.
 
-| Priority | Card | Starting balance | APR |
-| ---: | --- | ---: | ---: |
-| 1 | B | $1,049.00 | 29.99% |
-| 2 | D | $4,987.00 | 28.99% |
-| 3 | A | $3,787.65 | 27.24% |
-| 4 | F | $3,495.00 | 26.49% |
-| 5 | C | $11,650.40 | 24.49% |
-| 6 | E | $4,712.56 | 21.99% |
+### Calculation version 1 (frozen — formulas only)
 
-Avalanche order is permanently seeded as **B → D → A → F → C → E**. The app pays all entered minimums first and directs all extra card money to the highest-APR active card. When a card reaches zero, capacity rolls forward immediately.
+Plans stamped `calculationVersion = 1` keep these rules forever:
 
-### Baseline payday schedule
+1. Interest accrues per biweekly check as `balance × APR × 14 ÷ 365`, carried at full `Decimal` precision and rounded only at output.
+2. A card's estimated biweekly minimum is `max($17.50, 0.5% of the post-interest balance)`, capped at the remaining balance. Minimums are included inside the total card-payment budget, not added on top.
+3. All active cards' minimums are paid first; the remaining card budget attacks the plan's stored priority order, rolling forward to the next card within the same check when a payoff occurs.
+4. Actual issuer interest, statement minimums, posting dates, and current balances will differ. User-entered payments and balance snapshots control the actual track; a snapshot overrides accumulated estimates from its date forward.
+5. Currency math uses `Decimal`, never binary floating-point.
 
-| # | Payday | Take-home | Keep in C1 | Move to C2 | Fixed reserve | Planned card payment | Attack | Planned debt after | C1 no-spend ceiling |
-| ---: | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |
-| 1 | Aug 20, 2026 | $2,094.00 | $400.00 | $1,694.00 | $386.31 | $1,307.69 | B | $28,665.71 | $1,300.00 |
-| 2 | Sep 3, 2026 | $2,094.00 | $300.00 | $1,794.00 | $386.31 | $1,407.69 | D | $27,537.95 | $1,600.00 |
-| 3 | Sep 17, 2026 | $2,094.00 | $300.00 | $1,794.00 | $386.31 | $1,407.69 | D | $26,397.48 | $1,900.00 |
-| 4 | Oct 1, 2026 | $2,094.00 | $300.00 | $1,794.00 | $386.31 | $1,407.69 | D | $25,244.17 | $2,200.00 |
-| 5 | Oct 15, 2026 | $2,094.00 | $300.00 | $1,794.00 | $386.31 | $1,407.69 | D | $24,077.88 | $2,500.00 |
-| 6 | Oct 29, 2026 | $2,094.00 | $300.00 | $1,794.00 | $386.31 | $1,407.69 | A | $22,898.52 | $2,800.00 |
-| 7 | Nov 12, 2026 | $2,094.00 | $300.00 | $1,794.00 | $386.31 | $1,407.69 | A | $21,706.74 | $3,100.00 |
-| 8 | Nov 26, 2026 | $2,094.00 | $300.00 | $1,794.00 | $386.31 | $1,407.69 | A | $20,502.42 | $3,400.00 |
-| 9 | Dec 10, 2026 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | F | $19,189.43 | $3,700.00 |
-| 10 | Dec 24, 2026 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | F | $17,863.03 | $4,000.00 |
-| 11 | Jan 7, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | F | $16,523.09 | $4,300.00 |
-| 12 | Jan 21, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | C | $15,169.92 | $4,600.00 |
-| 13 | Feb 4, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | C | $13,804.02 | $4,900.00 |
-| 14 | Feb 18, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | C | $12,425.27 | $5,200.00 |
-| 15 | Mar 4, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | C | $11,033.55 | $5,500.00 |
-| 16 | Mar 18, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | C | $9,628.75 | $5,800.00 |
-| 17 | Apr 1, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | C | $8,210.73 | $6,100.00 |
-| 18 | Apr 15, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | C | $6,779.38 | $6,400.00 |
-| 19 | Apr 29, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | C | $5,334.57 | $6,700.00 |
-| 20 | May 13, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | C | $3,876.17 | $7,000.00 |
-| 21 | May 27, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | E | $2,405.17 | $7,300.00 |
-| 22 | Jun 10, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $1,503.69 | E | $921.76 | $7,600.00 |
-| 23 | Jun 24, 2027 | $2,190.00 | $300.00 | $1,890.00 | $386.31 | $929.54 | E | $0.00 | $7,900.00 |
-
-### Baseline payoff milestones
-
-| Card | Baseline payoff date |
-| --- | --- |
-| B | August 20, 2026 |
-| D | October 15, 2026 |
-| A | November 26, 2026 |
-| F | January 7, 2027 |
-| C | May 13, 2027 |
-| E | June 24, 2027 |
-
-### Projection assumptions
-
-- Interest is modeled every 14 days as `balance × APR × 14 ÷ 365`.
-- The baseline estimates a biweekly minimum for each active card as the greater of $17.50 or 0.5% of the post-interest balance, capped at the remaining balance.
-- Minimums are included inside the total card-payment budget, not added on top.
-- Actual issuer interest, statement minimums, posting dates, and current balances will differ. User-entered balances and minimums control the actual track.
-- Currency math must use `Decimal`, never binary floating-point.
-
-Original Plan v1 is stamped **calculation version 1** forever; regenerating it under any later calculation version is forbidden. Its stored schedule is the truth.
+The constants above are modeling constants, not personal data. The plan's specific inputs — balances, APRs, priorities, dates, schedule — are data on the owning device, not in this document.
 
 ---
 
 ## Non-negotiable feature contract (v0.1 — still binding)
 
-Every feature below must remain present. Where v0.2.0 generalizes a feature, the F-row is *amended*, never removed: the amendment is recorded here, authorized by the v0.2.0 product mission.
+Every feature below must remain present. Where a later release generalizes a feature, the F-row is *amended*, never removed: the amendment is recorded here, authorized by that release's product mission.
 
 | ID | Feature | Soul-level requirement |
 | --- | --- | --- |
-| F-01 | Local onboarding and seeded plan | *(Amended in v0.2.0 — see V2-01…V2-10, V2-16.)* Fresh installs no longer auto-load Original Plan v1; they run the configurable onboarding and generate their own baseline. Installs that already have Original Plan v1 keep it untouched. The rest of F-01 stands: onboarding explains the account system, requests notification permission in context, asks for missing real-world debt names, due dates, and minimums, and never blocks use on optional details. |
+| F-01 | Local onboarding and seeded plan | *(Amended in v0.2.0 — see V2-01…V2-10, V2-16.)* Fresh installs no longer auto-load Original Plan v1; they run the configurable onboarding and generate their own baseline. Installs that already have Original Plan v1 keep it untouched. The rest of F-01 stands: onboarding explains the account system, requests notification permission in context, asks for missing real-world debt names, due dates, and minimums, and never blocks use on optional details. *(Amended in v0.3.0: the deliberate template load of the founding plan is withdrawn — V3-10, V3-12.)* |
 | F-02 | Five-second dashboard | Shows remaining debt, percent eliminated, plan status, current target, next action, payoff forecast, spending-account tracking, reserves, and current check-in state. *(Generalized by V2-13 to the user's named accounts.)* |
 | F-03 | Guided payday check-in | Prefills the plan, requires the user to record what actually happened, reconciles take-home allocations, supports draft and complete states, and never silently fills actuals from planned values. |
 | F-04 | Debt account tracker | Shows each debt's balance, APR, minimum, due date, priority, payoff state, history, and contribution total. Allows balance snapshots at any time. *(Extended by V2-04/V2-05 to all debt types.)* |
-| F-05 | Contribution ledger | Records every debt payment, transfer, reserve contribution, buffer addition, windfall, refund, and correction with date, amount, source, destination, and note. |
-| F-06 | Original plan timeline | Preserves all 23 baseline paydays, allocations, attack targets, debt targets, and payoff milestones as an immutable reference. *(Generalized: every install's baseline plan version is equally immutable.)* |
+| F-05 | Contribution ledger | Records every debt payment, transfer, reserve contribution, buffer addition, windfall, refund, and correction with date, amount, source, destination, and note. *(Extended by V3-02/V3-03: deposits, withdrawals, paired account transfers, and manual balance adjustments are equally first-class, auditable events.)* |
+| F-06 | Original plan timeline | Preserves every baseline payday, allocation, attack target, debt target, and payoff milestone as an immutable reference. *(Generalized: every install's baseline plan version is equally immutable.)* |
 | F-07 | Calendar dashboard | Month/week calendar marks paydays, due dates, completed actions, incomplete actions, milestones, and forecast changes. A selected day opens its exact play-by-play. |
-| F-08 | Checking 1 tracker | Separately displays protected floor, current allowance, actual balance, allowance actually used, and no-spend ceiling. It never presents the ceiling as actual cash. *(Generalized by V2-03/V2-08 to the configured spending account and floor.)* |
-| F-09 | Checking 2 tracker | Tracks planned/actual transfers and separate obligation, minimum-payment, and avalanche-payment buckets. It warns if entered uses exceed available reserve funds. *(Generalized by V2-03/V2-07 to configured reserve accounts and obligations.)* |
+| F-08 | Checking 1 tracker | Separately displays protected floor, current allowance, actual balance, allowance actually used, and no-spend ceiling. It never presents the ceiling as actual cash. *(Generalized by V2-03/V2-08 to the configured spending account and floor; surfaced as a first-class Accounts workspace by V3-02.)* |
+| F-09 | Checking 2 tracker | Tracks planned/actual transfers and separate obligation, minimum-payment, and avalanche-payment buckets. It warns if entered uses exceed available reserve funds. *(Generalized by V2-03/V2-07 to configured reserve accounts and obligations; extended by V3-02/V3-03.)* |
 | F-10 | Progress and milestones | Includes debt trend, per-debt balances, principal versus modeled interest, percent complete, plan-versus-actual variance, payoff celebrations, and paychecks remaining. |
-| F-11 | Local notifications | Supports payday morning, payday evening if incomplete, due-date, weekly summary, and milestone reminders. Notifications deep-link to the relevant check-in or debt. *(Extended by V2-11: due-date edits reschedule immediately.)* |
-| F-12 | Reforecast engine | Recalculates the active target, remaining paychecks, interest estimate, and payoff date after actual entries while leaving the baseline plan version untouched. |
+| F-11 | Local notifications | Supports payday morning, payday evening if incomplete, due-date, weekly summary, and milestone reminders. Notifications deep-link to the relevant check-in or debt. *(Extended by V2-11: due-date edits reschedule immediately. Extended by V3-07/V3-13: full reconciliation hardening; privacy-safe lock-screen copy by default.)* |
+| F-12 | Reforecast engine | Recalculates the active target, remaining paychecks, interest estimate, and payoff date after actual entries while leaving the baseline plan version untouched. *(Extended by V3-04/V3-05: scenario and extra-payment previews reuse the same engine without mutating any plan.)* |
 | F-13 | Plan and settings editor | Lets the user update paycheck amounts/dates, allowance cap, reserve amounts, APRs, minimums, due dates, notification times, and avalanche order. Changes create a new plan version or future-dated rule. |
-| F-14 | Backup and export | User-initiated JSON backup/restore plus CSV exports for contributions, balance history, and paycheck check-ins. No automatic cloud dependency. *(Extended by V2-18: schema-2 backups restore schema-1 files.)* |
-| F-15 | Privacy, security, and accessibility | No bank credentials or full card numbers; local storage; optional Face ID/app lock; Dynamic Type; VoiceOver labels; high contrast; reduced-motion support. |
+| F-14 | Backup and export | User-initiated JSON backup/restore plus CSV exports for contributions, balance history, and paycheck check-ins. No automatic cloud dependency. *(Extended by V2-18: schema-2 backups restore schema-1 files. Extended by V3-09…V3-11: versioned portable envelopes, structure-only templates, and a distinct human-readable PDF report; CSV exports remain.)* |
+| F-15 | Privacy, security, and accessibility | No bank credentials or full card numbers; local storage; optional Face ID/app lock; Dynamic Type; VoiceOver labels; high contrast; reduced-motion support. *(Extended by V3-12/V3-13/V3-16.)* |
 | F-16 | Debt-free transition | On payoff, celebrate once and turn the released-payment amount into a Phase II next-goal dashboard for emergency fund, car, retirement, Roth IRA, or investing without auto-enrolling the user. |
 
 ---
@@ -217,18 +153,43 @@ The canonical registry lives in `ALPHA_V0.2.0_MULTI_AGENT_PLAN.md`; the soul-lev
 | V2-04 | Debt type picker | Adding a debt begins by choosing its type: credit card, personal loan, car note / auto loan, student loan, medical debt, or other. The type drives which fields appear and how minimums are handled. |
 | V2-05 | Debt-specific inputs | Each debt records current balance/principal, original principal, APR, minimum payment, and an editable due date. Credit cards additionally record an optional credit limit, from which utilization is displayed. Each debt carries an extra-principal eligibility flag; ineligible debts receive minimums only. |
 | V2-06 | Income setup | The user enters take-home per paycheck, the next payday date, pay cadence (weekly, biweekly, semimonthly, monthly), and which account receives income. Future-dated income changes (raises, cuts) are first-class and feed the plan and reforecast. |
-| V2-07 | Essential recurring obligations | The user lists essential recurring obligations with amount, cadence, and optional due date. The plan reserves for them every paycheck using the documented smoothing rule, exactly as Master Lem's car and train were reserved. |
+| V2-07 | Essential recurring obligations | The user lists essential recurring obligations with amount, cadence, and optional due date. The plan reserves for them every paycheck using the documented smoothing rule. *(Presented as **Bills** from v0.3.0 — V3-08.)* |
 | V2-08 | Protected cash floor | A configurable floor the spending account must never be planned below. The generated plan tops the floor up before any extra debt payment. |
-| V2-09 | Allowance cap | A configurable per-paycheck personal allowance. It stays "available, not spent" — the soul principle is unchanged, only the amount is now the user's. |
+| V2-09 | Allowance cap | A configurable per-paycheck personal allowance. It stays "available, not spent" — the soul principle is unchanged, only the amount is the user's own. |
 | V2-10 | Generated avalanche plan | From the user's inputs the engine generates an immutable baseline plan: all minimums paid, every remaining dollar to the highest-APR extra-principal-eligible debt, rolling forward on payoff — designed to minimize estimated interest and reach payoff as quickly as the floor, allowance, and obligations allow. Projections are labeled estimates, never guarantees. |
 | V2-11 | Editable due dates drive calendar and notifications | Editing any due date takes effect immediately: calendar markers move and pending local notifications are rescheduled through stable identifiers, with no duplicates and no orphans. |
-| V2-12 | Plan calendar | The calendar works for generated plans exactly as it does for Original Plan v1: paydays, due dates, milestones, completed and incomplete actions, and a per-day play-by-play. |
+| V2-12 | Plan calendar | The calendar works for generated plans exactly as it does for the migrated baseline: paydays, due dates, milestones, completed and incomplete actions, and a per-day play-by-play. |
 | V2-13 | Friendly dashboard | The five-second promise holds for every user: the dashboard shows their named accounts, their floor, their allowance, their next play — calm, card-based, action-first. |
 | V2-14 | Insights | Insight cards translate the numbers into next moves: estimated interest saved versus minimums-only, payoff-date changes, card utilization (30% info / 90% attention), obligation crunch paychecks, allowance usage trend. Every insight is worded as an estimate and never shames. |
 | V2-15 | Actual tracking and reforecasting | Check-ins, the ledger, balance snapshots, and reforecasts operate on generated plans with full fidelity. Planned, actual, and reforecast remain three separate truths for every user. |
-| V2-16 | Current-user migration | Upgrading a 0.1.x install preserves Original Plan v1's exact 23-paycheck Aug 20, 2026 – Jun 24, 2027 baseline, all history, and all settings, with no re-onboarding. Fresh installs never receive that plan unless they deliberately load the template. |
+| V2-16 | Current-user migration | Upgrading a 0.1.x install preserves Original Plan v1's exact baseline — every payday, value, milestone, and check-in — plus all history and settings, with no re-onboarding. Fresh installs never receive that plan. *(Amended in v0.3.0: the deliberate template load is withdrawn — V3-10, V3-12.)* |
 | V2-17 | Local-only privacy | Nothing changed and nothing may change: local storage, no accounts, no telemetry, no bank credentials, ever. |
-| V2-18 | Accessibility, Decimal math, export compatibility | Every new screen meets the existing accessibility bar (Dynamic Type, VoiceOver, Reduce Motion, 44-pt targets). All money stays `Decimal`. Version-2 backups restore version-1 backup files; CSV columns are append-only. |
+| V2-18 | Accessibility, Decimal math, export compatibility | Every new screen meets the existing accessibility bar (Dynamic Type, VoiceOver, Reduce Motion, 44-pt targets). All money stays `Decimal`. Newer backups restore older backup files; CSV columns are append-only. |
+
+---
+
+## v0.3.0 feature contract (V3-01 … V3-16)
+
+The canonical registry lives in `ALPHA_V0.3.0_MULTI_AGENT_PLAN.md`; the soul-level requirement for each item is stated here. `MVP_LAYOUT.md` carries the screens, rules, models, migration, and services (§4–§10) and the acceptance criteria (§11).
+
+| ID | Feature | Soul-level requirement |
+| --- | --- | --- |
+| V3-01 | Release and migration | v0.3.0 upgrades a v0.2.x install without losing a single account, debt, bill, actual entry, plan version, due date, or notification preference — and without duplicating any of them. Fresh installs start empty, with no real person's data anywhere. |
+| V3-02 | Checking Accounts page | One calm, first-class place shows every active checking account — name, roles, current balance with its as-of moment, protected amount, available amount, default-income marker, next planned movement — and supports add, edit, reorder, archive, transfer, and balance adjustment. |
+| V3-03 | Auditable balance adjustments | Correcting a balance is a recorded event: a dated adjustment or authoritative snapshot with an optional note. It never silently rewrites transaction history. Negative or unreconciled states get calm, specific warnings. |
+| V3-04 | Extra-payment insight | "What if I pay extra?" answers with estimates — payoff-date change, time saved, interest saved, projected principal reduction — for one-time and recurring extra payments, and never touches the active plan until the user explicitly applies a scenario. |
+| V3-05 | Three-plan payoff calculator | From saved inputs plus a user-entered income/paycheck override, the app computes exactly three scenarios — **Fastest Safe**, **Balanced (Recommended)**, and **More Cushion** — each showing payoff date, time remaining, estimated interest, total paid, periodic debt contribution, cash retained, and tradeoffs. |
+| V3-06 | Honest scenario inputs | A payoff estimate requires real inputs: debts, balances, APR assumptions, minimums, due dates, bills, pay cadence, protected cash, and scenario constraints. The app names what is missing or estimated instead of inventing values. Money math stays `Decimal`; calculations are versioned and deterministic. |
+| V3-07 | Editable due dates | Debt and bill due dates stay editable from setup and from every detail/settings surface. A prospective edit immediately rebuilds the affected calendar events and reconciles local notifications — no duplicates, no stale reminders, history untouched. |
+| V3-08 | Consolidated Bills & Debts setup | Bills and debts live on one setup page: two clear sections, one add flow whose first choice is `Bill` or `Debt`. Every v0.2 field, validation, debt type, and the resumability contract survive intact. |
+| V3-09 | Full JSON backup and restore | The user can export all local data to a versioned JSON backup and restore it through a validated preview and an atomic import. The app warns that the file contains sensitive financial data and never uploads it anywhere. |
+| V3-10 | Reusable JSON templates | A template is a separate, versioned, structure-only document: configuration in, history and personal values out unless the user explicitly and knowingly includes them. Templates are previewable before they are applied and never silently replace actual history. |
+| V3-11 | Generate Report | One distinct **Generate Financial Report** action produces a readable, local PDF of the user's current inputs and computed results. Raw JSON stays under **Back Up Data** and is never presented as the report. |
+| V3-12 | Personal-data removal | No real person's balances, income, account labels, dates, payoff schedules, or name appears in any tracked artifact — source, fixtures, previews, comments, tests, docs, prompts, screenshots, or logs. Test and preview data is clearly fictional. Existing user data survives only in the local store and migration path. |
+| V3-13 | Privacy-safe diagnostics | No raw balance, account name, imported payload, or report content reaches analytics, crash breadcrumbs, debug output, notification identifiers, test reports, or agent reports. Notifications stay discreet unless the user opts into detail. |
+| V3-14 | Comment cleanup | Comments explain non-obvious intent, invariants, platform limitations, security decisions, or formulas. Narration, personal context, obsolete plans, and doc duplication go. Useful warnings and API documentation stay. |
+| V3-15 | Plan separation | Scenario previews, active plans, historical plans, and actual entries remain distinct. Applying a scenario creates a new future-effective plan version and never rewrites a baseline or completed history. |
+| V3-16 | Accessibility and recovery | New screens support Dynamic Type, VoiceOver, high contrast, Reduce Motion, and sensible focus behavior, with real empty/error/loading states. Interrupted imports, denied notifications, and failed report generation recover calmly, with the user's data intact. |
 
 ---
 
@@ -246,6 +207,7 @@ The visual style should be warm, modern, and financially calm.
 - Amounts should use tabular numerals and always include currency formatting.
 - Charts must have text summaries and remain understandable without color.
 - Prefer phrases such as “Today's play,” “On track,” “Needs attention,” “Available—not spent,” and “Next card.”
+- Scenario names are exactly **Fastest Safe**, **Balanced (Recommended)**, and **More Cushion**. Balanced is visually recommended, never auto-applied, and every scenario card speaks in tradeoffs and labeled estimates, not promises.
 
 The dashboard should not look like a spreadsheet squeezed onto a phone. The calendar and detail screens may contain tables, but the main experience should be card-based and action-first. Onboarding follows the same language: one question at a time, plain words, no jargon walls.
 
@@ -266,20 +228,36 @@ The app must not:
 - provide investment, tax, or legal advice;
 - shame the user for a missed or partial payment;
 - regenerate, edit, or delete any baseline plan version — including Original Plan v1;
-- force Master Lem's plan, amounts, or dates onto a new user.
+- force the founding user's plan, amounts, or dates onto any other user;
+- apply, persist, or activate a scenario preview without the user's explicit confirmation;
+- upload or transmit a backup, template, or report anywhere automatically.
+
+And the project must not:
+
+- carry any real person's financial data in tracked artifacts — code, fixtures, previews, tests, docs, prompts, screenshots, logs, commits, or reports (V3-12);
+- print financial payloads in logs, diagnostics, notification identifiers, or test output (V3-13).
 
 ---
 
 ## Success criteria
 
-The v0.1 criteria remain (offline use, two-minute check-in, unambiguous entry, separated actual/ceiling values, full audit trail, calendar clarity, useful reminders, three-truths integrity, export/restore) — with one recorded amendment: old criterion 2, "see the exact August 20, 2026–June 24, 2027 plan immediately," now applies to migrated installs and deliberate template loads rather than every fresh install. v0.2.0 adds:
+The v0.1 criteria remain (offline use, two-minute check-in, unambiguous entry, separated actual/ceiling values, full audit trail, calendar clarity, useful reminders, three-truths integrity, export/restore) — with one recorded amendment: old criterion 2, seeing the install's exact original plan immediately, applies to migrated installs rather than every fresh install. v0.2.0 adds:
 
-1. a brand-new user can go from install to a generated, personalized avalanche plan without ever seeing Master Lem's numbers;
+1. a brand-new user can go from install to a generated, personalized avalanche plan without ever seeing another person's financial data;
 2. onboarding survives any interruption and resumes where it left off;
 3. a 0.1.x user upgrades and finds their plan, history, and reminders exactly as they were;
 4. every debt type in the picker can be entered with its own fields and appears correctly in plan, calendar, and insights;
 5. editing a due date is reflected in calendar and notifications before the user leaves the screen;
-6. all ambiguous money behavior is covered by a written rule in `MVP_LAYOUT.md` §5 or explicitly marked as one of its numbered assumptions (A-01…A-08, wherever they appear in §4–§5).
+6. all ambiguous money behavior is covered by a written rule in `MVP_LAYOUT.md` §5 or explicitly marked as one of its numbered assumptions.
+
+v0.3.0 adds:
+
+1. the tracked repository contains no real person's financial data, and a fresh install contains none either;
+2. a v0.2.x upgrade preserves every local record exactly once — nothing lost, nothing duplicated;
+3. the user can see all their cash accounts in one place, and every balance change is an auditable event;
+4. the three scenarios and any extra-payment preview reconcile to the core engine to the cent, name their assumptions and missing inputs, and never touch the active plan until deliberately applied;
+5. a full JSON backup round-trips atomically, a template stays structure-only by default, and the financial report is a readable local PDF — three documents never confused for one another;
+6. a due-date edit lands on the calendar and in exactly one correct set of reminders before the editor closes.
 
 The emotional success condition is equally important: after opening the app, the user should feel oriented and capable of taking the next step.
 
@@ -287,4 +265,12 @@ The emotional success condition is equally important: after opening the app, the
 
 ## How to use this document
 
-Treat this file as the product constitution. Read it before planning, coding, or changing the data model. If an implementation shortcut conflicts with the product principles or feature contract, preserve the principles and document the tradeoff. Do not remove, rename, or reinterpret any F-01 through F-16 or V2-01 through V2-18 requirement without explicit user approval. Exactly two amendments exist, both authorized by the v0.2.0 product mission: the F-01 fresh-install amendment and the success-criterion-2 amendment recorded above.
+Treat this file as the product constitution. Read it before planning, coding, or changing the data model. If an implementation shortcut conflicts with the product principles or feature contract, preserve the principles and document the tradeoff. Do not remove, rename, or reinterpret any F-01…F-16, V2-01…V2-18, or V3-01…V3-16 requirement without explicit user approval.
+
+**Amendment registry** (every amendment is authorized by the named release's product mission):
+
+1. *(v0.2.0)* F-01 fresh-install amendment: fresh installs onboard and generate their own plan instead of auto-loading Original Plan v1.
+2. *(v0.2.0)* Success-criterion-2 amendment: "see the exact original plan immediately" applies to migrated installs, not fresh ones.
+3. *(v0.3.0 — privacy gate, V3-12)* Personal-data presentation supersession: every tracked document keeps each requirement's behavior, but the founding user's values, dates, schedules, and name are removed from all tracked artifacts. The behavior contracts are unchanged; only their presentation with real data is superseded.
+4. *(v0.3.0 — V3-10/V3-12)* Template withdrawal: the bundled "Original Plan v1 template" and its loader affordances are removed from every build configuration. This supersedes the v0.2.0 template provision and the v0.2.0-alpha.2 Release-exclusion amendment (full removal is strictly stronger). User-exported structure-only templates (V3-10) replace the concept.
+5. *(v0.3.0 — V3-08)* Consolidated setup: the separate bills and debts setup pages are superseded by one Bills & Debts page — presentation only; every field, validation, and resumability guarantee survives.
