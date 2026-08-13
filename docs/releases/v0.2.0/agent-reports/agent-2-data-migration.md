@@ -1,5 +1,7 @@
 # Agent 2 report — Data Model, Persistence & Migration (v0.2.0)
 
+*(Edited 2026-08-13 under V3-12: personal financial values and the founding user's name redacted; all technical content, decisions, and results otherwise unchanged.)*
+
 Branch: `feature/v0.2-data-migration` (based on Agent 1's `07bcf2f`) · Date: 2026-08-10
 Scope: schema 2 models, schema 1→2 migration, planning DTOs, repositories, backup schema 2, tests. No feature screens, no optimizer math, no notification scheduling.
 
@@ -50,16 +52,18 @@ UI, on `AppSettings.seedSchemaVersion < 2`:
    (nothing written; onboarding is the only path to a plan); stamp ≥ 2 →
    `.upToDate`; otherwise `.legacyNeedsMigration`. A crashed 0.1.x partial
    seed is repaired by the 0.1.x seeder first, exactly as a 0.1.x launch would.
-2. **Integrity pre-check** — baseline plan present with all 23 items and 6
-   debts, else abort (store untouched, retry next launch).
+2. **Integrity pre-check** — baseline plan present with its full expected
+   complement of plan items and debts, else abort (store untouched, retry
+   next launch).
 3. **Checking 1/2 → CashAccount** — roles income+spending (default income) /
    reserves; balances **derived** from the existing snapshot+ledger state via
    `AccountBalanceService` (nothing invented); `legacyKindRaw` keeps the
    mapping stable. Ledger and snapshot rows gain `…AccountID` references;
    their legacy raw fields are not modified.
-4. **Car/train → RecurringObligation** ($726/$111 monthly) — the R-04
-   smoothing is verified to reproduce the stored $335.08/$51.23 **before**
-   committing; a mismatch aborts the whole migration.
+4. **Car/train → RecurringObligation** (the two baseline monthly obligation
+   amounts) — the R-04 smoothing is verified to reproduce the stored
+   per-paycheck reserve amounts **before** committing; a mismatch aborts the
+   whole migration.
 5. **Plan metadata** — `payCadence=.biweekly`, `incomeAccountID`,
    `generatedFromProfile=false`. **No `PaydayPlanItem`/check-in/ledger/
    snapshot/forecast/milestone value is touched**; Original Plan v1 keeps
@@ -146,10 +150,10 @@ migration after deletion could not be rolled back and left the store empty.
 `deleteAllWithoutSaving` now deletes rows through the context, and
 `testV1ImportMigrationFailureRollsBackTheWholeRestore` pins the guarantee
 (mission rule 7: no partial write, ever). Mission coverage:
-clean-vs-upgrade routing · 23 paydays value-for-value (every field of every
-item compared before/after) · derived C1/C2 balances incl. the same-day
-snapshot rule · R-04 reduction $726→$335.08 / $111→$51.23 + five more
-cadences to the cent · all six debt types + per-type validation · unknowns
+clean-vs-upgrade routing · every baseline payday value-for-value (every field
+of every item compared before/after) · derived C1/C2 balances incl. the
+same-day snapshot rule · R-04 reduction of both baseline monthly obligations
+to their stored per-paycheck reserves + five more cadences to the cent · all six debt types + per-type validation · unknowns
 stay nil (no fabrication) · due-date edits persist prospectively with the
 baseline untouched · interrupted/resumed onboarding, no regression, no
 duplicate rows on double-finish · migration idempotent across launches and
@@ -225,8 +229,9 @@ findings; 3 were confirmed on verification and all 3 are resolved:
    amount milestones for generated plans belongs to the milestone/progress
    owner if wanted.
 8. Migrated installs also get a live `IncomeSchedule` (+`IncomeChange` for the
-   Dec 10 raise) copied from the plan's income rules so Settings can edit
-   income forward; the plan's own `IncomeRule` rows remain the frozen truth.
+   plan's scheduled raise) copied from the plan's income rules so Settings can
+   edit income forward; the plan's own `IncomeRule` rows remain the frozen
+   truth.
 
 ## Risks / notes for downstream agents
 

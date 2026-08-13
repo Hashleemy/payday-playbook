@@ -1,6 +1,7 @@
 # Payday Playbook — Alpha v0.2.0 Multi-Agent Plan
 
 > **Status:** authoritative feature registry for the 0.2.0 minor release.
+> *(Edited 2026-08-13 under V3-12: personal financial values and the founding user's name redacted; registry semantics unchanged.)*
 > **Provenance:** this file was authored by Agent 1 (Product Contract & SemVer owner)
 > because the orchestration referenced it but no copy existed in the repository or its
 > history. The V2-01…V2-18 registry below is derived directly from the user's alpha
@@ -46,7 +47,7 @@ None of them removes or weakens an F-01…F-16 requirement; where behavior chang
 | V2-13 | Friendly dashboard | The five-second dashboard generalizes beyond "Checking 1/Checking 2" to the user's named accounts and roles while keeping the calm, action-first layout. |
 | V2-14 | Insights | Named, estimate-honest insight cards: interest saved vs. minimums-only, payoff-date delta, utilization alerts, obligation crunch warnings, allowance usage trend. |
 | V2-15 | Actual tracking and reforecasting | Check-ins, ledger, balance snapshots, and the reforecast engine work identically for generated plans; planned / actual / reforecast stay separate truths. |
-| V2-16 | Current-user migration | A schema 1→2 migration preserves Master Lem's exact 23-paycheck Aug 20 2026 – Jun 24 2027 baseline, history, and check-ins verbatim — without seeding that plan on unrelated fresh installs. |
+| V2-16 | Current-user migration | A schema 1→2 migration preserves the founding user's exact baseline schedule, history, and check-ins verbatim — without seeding that plan on unrelated fresh installs. |
 | V2-17 | Local-only privacy | Everything stays on device; no accounts, no telemetry, and never bank credentials, full card numbers, CVVs, or SSNs. |
 | V2-18 | Accessibility, Decimal math, export compatibility | Dynamic Type / VoiceOver / Reduce Motion coverage for all new screens; all money in `Decimal`; version-2 backups restore version-1 files. |
 

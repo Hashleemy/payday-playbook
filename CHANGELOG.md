@@ -2,11 +2,41 @@
 
 All notable changes to Payday Playbook are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer 2.0.0](https://semver.org).
-App, schema, calculation, backup, and user-plan versions are distinct — see `docs/releases/v0.2.0/VERSIONING.md`.
+App, build, schema, calculation, export-schema, and user-plan versions are distinct — see
+`docs/releases/v0.3.0/VERSIONING.md` (current cycle) and `docs/releases/v0.2.0/VERSIONING.md`.
 
 ## [Unreleased]
 
-Nothing yet.
+Work toward **0.3.0** (first prerelease target `v0.3.0-alpha.1`). Contract and
+documentation only so far — **no v0.3.0 feature code has shipped**. The authoritative
+feature registry is `ALPHA_V0.3.0_MULTI_AGENT_PLAN.md` (V3-01…V3-16).
+
+### Added
+
+- The v0.3.0 product contract: `soul.md` and `MVP_LAYOUT.md` now define V3-01…V3-16 —
+  Checking Accounts workspace, auditable balance adjustments, extra-payment insight,
+  the three-plan payoff calculator (Fastest Safe / Balanced (Recommended) / More Cushion),
+  hardened editable due dates, consolidated Bills & Debts setup, full JSON backup and
+  restore, reusable structure-only templates, Generate Financial Report (PDF),
+  personal-data removal, privacy-safe diagnostics, comment cleanup, plan separation, and
+  accessibility/recovery states — plus the storage-independent DTO/protocol contracts and
+  the V3 parity matrix for the implementing agents.
+- `docs/releases/v0.3.0/VERSIONING.md`: the six-axis versioning contract for the 0.3.0
+  cycle (app 0.3.0; build continues +1 per distributed build; persistence schema, and
+  calculation and export-schema versions per that document).
+
+### Changed
+
+- **Personal financial data removed from all tracked documentation** (V3-12, docs scope):
+  the founding user's plan values, dates, schedules, account inventory, and name no longer
+  appear in any tracked Markdown document; every requirement's behavior is unchanged. The
+  matching sweep of source, fixtures, tests, and resources — including withdrawing the
+  bundled Original Plan v1 template from every build configuration — is contracted to the
+  v0.3.0 privacy/data agent and has not shipped yet. Removing data from the working tree
+  does not remove it from Git history; history remediation is a separate, owner-decided
+  step (release plan §3).
+- Historical entries below were edited in place for the same reason — wording only; the
+  recorded facts, versions, and test counts are untouched.
 
 ## [0.2.0-alpha.2] — 2026-08-11
 
@@ -75,8 +105,8 @@ device — see "Known limitations".
 - Plan calendar covering paydays, transfers, reserves, debt payments, debt and obligation
   due dates, milestones, ledger entries, balance snapshots, and reforecasts, with five
   explicit statuses and typed deep links that never dead-end (V2-12).
-- Schema 1→2 migration preserving the existing user's exact 23-paycheck
-  Aug 20, 2026 – Jun 24, 2027 baseline, history, and check-ins verbatim, in a single
+- Schema 1→2 migration preserving the existing user's exact baseline schedule, history,
+  and check-ins verbatim, in a single
   transaction that rolls back untouched on any failure. Migrated users are never asked
   to re-onboard; an upgrade checklist asks only about what migration could not know
   (V2-16).
@@ -109,7 +139,7 @@ device — see "Known limitations".
   ignored the snapshot's `asOf` stamp, collapsed the tri-state prepayment flag to a
   boolean, defaulted missing semimonthly pay days instead of failing, and did not
   normalise reversed semimonthly days. There is now one conversion.
-- Freshly onboarded users saw the bundled template's $2,094.00 as their own take-home on
+- Freshly onboarded users saw the bundled template's take-home amount as their own on
   Today, Settings, and the Phase II screen, because the income lookup read the
   template-only plan and fell back to a hard-coded constant.
 - The payday variance chart on Progress was empty for generated plans, for the same
@@ -121,8 +151,8 @@ device — see "Known limitations".
   SSNs collected (V2-17). All money is `Decimal`. Planned, actual, and reforecast remain
   three separate truths, and no baseline plan version is ever edited or regenerated.
 - Original Plan v1 stays stamped calculation version 1 and is never recomputed; the
-  frozen calc-v1 engine is untouched and still reproduces the documented 23-check
-  schedule ($3,461.16 interest).
+  frozen calc-v1 engine is untouched and still reproduces that plan's stored schedule
+  exactly.
 
 ### Known limitations
 
@@ -154,9 +184,9 @@ First alpha MVP (untagged at release; retro-tag `v0.1.0` recommended on `main`).
 
 ### Added
 
-- Offline-first iOS app executing Master Lem's exact debt plan: seeded immutable
-  Original Plan v1 (23 biweekly paydays, Aug 20, 2026 – Jun 24, 2027, six cards,
-  $29,681.61 starting debt), five-second dashboard, guided payday check-in with
+- Offline-first iOS app executing the founding user's exact debt plan: seeded immutable
+  Original Plan v1 (a fixed biweekly payday schedule across a set of credit cards),
+  five-second dashboard, guided payday check-in with
   reconciliation, contribution ledger, balance snapshots, calendar, local notifications
   with deep links, reforecast engine, plan/settings editor with plan versions,
   JSON backup + CSV export, Face ID app lock, accessibility support, Phase II

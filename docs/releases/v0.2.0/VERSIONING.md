@@ -1,6 +1,7 @@
 # Payday Playbook — Versioning contract (v0.2.0)
 
 Owner: Agent 1 (Product Contract & SemVer). Binding for the 0.2.0 release cycle.
+*(Edited 2026-08-13 under V3-12: a test name referencing the founding user was genericized; rules unchanged. Superseded for the current cycle by `docs/releases/v0.3.0/VERSIONING.md`.)*
 
 ## 1. The five versions, and why they are not the same thing
 
@@ -58,7 +59,7 @@ build number is ≤ the last distributed one.
   dispatch on the stamp; changing math means a new calculation version, never editing an
   old one. Original Plan v1 is calc 1 forever — its stored schedule is authoritative and
   is never recomputed. Calc 2 must reduce exactly to calc 1 for biweekly cadence
-  (tested: Lem-equivalence, `MVP_LAYOUT.md` §13).
+  (tested: the baseline-equivalence suite, `MVP_LAYOUT.md` §13).
 - **Backup schema version** tracks the export container. Writers emit the current
   version; readers accept all older versions by running the same logical migrations.
   CSV columns are append-only.

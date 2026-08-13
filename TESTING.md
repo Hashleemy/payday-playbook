@@ -4,9 +4,10 @@ Applies to **0.2.0-alpha.2** (app 0.2.0 · build 3 · schema 2 · calc 2 · back
 
 ## Distribution check: the template must not ship
 
-Original Plan v1 is a real person's finances and is excluded from Release builds. The
-Release build phase fails the build if it reappears, but verify the artifact directly
-before distributing:
+Original Plan v1 is a real person's finances and is excluded from Release builds. Its
+**full removal from every build configuration is contracted under V3-12** (v0.3.0); until
+that lands, the Release build phase fails the build if it reappears — but verify the
+artifact directly before distributing:
 
 ```bash
 unzip -l YourApp.ipa | grep OriginalPlanV1   # must print nothing
@@ -50,6 +51,11 @@ xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
 
 ## Unit tests — 292, all passing
 
+> **V3-12 note.** Suites whose code names still carry the founding user's name appear
+> below under their contracted replacement names (`AvalancheBaselineParityTests`;
+> "baseline equivalence" in `PlanGenerationServiceTests`). The code rename lands with the
+> v0.3.0 privacy agent; test counts and coverage are unchanged.
+
 | Suite | Tests | Covers |
 | --- | ---: | --- |
 | `NotificationSchedulerTests` | 24 | Diff-based reconcile, permission states, rolling window and 60-request cap, no double-fire on upgrade |
@@ -57,15 +63,15 @@ xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
 | `AvalanchePlanEngineTests` | 22 | Allocation order, rollover, shortfall, promo APR, eligibility, utilization, minimum-only comparison |
 | `CalendarEventServiceTests` | 21 | Event taxonomy, statuses, ordering, deep-link resolution, archived/deleted fallback |
 | `DueDateRuleTests` | 16 | Day 29–31 clamping, weekend shift rules, DST and time-zone stability, prospective edits |
-| `MigrationServiceTests` | 13 | Clean-vs-upgrade routing, 23 paydays value-for-value, derived balances, idempotency, induced-failure rollback |
+| `MigrationServiceTests` | 13 | Clean-vs-upgrade routing, full baseline value-for-value, derived balances, idempotency, induced-failure rollback |
 | `PlanPresentationTests` | 12 | Plan screen data, three-track separation, activation without history loss |
-| `DebtCalculationEngineTests` | 11 | Frozen calc-v1 baseline: order, dates, payoffs, $3,461.16 interest |
-| `AvalancheLemParityTests` | 11 | Calc v2 reproduces the calc-v1 baseline check by check |
-| `PlanSeederTests` | 10 | Template load, allocations, no-spend ceiling to $7,900 |
+| `DebtCalculationEngineTests` | 11 | Frozen calc-v1 baseline: order, dates, payoffs, headline interest total |
+| `AvalancheBaselineParityTests` | 11 | Calc v2 reproduces the calc-v1 baseline check by check |
+| `PlanSeederTests` | 10 | Template load, allocations, no-spend ceiling construction |
 | `DebtTypeTests` | 10 | Per-type metadata, validation, utilization, principal basis |
 | `ReviewRegressionTests` | 9 | 0.1.x review findings (unfunded payments, double-counting, CSV neutralisation) |
 | `ReconciliationServiceTests` | 8 | Check-in reconciliation, snapshot-vs-baseline separation, invalid input |
-| `PlanGenerationServiceTests` | 8 | Lem-equivalence through the store bridge, cadences, actionable failures |
+| `PlanGenerationServiceTests` | 8 | Baseline equivalence through the store bridge, cadences, actionable failures |
 | `PayScheduleGeneratorTests` | 8 | All four cadences, short months, leap years, DST |
 | `CashAccountRepositoryTests` | 8 | Account CRUD and the exactly-one-default-income invariant |
 | `AppRouterTests` | 8 | Notification routes, legacy `card` parsing, tab destinations |
@@ -87,7 +93,7 @@ because each one's two halves arrived from different agent branches: the
 presentation bridge ignoring the snapshot's `asOf`, reversed semimonthly days
 normalising differently on the two bridges, missing pay days defaulting instead
 of failing, the prepayment tri-state collapsing to a boolean, and the income
-lookup reporting the bundled template's $2,094.00 on a generated-plan install.
+lookup reporting the bundled template's take-home on a generated-plan install.
 
 ## UI tests — 19, all passing
 
@@ -172,13 +178,14 @@ would ship.
     - Use it: complete the first check-in, record a card payment, enter an authoritative
       balance update, and enable reminders so 0.1.x schedules its letter-keyed requests.
     - **Without deleting**, build this branch (build 3) over it.
-    - Confirm: all 23 paydays and every value unchanged, ledger and check-in intact,
+    - Confirm: every payday and every value unchanged, ledger and check-in intact,
       onboarding does not reappear, the upgrade checklist asks only about what migration
       could not know, and the diagnostics screen reports **no** 0.1.x identifiers and no
       duplicates. Cross-check the numbers against item 14.
 14. **Plan verification screen** (debug builds): Settings → About → Plan
-    verification — 6 debts, 23 paydays, $29,681.61 total, Jun 24 2027 payoff,
-    $3,461.16 interest, $7,900 ceiling.
+    verification — confirm the debt count, payday count, starting total,
+    payoff date, modeled interest, and ceiling against your own source plan
+    records, which are kept outside the repository (V3-12).
 
 ## Known behaviours and limitations
 
@@ -199,8 +206,8 @@ would ship.
   not issuer statement cycles. Card minimums without an entered amount use a
   heuristic. Every plan surfaces these as assumptions in the UI.
 - The plan analysis (baseline + reforecast + two scenarios) runs synchronously
-  on the main thread; fine at 23 paychecks, worth moving off-actor for very
-  long plans.
+  on the main thread; fine at typical plan lengths, worth moving off-actor for
+  very long plans.
 - At the largest accessibility sizes, Today's primary action requires a scroll.
 - Balance derivations fetch whole tables and filter in memory — fine at this
   scale, revisit if the app outlives Phase II.

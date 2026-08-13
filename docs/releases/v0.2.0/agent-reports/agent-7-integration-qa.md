@@ -1,5 +1,7 @@
 # Agent 7 report — Release Integration & QA (v0.2.0-alpha.1)
 
+*(Edited 2026-08-13 under V3-12: personal financial values and the founding user's name redacted; all technical content, decisions, and results otherwise unchanged.)*
+
 Branch: `release/v0.2.0-alpha.1` (from `main` @ `b0e7443`) · Date: 2026-08-11
 Role: final gate. No feature development; merges, conflict decisions, cross-agent defect
 fixes, contract ratification, and release validation.
@@ -151,7 +153,8 @@ which gained an optional `asOf` override for live previews. The generation path 
 **2. A new user saw the template user's paycheck. (P1)**
 `ReforecastService.currentIncome` read `PlanSeeder.existingBaseline` — template-only since
 Agent 2 narrowed it — and fell through to `PlanContract.firstIncome` when that returned nil.
-On any generated-plan install that meant **$2,094.00 displayed as the user's own take-home**
+On any generated-plan install that meant **the founding user's baseline take-home amount
+displayed as the user's own**
 on Today, Settings, and the Phase II screen. Agent 4 fixed this class of bug across twelve
 call sites; Agent 6 rewrote `ReforecastService` from a pre-fix base and the site returned.
 Now reads the current plan's `IncomeRule` rows, falling back to the live `IncomeSchedule`;
@@ -241,13 +244,13 @@ additive against the agent's own reported count:
 | --- | --- | --- |
 | Clean install enters onboarding, completes end to end | Pass | `testFirstRunSetupGeneratesAPlanAndLandsOnToday` (UI) |
 | Interrupted onboarding resumes, no duplicate accounts/debts/plans | Pass | `testSetupResumesAfterForceQuit` (UI); `OnboardingSetupTests` resume at every step boundary |
-| Upgrade preserves every record and the exact 23-paycheck baseline | Pass | `MigrationServiceTests` (23 paydays value-for-value); `UpgradeChecklistTests` |
+| Upgrade preserves every record and the exact full baseline schedule | Pass | `MigrationServiceTests` (every baseline payday value-for-value); `UpgradeChecklistTests` |
 | Multiple checking accounts; exactly one default income | Pass | `CashAccountRepositoryTests` under add/edit/archive |
 | Every debt type add/edit/archive/plan | Pass | `DebtTypeTests`, `OnboardingSetupTests`, `PlanPresentationTests` |
 | Card limits/utilization; installment original vs current principal | Pass | `DebtPresentationTests`, `DebtTypeTests` |
 | All pay frequencies generate correct dates | Pass | `PayScheduleGeneratorTests` (weekly/biweekly/semimonthly/monthly, short months, leap, DST) |
 | Due-date changes update calendar and notifications, no duplicates | Pass | `DueDateRuleTests`, `NotificationSchedulerTests`, `CalendarEventServiceTests` |
-| Optimizer: minimums, protected cash, avalanche priority, rollover, cent reconciliation | Pass | `AvalanchePlanEngineTests`, `AvalanchePropertyTests`, `AvalancheLemParityTests` |
+| Optimizer: minimums, protected cash, avalanche priority, rollover, cent reconciliation | Pass | `AvalanchePlanEngineTests`, `AvalanchePropertyTests`, `AvalancheBaselineParityTests` (renamed under V3-12) |
 | Plan output: payoff, interest, order, transfers, insights, assumptions, minimum-only behaviour | Pass | `PlanPresentationTests` (comparison withheld, not guessed, when inputs insufficient) |
 | Today/Plan/Debts/Calendar/Settings/check-ins use production data | Pass | `DashboardStateTests`, `PlanPresentationTests` (fixtures build production-shaped stores) |
 | Planned / actual / reforecast stay distinct | Pass | `testBaselineActualAndReforecastComeFromSeparateSources` and siblings |
@@ -264,8 +267,8 @@ additive against the agent's own reported count:
 
 No regressions against 0.1.x. The 54-test 0.1.x suite is carried forward inside the 281 and
 green; `DebtCalculationEngineTests` and `PlanSeederTests` still reproduce the documented
-23-check schedule, $3,461.16 interest, and $7,900 ceiling from the untouched frozen calc-v1
-engine. `ReviewRegressionTests` (the 0.1.x review findings) still pass.
+full baseline schedule, the baseline's modeled interest total, and the baseline payment
+ceiling from the untouched frozen calc-v1 engine. `ReviewRegressionTests` (the 0.1.x review findings) still pass.
 
 **Environment note, not a product defect.** The UI suite initially reported four failures with
 no assertion failure and no app crash log — and a *different* four on each run. The cause was

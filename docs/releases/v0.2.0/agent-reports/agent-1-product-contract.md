@@ -1,5 +1,7 @@
 # Agent 1 report — Product Contract & Semantic Versioning (v0.2.0)
 
+*(Edited 2026-08-13 under V3-12: personal financial values and the founding user's name redacted; all technical content, decisions, and results otherwise unchanged.)*
+
 Branch: `feature/v0.2-product-contract` · Date: 2026-08-10 · Docs only — no feature code.
 
 ## Decisions
@@ -24,7 +26,7 @@ Branch: `feature/v0.2-product-contract` · Date: 2026-08-10 · Docs only — no 
    and soul.md now states that count explicitly. Everything else — hard boundaries,
    privacy rules, exact plan tables (verified byte-identical), three-truths separation —
    survives untouched, with two boundaries added (no baseline regeneration; never force
-   Lem's plan on new users).
+   the founding user's plan on new users).
 4. **Original Plan v1 = migrated data + deliberate template.** Fresh installs never see
    it; migration preserves every existing value (adds fields/rows, never alters one);
    the bundled JSON becomes an explicit, warned template load.
@@ -34,7 +36,8 @@ Branch: `feature/v0.2-product-contract` · Date: 2026-08-10 · Docs only — no 
    Plan v1", "Plan v1", "Plan v2") are data, never software versions.
 6. **Ambiguity → rules.** All generalized money behavior is in `MVP_LAYOUT.md` §5 as
    testable rules R-01…R-16 (cadence timelines, day-gap interest, obligation smoothing
-   `round2(annualized ÷ paychecksPerYear)` — reproduces Lem's $335.08/$51.23 exactly —
+   `round2(annualized ÷ paychecksPerYear)` — reproduces the baseline's two per-paycheck
+   obligation amounts exactly —
    allocation order, shortfall handling, avalanche tie-breaks, eligibility, clamping,
    utilization). Calc v2 reduces exactly to calc v1 under biweekly cadence (tested).
 
@@ -42,7 +45,7 @@ Branch: `feature/v0.2-product-contract` · Date: 2026-08-10 · Docs only — no 
 
 | File | Change |
 | --- | --- |
-| `soul.md` | Configurable-user identity; principle 9 (onboarding); Lem's plan re-framed as immutable baseline/template (tables verbatim); F-table amendments; new V2-01…V2-18 contract table; two hard boundaries added |
+| `soul.md` | Configurable-user identity; principle 9 (onboarding); the founding user's plan re-framed as immutable baseline/template (tables verbatim); F-table amendments; new V2-01…V2-18 contract table; two hard boundaries added |
 | `MVP_LAYOUT.md` | Rewritten for v0.2.0: §2 versioning, §3 migrated baseline (calc v1 frozen), §4 onboarding sequence + screen states, §5 rules R-01…R-16, §6 schema-2 models, §7 migration, §8 screens/insights, §9 due-date→calendar/notification behavior, §10 services, §11 V2 acceptance criteria, §12 parity table, §13 tests, §14 structure, §15 build sequence |
 | `ALPHA_V0.2.0_MULTI_AGENT_PLAN.md` | New — canonical V2 registry, release identity, agent map, ground rules |
 | `CHANGELOG.md` | New — Keep-a-Changelog; Unreleased (targeting 0.2.0, explicitly unshipped) + 0.1.0 record |
@@ -61,7 +64,8 @@ Branch: `feature/v0.2-product-contract` · Date: 2026-08-10 · Docs only — no 
   exact-plan tables byte-identical, all version numbers consistent across all files, and
   no surviving fresh-install-seeds claim — and raised 15 findings (1 high, 7 medium,
   7 low). **All 15 were fixed**, notably: the ceiling formula in R-10 corrected to the
-  keep-in-spending construction ($900+$400=$1,300 → $7,900); the Lem-equivalence test
+  keep-in-spending construction (the corrected construction yields a materially higher
+  ceiling than the earlier arithmetic); the baseline-equivalence test
   respecified to honor the documented ±$0.01–$0.06 seed-table float artifacts instead of
   demanding the forbidden "fix"; the dropped v0.1 success criterion recorded as a proper
   amendment; stale §-references, circular acceptance references, PlanSeeder/migration
@@ -83,9 +87,9 @@ only; installment debts require an entered minimum · A-07 utilization threshold
    may want different ones; changing them needs no contract change.
 3. Semimonthly cadence uses actual day-gap interest (R-02); if real users need
    twice-monthly paydays pinned to statement cycles instead, that's a calc-v3 topic.
-4. The template load path exposes Master Lem's real numbers to any user who taps it;
-   if that's a privacy concern for distribution beyond Lem, drop the template from the
-   bundle (one-line change to §3/§4.1).
+4. The template load path exposes the founding user's real numbers to any user who taps
+   it; if that's a privacy concern for distribution beyond the founding user, drop the
+   template from the bundle (one-line change to §3/§4.1).
 
 ## What downstream agents must know
 
