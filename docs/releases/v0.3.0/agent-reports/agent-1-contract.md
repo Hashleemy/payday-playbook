@@ -72,4 +72,10 @@ The v0.3.0 contract is authoritative and implementation-ready:
 
 ## Commits
 
-Recorded in the final summary returned with this branch (two scoped commits: the release-plan adoption, then the contract + scrub + this report).
+On `feature/v0.3-contract` (base `18b5d52`):
+
+- `d5326cb` — docs(v0.3.0): adopt the authoritative multi-agent release plan.
+- `c0918d9` — docs(v0.3.0): authoritative contract, V3 parity matrix, and docs-scope privacy scrub (17 files).
+- (+ one follow-up commit recording these hashes in this report.)
+
+Validation at `c0918d9`: unit suite **292/292 green** (UI suite not run — docs-only change); docs privacy scan clean. Note for other agents: on this machine, `-derivedDataPath` must point **outside** `~/Documents` — the file-provider sync stamps FinderInfo xattrs onto build products inside the repo and CodeSign fails with "resource fork, Finder information, or similar detritus not allowed".
