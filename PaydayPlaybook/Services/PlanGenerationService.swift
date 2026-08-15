@@ -121,9 +121,21 @@ enum PlanGenerationService {
             PlanningIncomeChange(effectiveDate: $0.effectiveDate, amount: $0.amount)
         })
 
+        // Calc v3 is stamped when the snapshot asks for it *or* carries
+        // scenario/extra-payment data, so a caller can never get v3 inputs
+        // silently modeled as a v2 result.
+        let version: PlanCalculationVersion
+        if snapshot.calculationVersion == 1 {
+            version = .v1LegacyBaseline
+        } else if snapshot.calculationVersion >= 3
+                    || snapshot.scenario != nil || !snapshot.extraPayments.isEmpty {
+            version = .v3Scenario
+        } else {
+            version = .v2Avalanche
+        }
+
         return PlanningInput(
-            calculationVersion: snapshot.calculationVersion == 1
-                ? .v1LegacyBaseline : .v2Avalanche,
+            calculationVersion: version,
             asOf: asOf ?? snapshot.asOf ?? DateMath.startOfDay(snapshot.nextPayday),
             income: IncomeInput(
                 cadence: cadence,
@@ -159,7 +171,46 @@ enum PlanGenerationService {
                     prepayment: debt.effectivePrepayment,
                     createdOrder: index
                 )
+            },
+            scenario: try snapshot.scenario.map(scenarioInput(from:)),
+            extraPayments: snapshot.extraPayments.map { extra in
+                ExtraPaymentInput(
+                    id: extra.id,
+                    kind: extra.kind,
+                    amount: extra.amount,
+                    effectiveDate: extra.effectiveDate,
+                    targetDebtID: extra.targetDebtID,
+                    sourceAccountID: extra.sourceAccountID
+                )
             }
+        )
+    }
+
+    /// Stored scenario definition → engine mirror (R-17/R-18). The engine
+    /// resolves which constraint applies to which kind; this only translates.
+    static func scenarioInput(from definition: StoredScenarioDefinition) throws -> ScenarioInput {
+        ScenarioInput(
+            kind: definition.kind,
+            incomeOverride: try definition.incomeOverride.map { override in
+                IncomeOverrideInput(
+                    amount: override.amount,
+                    cadence: try planningCadence(
+                        cadence: override.cadence,
+                        monthlyPayDay: override.monthlyPayDay,
+                        semimonthlyPayDay1: override.semimonthlyPayDay1,
+                        semimonthlyPayDay2: override.semimonthlyPayDay2
+                    ),
+                    effectiveDate: override.effectiveDate
+                )
+            },
+            minimumProtectedCash: definition.minimumProtectedCash,
+            preferredFloor: definition.preferredFloor,
+            preferredAllowance: definition.preferredAllowance,
+            plannedSavingsPerPaycheck: definition.plannedSavingsPerPaycheck,
+            additionalReserve: definition.additionalReserve,
+            extraPaymentCeiling: definition.extraPaymentCeiling,
+            zeroAllowanceConfirmedAt: definition.zeroAllowanceConfirmedAt,
+            effectiveDate: definition.effectiveDate
         )
     }
 
@@ -167,19 +218,34 @@ enum PlanGenerationService {
     /// cadence. Semimonthly days are normalized to ascending order (paydays
     /// on the 15th and the 1st are the same paydays as the 1st and 15th).
     static func planningCadence(from snapshot: StoredPlanInput) throws -> PlanningPayCadence {
-        switch snapshot.cadence {
+        try planningCadence(
+            cadence: snapshot.cadence,
+            monthlyPayDay: snapshot.monthlyPayDay,
+            semimonthlyPayDay1: snapshot.semimonthlyPayDay1,
+            semimonthlyPayDay2: snapshot.semimonthlyPayDay2
+        )
+    }
+
+    /// The one cadence conversion, shared by the base snapshot and the R-18
+    /// income override — a second copy would be free to disagree.
+    static func planningCadence(
+        cadence: PayCadence,
+        monthlyPayDay: Int?,
+        semimonthlyPayDay1: Int?,
+        semimonthlyPayDay2: Int?
+    ) throws -> PlanningPayCadence {
+        switch cadence {
         case .weekly:
             return .weekly
         case .biweekly:
             return .biweekly
         case .monthly:
-            guard let day = snapshot.monthlyPayDay else {
+            guard let day = monthlyPayDay else {
                 throw GenerationError.missingPayDay(cadence: "monthly")
             }
             return .monthly(day: day)
         case .semimonthly:
-            guard let first = snapshot.semimonthlyPayDay1,
-                  let second = snapshot.semimonthlyPayDay2 else {
+            guard let first = semimonthlyPayDay1, let second = semimonthlyPayDay2 else {
                 throw GenerationError.missingPayDay(cadence: "twice-a-month")
             }
             guard first != second else { throw GenerationError.samePayDays }
