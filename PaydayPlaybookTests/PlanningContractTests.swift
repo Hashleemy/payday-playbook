@@ -8,14 +8,14 @@ final class PlanningContractTests: XCTestCase {
 
     // MARK: - R-04 smoothing (required test 1)
 
-    func testSmoothingReproducesLemsReserves() {
+    func testSmoothingReproducesTheFixtureReserves() {
         XCTAssertEqual(
-            ObligationMath.perPaycheckReserve(amount: TestSupport.money("726.00"), cadence: .monthly, paychecksPerYear: 26),
-            TestSupport.money("335.08")
+            ObligationMath.perPaycheckReserve(amount: TestSupport.money("700.00"), cadence: .monthly, paychecksPerYear: 26),
+            TestSupport.money("323.08")
         )
         XCTAssertEqual(
-            ObligationMath.perPaycheckReserve(amount: TestSupport.money("111.00"), cadence: .monthly, paychecksPerYear: 26),
-            TestSupport.money("51.23")
+            ObligationMath.perPaycheckReserve(amount: TestSupport.money("150.00"), cadence: .monthly, paychecksPerYear: 26),
+            TestSupport.money("69.23")
         )
     }
 
@@ -68,22 +68,22 @@ final class PlanningContractTests: XCTestCase {
             monthlyPayDay: nil,
             semimonthlyPayDay1: 1,
             semimonthlyPayDay2: 31,
-            nextPayday: TestSupport.date(2026, 9, 1),
-            baseTakeHome: TestSupport.money("2094.00"),
+            nextPayday: TestSupport.date(2054, 9, 1),
+            baseTakeHome: TestSupport.money("2400.00"),
             incomeChanges: [
-                PlanningIncomeChange(effectiveDate: TestSupport.date(2026, 12, 10), amount: TestSupport.money("2190.00"))
+                PlanningIncomeChange(effectiveDate: TestSupport.date(2054, 12, 10), amount: TestSupport.money("2500.00"))
             ],
-            spendingStartingBalance: TestSupport.money("900.00"),
+            spendingStartingBalance: TestSupport.money("1500.00"),
             protectedFloor: TestSupport.money("1000.00"),
             allowanceCap: TestSupport.money("300.00"),
             firstCheckBufferAdd: TestSupport.money("100.00"),
             obligations: [
-                PlanningObligation(id: UUID(), name: "Car", amount: TestSupport.money("726.00"), cadence: .monthly, dueDay: nil)
+                PlanningObligation(id: UUID(), name: "Car", amount: TestSupport.money("700.00"), cadence: .monthly, dueDay: nil)
             ],
             debts: [
                 PlanningDebt(
                     id: UUID(), displayID: "B", name: "Card B", debtType: .creditCard,
-                    currentBalance: TestSupport.money("1049.00"), apr: TestSupport.money("0.2999"),
+                    currentBalance: TestSupport.money("1100.00"), apr: TestSupport.money("0.2600"),
                     minimumAmount: nil, isExtraPrincipalEligible: true,
                     creditLimit: nil, dueDayOfMonth: nil, originalPrincipal: nil
                 ),
@@ -105,13 +105,13 @@ final class PlanningContractTests: XCTestCase {
         let decoded = try PlanningSnapshotCoder.decode(data)
         XCTAssertEqual(decoded, input)
         // The classic binary-float traps survive exactly.
-        XCTAssertEqual(decoded.debts[0].apr, TestSupport.money("0.2999"))
+        XCTAssertEqual(decoded.debts[0].apr, TestSupport.money("0.2600"))
         XCTAssertEqual(decoded.debts[1].currentBalance, TestSupport.money("0.10"))
 
         // Money is encoded as strings, never JSON numbers.
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
-        XCTAssertTrue(json.contains("\"0.2999\""))
-        XCTAssertTrue(json.contains("\"2094\"") || json.contains("\"2094.00\""))
+        XCTAssertTrue(json.contains("\"0.26\"") || json.contains("\"0.2600\""))
+        XCTAssertTrue(json.contains("\"2400\"") || json.contains("\"2400.00\""))
     }
 
     func testSnapshotEncodingIsDeterministic() throws {
@@ -121,27 +121,27 @@ final class PlanningContractTests: XCTestCase {
 
     func testPlanningResultRoundTripsExactly() throws {
         let payday = PlanningPayday(
-            sequence: 1, date: TestSupport.date(2026, 9, 1),
-            income: TestSupport.money("2094.00"),
+            sequence: 1, date: TestSupport.date(2054, 9, 1),
+            income: TestSupport.money("2400.00"),
             keepInSpending: TestSupport.money("400.00"),
-            transferToReserves: TestSupport.money("1694.00"),
+            transferToReserves: TestSupport.money("1705.00"),
             allowance: TestSupport.money("300.00"),
             floorTopUp: TestSupport.money("100.00"),
-            obligationReserves: [PlanningObligationReserve(obligationID: UUID(), amount: TestSupport.money("335.08"))],
-            debtBudget: TestSupport.money("1307.69"),
+            obligationReserves: [PlanningObligationReserve(obligationID: UUID(), amount: TestSupport.money("323.08"))],
+            debtBudget: TestSupport.money("1707.69"),
             targetDebtID: "B",
-            perDebtBalancesAfter: ["B": .zero, "D": TestSupport.money("4987.00")],
-            totalDebtAfter: TestSupport.money("28665.71"),
-            noSpendCeiling: TestSupport.money("1300.00"),
+            perDebtBalancesAfter: ["B": .zero, "D": TestSupport.money("6111.00")],
+            totalDebtAfter: TestSupport.money("35150.18"),
+            noSpendCeiling: TestSupport.money("1800.00"),
             shortfallAmount: TestSupport.money("84.00")
         )
         let result = StoredPlanResult(
             calculationVersion: 2,
             paydays: [payday],
             payoffDate: nil,
-            totalEstimatedInterest: TestSupport.money("3461.16"),
+            totalEstimatedInterest: TestSupport.money("2617.18"),
             paycheckCount: 1,
-            debtPayoffs: [PlanningDebtPayoff(debtID: "B", payoffDate: TestSupport.date(2026, 9, 1))],
+            debtPayoffs: [PlanningDebtPayoff(debtID: "B", payoffDate: TestSupport.date(2054, 9, 1))],
             cappedAtPaycheckLimit: true
         )
         let encoder = JSONEncoder()
@@ -152,7 +152,7 @@ final class PlanningContractTests: XCTestCase {
         XCTAssertEqual(decoded, result)
         XCTAssertNil(decoded.payoffDate)
         XCTAssertTrue(decoded.cappedAtPaycheckLimit)
-        XCTAssertEqual(decoded.paydays[0].perDebtBalancesAfter["D"], TestSupport.money("4987.00"))
+        XCTAssertEqual(decoded.paydays[0].perDebtBalancesAfter["D"], TestSupport.money("6111.00"))
         XCTAssertEqual(decoded.paydays[0].shortfallAmount, TestSupport.money("84.00"))
     }
 

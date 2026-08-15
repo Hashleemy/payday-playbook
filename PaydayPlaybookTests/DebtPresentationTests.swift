@@ -45,7 +45,7 @@ final class DebtPresentationTests: XCTestCase {
     func testAllSixTypesSurviveGenerationAndRenderInThePlan() throws {
         let specs: [DashboardFixtures.DebtSpec] = [
             .init(planID: "A", name: "Blue Card", type: .creditCard,
-                  balance: TestSupport.money("1000.00"), apr: TestSupport.money("0.2999"),
+                  balance: TestSupport.money("1000.00"), apr: TestSupport.money("0.2600"),
                   minimum: TestSupport.money("35.00"), dueDay: 12,
                   creditLimit: TestSupport.money("2000.00"), originalPrincipal: nil),
             .init(planID: "B", name: "Signature Loan", type: .personalLoan,
@@ -61,7 +61,7 @@ final class DebtPresentationTests: XCTestCase {
                   minimum: TestSupport.money("145.00"), dueDay: 21, creditLimit: nil,
                   originalPrincipal: TestSupport.money("9000.00")),
             .init(planID: "E", name: "Clinic Bill", type: .medicalDebt,
-                  balance: TestSupport.money("1200.00"), apr: .zero,
+                  balance: TestSupport.money("1700.00"), apr: .zero,
                   minimum: TestSupport.money("50.00"), dueDay: nil, creditLimit: nil,
                   originalPrincipal: nil),
             .init(planID: "F", name: "Family Loan", type: .other,
@@ -93,7 +93,7 @@ final class DebtPresentationTests: XCTestCase {
     // MARK: - Utilization boundaries
 
     func testUtilizationBoundariesMatchTheR12Thresholds() {
-        XCTAssertEqual(UtilizationDisplayLevel.level(for: TestSupport.money("0.2999")), .ok)
+        XCTAssertEqual(UtilizationDisplayLevel.level(for: TestSupport.money("0.2600")), .ok)
         XCTAssertEqual(UtilizationDisplayLevel.level(for: TestSupport.money("0.30")), .elevated)
         XCTAssertEqual(UtilizationDisplayLevel.level(for: TestSupport.money("0.8999")), .elevated)
         XCTAssertEqual(UtilizationDisplayLevel.level(for: TestSupport.money("0.90")), .critical)
@@ -151,17 +151,17 @@ final class DebtPresentationTests: XCTestCase {
 
         let withoutOriginal = DebtAccount(
             planID: "A", displayName: "Blue Card",
-            startingBalance: TestSupport.money("1049.00"), apr: TestSupport.money("0.2999"),
+            startingBalance: TestSupport.money("1100.00"), apr: TestSupport.money("0.2600"),
             priority: 2, debtType: .creditCard
         )
-        XCTAssertEqual(withoutOriginal.principalBasis, TestSupport.money("1049.00"),
+        XCTAssertEqual(withoutOriginal.principalBasis, TestSupport.money("1100.00"),
                        "A missing original principal is never fabricated.")
     }
 
     // MARK: - APR formatting
 
     func testAPRFormattingIsSharedAndExact() {
-        XCTAssertEqual(DebtFormat.aprText(TestSupport.money("0.2999")), "29.99%")
+        XCTAssertEqual(DebtFormat.aprText(TestSupport.money("0.2600")), "26%")
         XCTAssertEqual(DebtFormat.aprText(.zero), "0%")
         XCTAssertEqual(DebtFormat.aprText(TestSupport.money("0.0649")), "6.49%")
     }

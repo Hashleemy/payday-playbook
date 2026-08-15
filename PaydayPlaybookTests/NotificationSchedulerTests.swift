@@ -88,11 +88,11 @@ final class NotificationSchedulerTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    /// `PlanSeeder` already seeds the eight preference rows; the schema-2
+    /// The fixture already writes the eight preference rows; the schema-2
     /// upgrade only adds kinds that are missing. Anything else here would
     /// create duplicates the app never has.
     private func makeStore(
-        today: Date = TestSupport.date(2026, 8, 10)
+        today: Date = TestSupport.date(2054, 8, 10)
     ) throws -> (ModelContext, FixedDateProvider) {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
@@ -122,12 +122,12 @@ final class NotificationSchedulerTests: XCTestCase {
 
         let notifications = try plan(context, provider).notifications
         let payday = try XCTUnwrap(notifications.first { $0.family == .paydayMorning })
-        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let firstItem = try TestSupport.planItems(context, plan: plan)[0]
         XCTAssertEqual(payday.identifier, "payday-morning-\(firstItem.id.uuidString)")
 
         let dueToday = try XCTUnwrap(notifications.first { $0.family == .debtDueToday })
-        XCTAssertEqual(dueToday.identifier, "debt-due-today-\(debt.id.uuidString)-20260820")
+        XCTAssertEqual(dueToday.identifier, "debt-due-today-\(debt.id.uuidString)-20540820")
 
         // Every identifier is recognized as ours, so reconciliation can
         // clean up exactly what it owns.
@@ -170,15 +170,15 @@ final class NotificationSchedulerTests: XCTestCase {
         try context.save()
 
         await scheduler.rescheduleAll(context: context, dateProvider: provider)
-        XCTAssertTrue(center.pendingIdentifiers.contains("debt-due-today-\(debt.id.uuidString)-20260820"))
+        XCTAssertTrue(center.pendingIdentifiers.contains("debt-due-today-\(debt.id.uuidString)-20540820"))
 
         debt.dueDayOfMonth = 25
         try context.save()
         await scheduler.rescheduleAll(context: context, dateProvider: provider)
 
-        XCTAssertFalse(center.pendingIdentifiers.contains("debt-due-today-\(debt.id.uuidString)-20260820"),
+        XCTAssertFalse(center.pendingIdentifiers.contains("debt-due-today-\(debt.id.uuidString)-20540820"),
                        "the stale occurrence is cancelled")
-        XCTAssertTrue(center.pendingIdentifiers.contains("debt-due-today-\(debt.id.uuidString)-20260825"))
+        XCTAssertTrue(center.pendingIdentifiers.contains("debt-due-today-\(debt.id.uuidString)-20540825"))
         let dueTodayCount = center.pendingIdentifiers.filter {
             $0.hasPrefix("debt-due-today-\(debt.id.uuidString)")
         }.count
@@ -218,7 +218,7 @@ final class NotificationSchedulerTests: XCTestCase {
         try context.save()
 
         await scheduler.rescheduleAll(context: context, dateProvider: provider)
-        let identifier = "debt-due-soon-\(debt.id.uuidString)-20260820"
+        let identifier = "debt-due-soon-\(debt.id.uuidString)-20540820"
         let before = try XCTUnwrap(center.pendingByIdentifier[identifier])
         XCTAssertEqual(
             (before.trigger as? UNCalendarNotificationTrigger)?.dateComponents.day, 17,
@@ -269,17 +269,17 @@ final class NotificationSchedulerTests: XCTestCase {
         let quarterly = RecurringObligation(
             name: "Insurance", amount: TestSupport.money("450.00"),
             cadence: .quarterly, dueDay: 10,
-            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+            createdAt: TestSupport.date(2054, 8, 1), updatedAt: TestSupport.date(2054, 8, 1)
         )
         let monthly = RecurringObligation(
-            name: "Rent", amount: TestSupport.money("1200.00"),
+            name: "Rent", amount: TestSupport.money("1700.00"),
             cadence: .monthly, dueDay: 10,
-            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+            createdAt: TestSupport.date(2054, 8, 1), updatedAt: TestSupport.date(2054, 8, 1)
         )
         let weekly = RecurringObligation(
             name: "Transit", amount: TestSupport.money("30.00"),
             cadence: .weekly, dueDay: 10,
-            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+            createdAt: TestSupport.date(2054, 8, 1), updatedAt: TestSupport.date(2054, 8, 1)
         )
         context.insert(quarterly)
         context.insert(monthly)
@@ -296,11 +296,11 @@ final class NotificationSchedulerTests: XCTestCase {
         }
         // "Now" is midnight on Aug 10, so today's 9:00 reminder is still
         // ahead. The window runs 45 days, to Sep 24.
-        XCTAssertEqual(days(monthly), ["20260810", "20260910"])
+        XCTAssertEqual(days(monthly), ["20540810", "20540910"])
         // Quarterly is anchored on its August creation month, so August
         // qualifies and September does not — the point being that the same
         // due day yields fewer reminders than the monthly bill.
-        XCTAssertEqual(days(quarterly), ["20260810"], "a quarterly bill must not fire every month")
+        XCTAssertEqual(days(quarterly), ["20540810"], "a quarterly bill must not fire every month")
         XCTAssertTrue(days(weekly).isEmpty, "a weekly bill has no meaningful day-of-month")
     }
 
@@ -339,7 +339,7 @@ final class NotificationSchedulerTests: XCTestCase {
         let (context, provider) = try makeStore()
         let center = FakeNotificationCenter()
         let scheduler = NotificationScheduler(center: center)
-        let planVersion = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let planVersion = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let items = try TestSupport.planItems(context, plan: planVersion)
 
         await scheduler.rescheduleAll(context: context, dateProvider: provider)
@@ -438,7 +438,7 @@ final class NotificationSchedulerTests: XCTestCase {
             ))
         }
         let input = NotificationScheduleInput(
-            now: TestSupport.date(2026, 8, 10),
+            now: TestSupport.date(2054, 8, 10),
             preferences: [
                 .cardDueSoon: .init(enabled: true, hour: 9, minute: 0, leadDays: 3, detailed: false),
                 .cardDueToday: .init(enabled: true, hour: 9, minute: 0, leadDays: 0, detailed: false)
@@ -467,12 +467,12 @@ final class NotificationSchedulerTests: XCTestCase {
         for preference in NotificationPreference.seedDefaults() { context.insert(preference) }
         try context.save()
         let paydayMorning = DateMath.calendar.date(
-            bySettingHour: 9, minute: 30, second: 0, of: TestSupport.date(2026, 8, 20)
+            bySettingHour: 9, minute: 30, second: 0, of: TestSupport.date(2054, 8, 20)
         )!
         let provider = FixedDateProvider(fixed: paydayMorning)
 
         let notifications = try plan(context, provider).notifications
-        let planVersion = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let planVersion = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let firstItem = try TestSupport.planItems(context, plan: planVersion)[0]
         XCTAssertFalse(notifications.contains { $0.identifier == "payday-morning-\(firstItem.id.uuidString)" },
                        "a moment that already passed is never scheduled")
@@ -521,7 +521,7 @@ final class NotificationSchedulerTests: XCTestCase {
     func testObligationDueRemindersUseTheirOwnFamilyAndPreference() throws {
         let (context, provider) = try makeStore()
         let obligation = RecurringObligation(
-            name: "Rent", amount: TestSupport.money("1200.00"), cadence: .monthly, dueDay: 1
+            name: "Rent", amount: TestSupport.money("1700.00"), cadence: .monthly, dueDay: 1
         )
         context.insert(obligation)
         try context.save()
@@ -551,7 +551,7 @@ final class NotificationSchedulerTests: XCTestCase {
 
         context.insert(BalanceSnapshot(
             debtAccountID: debt.id, debtPlanID: debt.planID,
-            effectiveDate: TestSupport.date(2026, 8, 9),
+            effectiveDate: TestSupport.date(2054, 8, 9),
             amount: .zero, sourceType: .currentOnlineBalance
         ))
         try context.save()
@@ -578,7 +578,7 @@ final class NotificationSchedulerTests: XCTestCase {
     // MARK: - Short months & DST
 
     func testShortMonthDueDayProducesOneReminderPerMonth() throws {
-        let (context, provider) = try makeStore(today: TestSupport.date(2027, 1, 20))
+        let (context, provider) = try makeStore(today: TestSupport.date(2055, 1, 20))
         let debt = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
         debt.dueDayOfMonth = 31
         try context.save()
@@ -586,7 +586,7 @@ final class NotificationSchedulerTests: XCTestCase {
         let notifications = try plan(context, provider).notifications
             .filter { $0.family == .debtDueToday && $0.identifier.contains(debt.id.uuidString) }
         let occurrences = notifications.map { $0.identifier.suffix(8) }.sorted()
-        XCTAssertEqual(occurrences, ["20270131", "20270228"], "Feb clamps to the 28th, exactly once")
+        XCTAssertEqual(occurrences, ["20550131", "20550228"], "Feb clamps to the 28th, exactly once")
     }
 
     func testTriggerCarriesLocalComponentsSoTimeZoneMovesKeepTheHour() throws {

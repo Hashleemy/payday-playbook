@@ -203,7 +203,7 @@ struct CalendarEventService {
             )
             if itemCount > 0 { return plan }
         }
-        return try PlanSeeder.existingBaseline(context: context)
+        return try PlanRepository.legacyBaseline(context: context)
     }
 
     // MARK: - Merge

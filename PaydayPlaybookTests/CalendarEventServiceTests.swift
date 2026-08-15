@@ -9,7 +9,7 @@ import SwiftData
 final class CalendarEventServiceTests: XCTestCase {
 
     private func makeService(
-        today: Date = TestSupport.date(2026, 8, 10)
+        today: Date = TestSupport.date(2054, 8, 10)
     ) throws -> (CalendarEventService, ModelContext) {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
@@ -18,8 +18,10 @@ final class CalendarEventServiceTests: XCTestCase {
         return (service, context)
     }
 
+    /// The plan's opening stretch — wide enough to include the first card
+    /// payoff milestone, which the fixture reaches in October.
     private func augustEvents(_ service: CalendarEventService) throws -> [CalendarEventService.Event] {
-        try service.events(from: TestSupport.date(2026, 8, 1), to: TestSupport.date(2026, 8, 31))
+        try service.events(from: TestSupport.date(2054, 8, 1), to: TestSupport.date(2054, 10, 31))
     }
 
     // MARK: - Merge & ordering
@@ -27,14 +29,15 @@ final class CalendarEventServiceTests: XCTestCase {
     func testPaydayDayMergesTheFullPlayByPlay() throws {
         let (service, _) = try makeService()
         let events = try augustEvents(service)
-        let paydayDay = events.filter { $0.date == TestSupport.date(2026, 8, 20) }
+        let paydayDay = events.filter { $0.date == TestSupport.date(2054, 8, 20) }
 
         XCTAssertTrue(paydayDay.contains { $0.kind == .payday && $0.id == "payday-1" })
         XCTAssertTrue(paydayDay.contains { $0.kind == .transfer }, "C2 transfer must render as an account-transfer action")
-        XCTAssertTrue(paydayDay.contains { $0.kind == .reserve && $0.title.localizedCaseInsensitiveContains("buffer") },
-                      "check 1 adds $100 to the protected buffer")
+        XCTAssertFalse(paydayDay.contains { $0.kind == .reserve && $0.title.localizedCaseInsensitiveContains("buffer") },
+                       "the floor is already met, so no buffer top-up is drawn")
         XCTAssertTrue(paydayDay.contains { $0.kind == .reserve && $0.title.localizedCaseInsensitiveContains("car") })
-        XCTAssertTrue(paydayDay.contains { $0.kind == .reserve && $0.title.localizedCaseInsensitiveContains("train") })
+        XCTAssertEqual(paydayDay.filter { $0.kind == .reserve }.count, 2,
+                       "both obligation reserves render")
         XCTAssertTrue(paydayDay.contains { $0.kind == .debtPayment && ($0.detail?.contains("target") ?? false) })
 
         // Income shows on the payday event.
@@ -49,7 +52,7 @@ final class CalendarEventServiceTests: XCTestCase {
     func testEventsAreSortedByDateThenDayOrder() throws {
         let (service, context) = try makeService()
         context.insert(LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 21),
+            effectiveDate: TestSupport.date(2054, 8, 21),
             type: .c1Spending,
             amount: TestSupport.money("40.00"),
             sourceAccount: .checking1,
@@ -59,8 +62,8 @@ final class CalendarEventServiceTests: XCTestCase {
         let events = try augustEvents(service)
         let dates = events.map(\.date)
         XCTAssertEqual(dates, dates.sorted())
-        XCTAssertTrue(events.contains { $0.kind == .entry && $0.date == TestSupport.date(2026, 8, 21) && $0.status == .actual })
-        XCTAssertTrue(events.contains { $0.kind == .milestone })  // Card B payoff milestone
+        XCTAssertTrue(events.contains { $0.kind == .entry && $0.date == TestSupport.date(2054, 8, 21) && $0.status == .actual })
+        XCTAssertTrue(events.contains { $0.kind == .milestone })  // first card payoff milestone
     }
 
     // MARK: - Statuses (Planned / Completed / Needs attention / Actual)
@@ -70,7 +73,7 @@ final class CalendarEventServiceTests: XCTestCase {
         var events = try augustEvents(service)
         XCTAssertEqual(try XCTUnwrap(events.first { $0.kind == .payday }).status, .planned)
 
-        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let items = try TestSupport.planItems(context, plan: plan)
         let checkIn = PaydayCheckIn(paydayPlanItemID: items[0].id)
         checkIn.status = .completed
@@ -82,7 +85,7 @@ final class CalendarEventServiceTests: XCTestCase {
     }
 
     func testOverduePaydayWithoutCheckInNeedsAttention() throws {
-        let (service, _) = try makeService(today: TestSupport.date(2026, 8, 25))
+        let (service, _) = try makeService(today: TestSupport.date(2054, 8, 25))
         let events = try augustEvents(service)
         let payday = try XCTUnwrap(events.first { $0.kind == .payday })
         XCTAssertEqual(payday.status, .needsAttention)
@@ -91,7 +94,7 @@ final class CalendarEventServiceTests: XCTestCase {
 
     func testShortfallPaydayNeedsAttentionWithExactGap() throws {
         let (service, context) = try makeService()
-        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let items = try TestSupport.planItems(context, plan: plan)
         items[0].shortfallAmount = TestSupport.money("55.00")
         try context.save()
@@ -102,8 +105,8 @@ final class CalendarEventServiceTests: XCTestCase {
     }
 
     func testCheckInExceptionSurfacesAsNeedsAttention() throws {
-        let (service, context) = try makeService(today: TestSupport.date(2026, 8, 21))
-        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let (service, context) = try makeService(today: TestSupport.date(2054, 8, 21))
+        let plan = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let items = try TestSupport.planItems(context, plan: plan)
         let checkIn = PaydayCheckIn(paydayPlanItemID: items[0].id)
         checkIn.status = .needsAttention
@@ -121,10 +124,10 @@ final class CalendarEventServiceTests: XCTestCase {
         debt.dueDayOfMonth = 31
         try context.save()
 
-        let february = try service.events(from: TestSupport.date(2027, 2, 1), to: TestSupport.date(2027, 2, 28))
+        let february = try service.events(from: TestSupport.date(2055, 2, 1), to: TestSupport.date(2055, 2, 28))
         let dueEvents = february.filter { $0.kind == .debtDue && $0.id.contains(debt.id.uuidString) }
         XCTAssertEqual(dueEvents.count, 1)
-        XCTAssertEqual(dueEvents.first?.date, TestSupport.date(2027, 2, 28))
+        XCTAssertEqual(dueEvents.first?.date, TestSupport.date(2055, 2, 28))
         XCTAssertTrue(dueEvents.first?.detail?.contains("last day") ?? false, "clamping is explained in text")
     }
 
@@ -134,14 +137,14 @@ final class CalendarEventServiceTests: XCTestCase {
         debt.dueDayOfMonth = 12
         try context.save()
 
-        let september = { try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30)) }
+        let september = { try service.events(from: TestSupport.date(2054, 9, 1), to: TestSupport.date(2054, 9, 30)) }
         var dueEvents = try september().filter { $0.kind == .debtDue && $0.id.contains(debt.id.uuidString) }
-        XCTAssertEqual(dueEvents.map(\.date), [TestSupport.date(2026, 9, 12)])
+        XCTAssertEqual(dueEvents.map(\.date), [TestSupport.date(2054, 9, 12)])
 
         debt.dueDayOfMonth = 15
         try context.save()
         dueEvents = try september().filter { $0.kind == .debtDue && $0.id.contains(debt.id.uuidString) }
-        XCTAssertEqual(dueEvents.map(\.date), [TestSupport.date(2026, 9, 15)], "the edit replaces the future event — no duplicate on the old day")
+        XCTAssertEqual(dueEvents.map(\.date), [TestSupport.date(2054, 9, 15)], "the edit replaces the future event — no duplicate on the old day")
     }
 
     func testWeekendShiftRuleMovesTheMarkerOnlyWhenSelected() throws {
@@ -151,14 +154,14 @@ final class CalendarEventServiceTests: XCTestCase {
         debt.dueDayOfMonth = 12
         try context.save()
 
-        var events = try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30))
-        XCTAssertTrue(events.contains { $0.kind == .debtDue && $0.date == TestSupport.date(2026, 9, 12) })
+        var events = try service.events(from: TestSupport.date(2054, 9, 1), to: TestSupport.date(2054, 9, 30))
+        XCTAssertTrue(events.contains { $0.kind == .debtDue && $0.date == TestSupport.date(2054, 9, 12) })
 
         debt.dueDateShiftRule = .nextWeekday
         try context.save()
-        events = try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30))
-        XCTAssertTrue(events.contains { $0.kind == .debtDue && $0.date == TestSupport.date(2026, 9, 14) })
-        XCTAssertFalse(events.contains { $0.kind == .debtDue && $0.date == TestSupport.date(2026, 9, 12) })
+        events = try service.events(from: TestSupport.date(2054, 9, 1), to: TestSupport.date(2054, 9, 30))
+        XCTAssertTrue(events.contains { $0.kind == .debtDue && $0.date == TestSupport.date(2054, 9, 14) })
+        XCTAssertFalse(events.contains { $0.kind == .debtDue && $0.date == TestSupport.date(2054, 9, 12) })
     }
 
     func testArchivedDebtRendersNoDueEvents() throws {
@@ -167,24 +170,24 @@ final class CalendarEventServiceTests: XCTestCase {
         debt.dueDayOfMonth = 12
         debt.isArchived = true
         try context.save()
-        let events = try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30))
+        let events = try service.events(from: TestSupport.date(2054, 9, 1), to: TestSupport.date(2054, 9, 30))
         XCTAssertFalse(events.contains { $0.kind == .debtDue && $0.id.contains(debt.id.uuidString) })
     }
 
     func testObligationDueDatesRenderAndArchiveHides() throws {
         let (service, context) = try makeService()
-        let obligation = RecurringObligation(name: "Rent", amount: TestSupport.money("1200.00"), cadence: .monthly, dueDay: 1)
+        let obligation = RecurringObligation(name: "Rent", amount: TestSupport.money("1700.00"), cadence: .monthly, dueDay: 1)
         context.insert(obligation)
         try context.save()
 
-        var events = try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30))
+        var events = try service.events(from: TestSupport.date(2054, 9, 1), to: TestSupport.date(2054, 9, 30))
         let rent = events.filter { $0.kind == .obligationDue && $0.title.contains("Rent") }
-        XCTAssertEqual(rent.map(\.date), [TestSupport.date(2026, 9, 1)])
-        XCTAssertTrue(rent.first?.detail?.contains("1,200") ?? false)
+        XCTAssertEqual(rent.map(\.date), [TestSupport.date(2054, 9, 1)])
+        XCTAssertTrue(rent.first?.detail?.contains("1,700") ?? false)
 
         obligation.isArchived = true
         try context.save()
-        events = try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30))
+        events = try service.events(from: TestSupport.date(2054, 9, 1), to: TestSupport.date(2054, 9, 30))
         XCTAssertFalse(events.contains { $0.kind == .obligationDue && $0.title.contains("Rent") })
     }
 
@@ -195,17 +198,17 @@ final class CalendarEventServiceTests: XCTestCase {
         let quarterly = RecurringObligation(
             name: "Insurance", amount: TestSupport.money("450.00"),
             cadence: .quarterly, dueDay: 10,
-            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+            createdAt: TestSupport.date(2054, 8, 1), updatedAt: TestSupport.date(2054, 8, 1)
         )
         let annual = RecurringObligation(
             name: "Domain", amount: TestSupport.money("20.00"),
             cadence: .annual, dueDay: 10,
-            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+            createdAt: TestSupport.date(2054, 8, 1), updatedAt: TestSupport.date(2054, 8, 1)
         )
         let biweekly = RecurringObligation(
             name: "Transit", amount: TestSupport.money("30.00"),
             cadence: .biweekly, dueDay: 10,
-            createdAt: TestSupport.date(2026, 8, 1), updatedAt: TestSupport.date(2026, 8, 1)
+            createdAt: TestSupport.date(2054, 8, 1), updatedAt: TestSupport.date(2054, 8, 1)
         )
         context.insert(quarterly)
         context.insert(annual)
@@ -213,16 +216,16 @@ final class CalendarEventServiceTests: XCTestCase {
         try context.save()
 
         func months(_ obligation: RecurringObligation) throws -> [Date] {
-            try service.events(from: TestSupport.date(2026, 8, 1), to: TestSupport.date(2027, 7, 31))
+            try service.events(from: TestSupport.date(2054, 8, 1), to: TestSupport.date(2055, 7, 31))
                 .filter { $0.kind == .obligationDue && $0.id.contains(obligation.id.uuidString) }
                 .map(\.date)
         }
         // Anchored on the August creation month: Aug, Nov, Feb, May.
         XCTAssertEqual(try months(quarterly), [
-            TestSupport.date(2026, 8, 10), TestSupport.date(2026, 11, 10),
-            TestSupport.date(2027, 2, 10), TestSupport.date(2027, 5, 10)
+            TestSupport.date(2054, 8, 10), TestSupport.date(2054, 11, 10),
+            TestSupport.date(2055, 2, 10), TestSupport.date(2055, 5, 10)
         ])
-        XCTAssertEqual(try months(annual), [TestSupport.date(2026, 8, 10)])
+        XCTAssertEqual(try months(annual), [TestSupport.date(2054, 8, 10)])
         XCTAssertTrue(try months(biweekly).isEmpty,
                       "a day-of-month is meaningless for a biweekly bill; the per-paycheck reserve carries it")
     }
@@ -230,32 +233,32 @@ final class CalendarEventServiceTests: XCTestCase {
     // Review regression: an edit is prospective. Past months must not be
     // redrawn with a due day that was not in force then.
     func testEditingADueDayDoesNotRewritePastOccurrences() throws {
-        let (service, context) = try makeService(today: TestSupport.date(2026, 10, 5))
+        let (service, context) = try makeService(today: TestSupport.date(2054, 10, 5))
         let debt = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
         debt.dueDayOfMonth = 20
         try context.save()
 
         // Before any edit the due day describes history too.
         XCTAssertEqual(
-            try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30))
+            try service.events(from: TestSupport.date(2054, 9, 1), to: TestSupport.date(2054, 9, 30))
                 .filter { $0.kind == .debtDue }.map(\.date),
-            [TestSupport.date(2026, 9, 20)]
+            [TestSupport.date(2054, 9, 20)]
         )
 
         // The user moves it to the 5th, effective today (Oct 5).
         debt.dueDayOfMonth = 5
-        debt.dueDayEffectiveFrom = TestSupport.date(2026, 10, 5)
+        debt.dueDayEffectiveFrom = TestSupport.date(2054, 10, 5)
         try context.save()
 
         XCTAssertTrue(
-            try service.events(from: TestSupport.date(2026, 9, 1), to: TestSupport.date(2026, 9, 30))
+            try service.events(from: TestSupport.date(2054, 9, 1), to: TestSupport.date(2054, 9, 30))
                 .filter { $0.kind == .debtDue }.isEmpty,
             "September must not be redrawn on the 5th — that was never its due day"
         )
         XCTAssertEqual(
-            try service.events(from: TestSupport.date(2026, 11, 1), to: TestSupport.date(2026, 11, 30))
+            try service.events(from: TestSupport.date(2054, 11, 1), to: TestSupport.date(2054, 11, 30))
                 .filter { $0.kind == .debtDue }.map(\.date),
-            [TestSupport.date(2026, 11, 5)],
+            [TestSupport.date(2054, 11, 5)],
             "future months use the new due day"
         )
     }
@@ -263,14 +266,14 @@ final class CalendarEventServiceTests: XCTestCase {
     // Review regression: a past due date is not a record of anything, so it
     // must not claim Actual status or appear under the Actual filter.
     func testPastDueDatesStayPlannedAndOutOfTheActualFilter() throws {
-        let (service, context) = try makeService(today: TestSupport.date(2026, 8, 31))
+        let (service, context) = try makeService(today: TestSupport.date(2054, 8, 31))
         let debt = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
         debt.dueDayOfMonth = 5
         try context.save()
 
         let events = try augustEvents(service)
         let due = try XCTUnwrap(events.first { $0.kind == .debtDue })
-        XCTAssertEqual(due.date, TestSupport.date(2026, 8, 5), "in the past relative to Aug 31")
+        XCTAssertEqual(due.date, TestSupport.date(2054, 8, 5), "in the past relative to Aug 31")
         XCTAssertEqual(due.status, .planned, "nothing recorded a payment; do not call it Actual")
         XCTAssertFalse(CalendarEventService.Filter.actualEntries.includes(due))
         XCTAssertTrue(CalendarEventService.Filter.dueDates.includes(due))
@@ -280,22 +283,22 @@ final class CalendarEventServiceTests: XCTestCase {
 
     func testReforecastSnapshotRendersMarkerButInitialSeedDoesNot() throws {
         let (service, context) = try makeService()
-        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         context.insert(ForecastSnapshot(
-            calculatedAt: TestSupport.date(2026, 8, 5),
+            calculatedAt: TestSupport.date(2054, 8, 5),
             sourcePlanVersionID: plan.id,
             triggerType: .initialSeed,
-            projectedPayoffDate: TestSupport.date(2027, 6, 24),
+            projectedPayoffDate: TestSupport.date(2055, 6, 24),
             remainingPaychecks: 23,
-            estimatedRemainingInterest: TestSupport.money("3461.16"),
+            estimatedRemainingInterest: TestSupport.money("2617.18"),
             perCardPayoffDates: [],
             summaryExplanation: "seed"
         ))
         context.insert(ForecastSnapshot(
-            calculatedAt: TestSupport.date(2026, 8, 22),
+            calculatedAt: TestSupport.date(2054, 8, 22),
             sourcePlanVersionID: plan.id,
             triggerType: .paydayCompleted,
-            projectedPayoffDate: TestSupport.date(2027, 6, 24),
+            projectedPayoffDate: TestSupport.date(2055, 6, 24),
             remainingPaychecks: 22,
             estimatedRemainingInterest: TestSupport.money("3300.00"),
             perCardPayoffDates: [],
@@ -306,7 +309,7 @@ final class CalendarEventServiceTests: XCTestCase {
         let events = try augustEvents(service)
         let markers = events.filter { $0.kind == .reforecast }
         XCTAssertEqual(markers.count, 1)
-        XCTAssertEqual(markers.first?.date, TestSupport.date(2026, 8, 22))
+        XCTAssertEqual(markers.first?.date, TestSupport.date(2054, 8, 22))
         XCTAssertEqual(markers.first?.status, .reforecast)
     }
 
@@ -317,7 +320,7 @@ final class CalendarEventServiceTests: XCTestCase {
         let debt = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
         debt.dueDayOfMonth = 25
         let entry = LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 21),
+            effectiveDate: TestSupport.date(2054, 8, 21),
             type: .cardPayment,
             amount: TestSupport.money("100.00"),
             sourceAccount: .checking2,
@@ -327,7 +330,7 @@ final class CalendarEventServiceTests: XCTestCase {
         try context.save()
 
         let events = try augustEvents(service)
-        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let items = try TestSupport.planItems(context, plan: plan)
 
         XCTAssertEqual(
@@ -352,10 +355,10 @@ final class CalendarEventServiceTests: XCTestCase {
 
     func testLinksResolveToTheirEntityWhileItExists() throws {
         let (service, context) = try makeService()
-        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let item = try TestSupport.planItems(context, plan: plan)[0]
         let entry = LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 21), type: .cardPayment,
+            effectiveDate: TestSupport.date(2054, 8, 21), type: .cardPayment,
             amount: TestSupport.money("100.00"),
             sourceAccount: .checking2, destinationAccount: .external
         )
@@ -387,10 +390,10 @@ final class CalendarEventServiceTests: XCTestCase {
 
     func testDeletedTargetsResolveToAnExplanationForEveryLinkType() throws {
         let (service, context) = try makeService()
-        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let item = try TestSupport.planItems(context, plan: plan)[0]
         let entry = LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 21), type: .cardPayment,
+            effectiveDate: TestSupport.date(2054, 8, 21), type: .cardPayment,
             amount: TestSupport.money("100.00"),
             sourceAccount: .checking2, destinationAccount: .external
         )
@@ -422,7 +425,7 @@ final class CalendarEventServiceTests: XCTestCase {
     // MARK: - Filters
 
     func testFiltersPartitionTheTaxonomy() throws {
-        let (service, context) = try makeService(today: TestSupport.date(2026, 8, 25))
+        let (service, context) = try makeService(today: TestSupport.date(2054, 8, 25))
         let debt = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
         debt.dueDayOfMonth = 28
         try context.save()
@@ -444,7 +447,7 @@ final class CalendarEventServiceTests: XCTestCase {
     // MARK: - Accessibility
 
     func testAccessibilityDescriptionSpeaksKindTitleAndStatus() throws {
-        let (service, _) = try makeService(today: TestSupport.date(2026, 8, 25))
+        let (service, _) = try makeService(today: TestSupport.date(2054, 8, 25))
         let events = try augustEvents(service)
         let payday = try XCTUnwrap(events.first { $0.kind == .payday })
         XCTAssertTrue(payday.accessibilityDescription.contains("Payday"))

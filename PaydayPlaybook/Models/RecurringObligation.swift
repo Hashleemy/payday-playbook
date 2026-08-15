@@ -55,7 +55,8 @@ final class RecurringObligation {
     /// the user's own picture and left out of the generator input.
     var isEssential: Bool = true
     var isArchived: Bool = false
-    /// Set only by migration for Lem's car/train rows: "car" / "train".
+    /// Set only by migration, for the two obligations a 0.1.x store
+    /// carried: "car" / "train". A stable key, not a user-facing name.
     /// Maps legacy fixed-reserve fields and ledger entry types to this row.
     var legacyKey: String?
     var createdAt: Date = Date()

@@ -67,6 +67,7 @@ struct CashAccountRepository {
         name: String? = nil,
         currentBalance: Decimal? = nil,
         roles: Set<AccountRole>? = nil,
+        protectedAmount: Decimal? = nil,
         now: Date = Date()
     ) throws {
         try ModelValidation.validateCashAccount(
@@ -74,11 +75,37 @@ struct CashAccountRepository {
             currentBalance: currentBalance ?? account.currentBalance,
             roles: roles ?? account.roles
         )
+        if let protectedAmount, protectedAmount < 0 {
+            throw ModelValidationError.negativeAmount(field: "protected amount")
+        }
         if let name { account.name = name }
         if let currentBalance { account.currentBalance = currentBalance }
         if let roles { account.roles = roles }
+        if let protectedAmount { account.protectedAmount = protectedAmount }
         account.updatedAt = now
         try ensureDefaultIncomeInvariant()
+        try context.save()
+    }
+
+    /// Sets the display order from a caller-supplied arrangement.
+    ///
+    /// Accounts not named in `orderedIDs` keep their relative order after the
+    /// ones that are, so a partial reorder cannot silently shuffle rows the
+    /// user did not touch.
+    func reorder(_ orderedIDs: [UUID], now: Date = Date()) throws {
+        let accounts = try activeAccounts()
+        var index = 0
+        for id in orderedIDs {
+            guard let account = accounts.first(where: { $0.id == id }) else { continue }
+            account.sortOrder = index
+            account.updatedAt = now
+            index += 1
+        }
+        for account in accounts where !orderedIDs.contains(account.id) {
+            account.sortOrder = index
+            account.updatedAt = now
+            index += 1
+        }
         try context.save()
     }
 
@@ -93,9 +120,44 @@ struct CashAccountRepository {
 
     /// Archives an account, keeping history. If it was the default income
     /// account, the default moves to another active account.
+    ///
+    /// Archiving is deliberately not deletion. The account's ledger rows and
+    /// snapshots stay exactly where they are and keep referencing it, so past
+    /// figures still reconcile; the account simply stops being offered for
+    /// new activity.
     func archive(_ account: CashAccount, now: Date = Date()) throws {
         account.isArchived = true
         account.isDefaultIncome = false
+        account.updatedAt = now
+        try ensureDefaultIncomeInvariant()
+        try context.save()
+    }
+
+    /// Whether archiving this account would leave the store with no active
+    /// account to receive income.
+    ///
+    /// The last active account cannot be archived: the invariant below would
+    /// have nothing to promote, and an install with zero accounts cannot
+    /// record a paycheck. Callers check this to explain why rather than
+    /// letting the archive silently produce an unusable state.
+    func canArchive(_ account: CashAccount) throws -> Bool {
+        guard !account.isArchived else { return false }
+        return try activeAccounts().count > 1
+    }
+
+    /// Archives only if `canArchive` allows it.
+    @discardableResult
+    func archiveIfAllowed(_ account: CashAccount, now: Date = Date()) throws -> Bool {
+        guard try canArchive(account) else { return false }
+        try archive(account, now: now)
+        return true
+    }
+
+    /// Restores an archived account. The default-income invariant is
+    /// re-evaluated, but a restored account never seizes the default from an
+    /// account that currently holds it.
+    func restore(_ account: CashAccount, now: Date = Date()) throws {
+        account.isArchived = false
         account.updatedAt = now
         try ensureDefaultIncomeInvariant()
         try context.save()

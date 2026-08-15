@@ -53,17 +53,17 @@ final class OnboardingProgressTests: XCTestCase {
             calculationVersion: 2,
             cadence: .biweekly,
             monthlyPayDay: nil, semimonthlyPayDay1: nil, semimonthlyPayDay2: nil,
-            nextPayday: TestSupport.date(2026, 9, 1),
+            nextPayday: TestSupport.date(2054, 9, 1),
             baseTakeHome: TestSupport.money("2000.00"),
             incomeChanges: [
-                PlanningIncomeChange(effectiveDate: TestSupport.date(2026, 10, 1), amount: TestSupport.money("2100.00"))
+                PlanningIncomeChange(effectiveDate: TestSupport.date(2054, 10, 1), amount: TestSupport.money("2100.00"))
             ],
             spendingStartingBalance: TestSupport.money("800.00"),
             protectedFloor: TestSupport.money("500.00"),
             allowanceCap: TestSupport.money("200.00"),
             firstCheckBufferAdd: .zero,
             obligations: [
-                PlanningObligation(id: obligationID, name: "Rent", amount: TestSupport.money("1200.00"), cadence: .monthly, dueDay: 1)
+                PlanningObligation(id: obligationID, name: "Rent", amount: TestSupport.money("1700.00"), cadence: .monthly, dueDay: 1)
             ],
             debts: [
                 PlanningDebt(
@@ -99,10 +99,10 @@ final class OnboardingProgressTests: XCTestCase {
         let result = StoredPlanResult(
             calculationVersion: 2,
             paydays: paydays,
-            payoffDate: TestSupport.date(2026, 9, 15),
+            payoffDate: TestSupport.date(2054, 9, 15),
             totalEstimatedInterest: TestSupport.money("57.42"),
             paycheckCount: 2,
-            debtPayoffs: [PlanningDebtPayoff(debtID: "A", payoffDate: TestSupport.date(2026, 9, 15))],
+            debtPayoffs: [PlanningDebtPayoff(debtID: "A", payoffDate: TestSupport.date(2054, 9, 15))],
             cappedAtPaycheckLimit: false
         )
         return (input, result)
@@ -137,7 +137,7 @@ final class OnboardingProgressTests: XCTestCase {
 
         let settings = try XCTUnwrap(context.fetch(FetchDescriptor<AppSettings>()).first)
         XCTAssertTrue(settings.onboardingComplete)
-        XCTAssertEqual(settings.seedSchemaVersion, 2)
+        XCTAssertEqual(settings.seedSchemaVersion, PlanContract.currentSchemaVersion)
         let progress = try XCTUnwrap(context.fetch(FetchDescriptor<OnboardingProgress>()).first)
         XCTAssertNotNil(progress.completedAt)
 

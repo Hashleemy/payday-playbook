@@ -13,14 +13,14 @@ final class UpgradeChecklistTests: XCTestCase {
     private func makeMigratedStore() throws -> (ModelContainer, ModelContext) {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
-        try PlanSeeder.seedIfNeeded(context: context, applySchemaUpgrade: false)
+        try TestSupport.seed(context, applySchemaUpgrade: false)
         let settings = try XCTUnwrap(context.fetch(FetchDescriptor<AppSettings>()).first)
         settings.onboardingComplete = true
 
         let debts = try context.fetch(FetchDescriptor<DebtAccount>())
         let cardB = try XCTUnwrap(debts.first { $0.planID == "B" })
         context.insert(LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 20),
+            effectiveDate: TestSupport.date(2054, 8, 20),
             type: .cardPayment,
             amount: TestSupport.money("1061.07"),
             sourceAccount: .checking2,
@@ -28,16 +28,16 @@ final class UpgradeChecklistTests: XCTestCase {
             debtAccountID: cardB.id,
             debtPlanID: "B"
         ))
-        let plan = try XCTUnwrap(PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(PlanRepository.legacyBaseline(context: context))
         let firstItem = try XCTUnwrap(TestSupport.planItems(context, plan: plan).first)
         let checkIn = PaydayCheckIn(paydayPlanItemID: firstItem.id, status: .completed)
-        checkIn.actualIncome = TestSupport.money("2094.00")
-        checkIn.completedAt = TestSupport.date(2026, 8, 20)
+        checkIn.actualIncome = TestSupport.money("2400.00")
+        checkIn.completedAt = TestSupport.date(2054, 8, 20)
         context.insert(checkIn)
         try context.save()
 
         _ = try MigrationService.migrateIfNeeded(
-            context: context, dateProvider: FixedDateProvider(fixed: TestSupport.date(2026, 8, 21))
+            context: context, dateProvider: FixedDateProvider(fixed: TestSupport.date(2054, 8, 21))
         )
         return (container, context)
     }
@@ -101,7 +101,7 @@ final class UpgradeChecklistTests: XCTestCase {
         let (_, context) = try makeMigratedStore()
 
         // Capture the whole baseline and the actual track, value for value.
-        let plan = try XCTUnwrap(PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(PlanRepository.legacyBaseline(context: context))
         let planID = plan.id
         let itemsBefore = try TestSupport.planItems(context, plan: plan).map {
             [$0.plannedIncome, $0.plannedC1Keep, $0.plannedC2Transfer, $0.plannedCardBudget,
@@ -125,7 +125,7 @@ final class UpgradeChecklistTests: XCTestCase {
         // principal, and a confirmed type.
         try GoalProfileRepository(context: context).save(
             goalText: "Debt-free before the wedding",
-            targetDebtFreeDate: TestSupport.date(2027, 9, 1),
+            targetDebtFreeDate: TestSupport.date(2055, 9, 1),
             posture: .fullThrottle,
             protectedFloor: TestSupport.money("1000.00"),
             allowanceCap: TestSupport.money("300.00")
@@ -189,9 +189,9 @@ final class UpgradeChecklistTests: XCTestCase {
         XCTAssertEqual(remaining.filter { $0.kind == .creditLimit }.count, 5)
     }
 
-    /// A fresh v0.2.0 install carries none of Lem's data, and its checklist
+    /// A fresh install carries no pre-existing plan data, and its checklist
     /// is the empty-store one rather than the migrated one.
-    func testFreshInstallHasNoLemDataAndBlocksUntilSetupIsDone() throws {
+    func testFreshInstallHasNoSeededDataAndBlocksUntilSetupIsDone() throws {
         let context = ModelContext(try TestSupport.makeContainer())
         _ = try MigrationService.migrateIfNeeded(context: context)
 

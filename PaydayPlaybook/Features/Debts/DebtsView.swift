@@ -334,13 +334,13 @@ struct DebtDetailView: View {
         baselineToday = baselineBalanceToday()
         forecastPayoff = (try? appEnvironment.reforecastService(context: modelContext).latestForecast())?
             .perCardPayoffDates.first { $0.debtPlanID == planID }?.payoffDate
-        // Baseline payoff comes from this install's own milestones, so it is
-        // right for generated plans too — not only Original Plan v1.
+        // Baseline payoff comes from this install's own milestones. No
+        // fallback table: a date this store does not hold is unknown, and
+        // filling it in from elsewhere would show one plan's date on another.
         let milestones = (try? modelContext.fetch(FetchDescriptor<Milestone>())) ?? []
         baselinePayoff = milestones
             .first { $0.type == .cardPaidOff && $0.relatedDebtPlanID == planID }?
             .baselineDate
-            ?? PlanContract.baselinePayoffDates[planID]
     }
 
     /// Planned balance for this debt as of today, from the plan that owns the
@@ -348,7 +348,7 @@ struct DebtDetailView: View {
     private func baselineBalanceToday() -> Decimal? {
         let today = DateMath.startOfDay(appEnvironment.dateProvider.now)
         let plans = (try? modelContext.fetch(FetchDescriptor<PlanVersion>())) ?? []
-        let baseline = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil
+        let baseline = (try? PlanRepository.legacyBaseline(context: modelContext)) ?? nil
         guard let plan = plans.first(where: \.isActive) ?? baseline else { return nil }
         let planVersionID = plan.id
         let items = (try? modelContext.fetch(
