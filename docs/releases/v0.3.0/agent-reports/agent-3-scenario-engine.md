@@ -1,9 +1,14 @@
 # Agent 3 report — Scenario and Extra-Payment Calculation (v0.3.0)
 
 Branch: `feature/v0.3-scenario-engine`, based on Agent 1's contract branch
-`feature/v0.3-contract` at `4be5c57`. Pure calculation work: engine, engine DTOs,
-the two new services, and their tests. No SwiftUI, no SwiftData model or
-migration change, no import/export.
+`feature/v0.3-contract` at `4be5c57`. Commit: **`3aad53b`** (this report's own
+hash line follows in the next commit, as Agent 1's did). Pure calculation work:
+engine, engine DTOs, the two new services, and their tests. No SwiftUI, no
+SwiftData model or migration change, no import/export.
+
+The branch is **local only** — no v0.3 branch has been pushed to `origin` by any
+agent so far, so this one follows that convention and waits for the integration
+owner rather than publishing itself.
 
 Requirements delivered: **V3-04** (extra-payment insight), **V3-05** (three-plan
 payoff calculator), **V3-06** (honest scenario inputs), **V3-15** (plan
