@@ -65,13 +65,13 @@ final class OnboardingSetupTests: XCTestCase {
         let firstLaunch = ModelContext(container)
         try GoalProfileRepository(context: firstLaunch).save(
             goalText: "Debt-free before the wedding",
-            targetDebtFreeDate: TestSupport.date(2027, 6, 1),
+            targetDebtFreeDate: TestSupport.date(2055, 6, 1),
             posture: .fullThrottle,
             protectedFloor: TestSupport.money("500.00"),
             allowanceCap: TestSupport.money("150.00")
         )
         let accounts = CashAccountRepository(context: firstLaunch)
-        try accounts.create(name: "Everyday", currentBalance: TestSupport.money("1200.00"), roles: [.income, .spending])
+        try accounts.create(name: "Everyday", currentBalance: TestSupport.money("1700.00"), roles: [.income, .spending])
         try accounts.create(name: "Bills", currentBalance: TestSupport.money("300.00"), roles: [.reserves])
         try OnboardingProgressService(context: firstLaunch, dateProvider: TestSupport.fixedToday)
             .markStepCompleted(.accounts)
@@ -96,7 +96,7 @@ final class OnboardingSetupTests: XCTestCase {
         let repository = CashAccountRepository(context: context)
 
         let everyday = try repository.create(
-            name: "Everyday", currentBalance: TestSupport.money("900.00"), roles: [.income, .spending]
+            name: "Everyday", currentBalance: TestSupport.money("1500.00"), roles: [.income, .spending]
         )
         XCTAssertTrue(everyday.isDefaultIncome, "The first account takes the income role")
 
@@ -165,7 +165,7 @@ final class OnboardingSetupTests: XCTestCase {
 
             try repository.update(
                 debt, type: type, displayName: "Renamed \(type.rawValue)",
-                currentBalance: TestSupport.money("900.00"),
+                currentBalance: TestSupport.money("1500.00"),
                 apr: TestSupport.money("0.1200"),
                 minimumAmount: type.requiresEnteredMinimum ? TestSupport.money("80.00") : nil,
                 originalPrincipal: type == .creditCard ? nil : TestSupport.money("1500.00"),
@@ -173,7 +173,7 @@ final class OnboardingSetupTests: XCTestCase {
                 dueDayOfMonth: 3, prepayment: .eligible, note: nil
             )
             XCTAssertEqual(debt.displayName, "Renamed \(type.rawValue)")
-            XCTAssertEqual(debt.startingBalance, TestSupport.money("900.00"))
+            XCTAssertEqual(debt.startingBalance, TestSupport.money("1500.00"))
             XCTAssertEqual(debt.dueDayOfMonth, 3)
             XCTAssertNil(debt.setupNote)
 
@@ -195,7 +195,10 @@ final class OnboardingSetupTests: XCTestCase {
         }
         XCTAssertEqual(ids.count, 5, "Every generated plan ID is distinct")
         XCTAssertTrue(ids.allSatisfy { $0.hasPrefix("D") })
-        XCTAssertTrue(ids.isDisjoint(with: Set(PlanContract.avalancheOrder)))
+        // Legacy 0.1.x plan IDs were bare single letters. Generated IDs are
+        // "D"-prefixed and longer, so the two namespaces cannot collide.
+        let legacyStyleIDs = Set("ABCDEFGHIJ".map(String.init))
+        XCTAssertTrue(ids.isDisjoint(with: legacyStyleIDs))
     }
 
     func testInstallmentDebtsRequireAnEnteredMinimumAndCardsDoNot() throws {
@@ -261,7 +264,7 @@ final class OnboardingSetupTests: XCTestCase {
         let context = try makeContext()
         let card = try DebtRepository(context: context).create(
             type: .creditCard, displayName: "Store card",
-            currentBalance: TestSupport.money("400.00"), apr: TestSupport.money("0.2999"),
+            currentBalance: TestSupport.money("400.00"), apr: TestSupport.money("0.2600"),
             minimumAmount: nil, creditLimit: nil, creditLimitMarkedUnknown: true
         )
         XCTAssertNil(card.creditLimit)
@@ -291,7 +294,7 @@ final class OnboardingSetupTests: XCTestCase {
         for (cadence, monthlyDay, firstDay, secondDay) in cases {
             let schedule = try repository.save(
                 cadence: cadence,
-                anchorPayday: TestSupport.date(2026, 9, 4),
+                anchorPayday: TestSupport.date(2054, 9, 4),
                 takeHome: TestSupport.money("1500.00"),
                 monthlyDay: monthlyDay,
                 semimonthlyFirstDay: firstDay,
@@ -312,7 +315,7 @@ final class OnboardingSetupTests: XCTestCase {
         let repository = IncomeRepository(context: context)
 
         XCTAssertThrowsError(try repository.save(
-            cadence: .biweekly, anchorPayday: TestSupport.date(2026, 9, 4),
+            cadence: .biweekly, anchorPayday: TestSupport.date(2054, 9, 4),
             takeHome: .zero, monthlyDay: nil,
             semimonthlyFirstDay: nil, semimonthlySecondDay: nil, destinationAccountID: nil
         )) {
@@ -320,7 +323,7 @@ final class OnboardingSetupTests: XCTestCase {
         }
 
         XCTAssertThrowsError(try repository.save(
-            cadence: .monthly, anchorPayday: TestSupport.date(2026, 9, 4),
+            cadence: .monthly, anchorPayday: TestSupport.date(2054, 9, 4),
             takeHome: TestSupport.money("1000.00"), monthlyDay: 0,
             semimonthlyFirstDay: nil, semimonthlySecondDay: nil, destinationAccountID: nil
         )) {
@@ -328,7 +331,7 @@ final class OnboardingSetupTests: XCTestCase {
         }
 
         XCTAssertThrowsError(try repository.save(
-            cadence: .monthly, anchorPayday: TestSupport.date(2026, 9, 4),
+            cadence: .monthly, anchorPayday: TestSupport.date(2054, 9, 4),
             takeHome: TestSupport.money("1000.00"), monthlyDay: 32,
             semimonthlyFirstDay: nil, semimonthlySecondDay: nil, destinationAccountID: nil
         )) {
@@ -336,7 +339,7 @@ final class OnboardingSetupTests: XCTestCase {
         }
 
         XCTAssertThrowsError(try repository.save(
-            cadence: .semimonthly, anchorPayday: TestSupport.date(2026, 9, 4),
+            cadence: .semimonthly, anchorPayday: TestSupport.date(2054, 9, 4),
             takeHome: TestSupport.money("1000.00"), monthlyDay: nil,
             semimonthlyFirstDay: 15, semimonthlySecondDay: 15, destinationAccountID: nil
         )) {
@@ -345,7 +348,7 @@ final class OnboardingSetupTests: XCTestCase {
 
         // Day 31 is the "last day" sentinel and must be accepted.
         XCTAssertNoThrow(try repository.save(
-            cadence: .monthly, anchorPayday: TestSupport.date(2026, 9, 4),
+            cadence: .monthly, anchorPayday: TestSupport.date(2054, 9, 4),
             takeHome: TestSupport.money("0.01"), monthlyDay: 31,
             semimonthlyFirstDay: nil, semimonthlySecondDay: nil, destinationAccountID: nil
         ))
@@ -355,18 +358,18 @@ final class OnboardingSetupTests: XCTestCase {
         let context = try makeContext()
         let repository = IncomeRepository(context: context)
         let schedule = try repository.save(
-            cadence: .biweekly, anchorPayday: TestSupport.date(2026, 8, 20),
-            takeHome: TestSupport.money("2094.00"), monthlyDay: nil,
+            cadence: .biweekly, anchorPayday: TestSupport.date(2054, 8, 20),
+            takeHome: TestSupport.money("2400.00"), monthlyDay: nil,
             semimonthlyFirstDay: nil, semimonthlySecondDay: nil, destinationAccountID: nil
         )
         let change = try repository.addChange(
-            to: schedule, effectiveDate: TestSupport.date(2026, 12, 10),
-            newTakeHome: TestSupport.money("2190.00"), note: "raise"
+            to: schedule, effectiveDate: TestSupport.date(2054, 12, 10),
+            newTakeHome: TestSupport.money("2500.00"), note: "raise"
         )
         XCTAssertEqual(try repository.changes(for: schedule).count, 1)
 
         XCTAssertThrowsError(try repository.addChange(
-            to: schedule, effectiveDate: TestSupport.date(2027, 1, 1), newTakeHome: .zero
+            to: schedule, effectiveDate: TestSupport.date(2055, 1, 1), newTakeHome: .zero
         ))
 
         try repository.delete(change)
@@ -379,10 +382,10 @@ final class OnboardingSetupTests: XCTestCase {
         let context = try makeContext()
         let repository = ObligationRepository(context: context)
         let car = try repository.create(
-            name: "Car", amount: TestSupport.money("726.00"), cadence: .monthly
+            name: "Car", amount: TestSupport.money("700.00"), cadence: .monthly
         )
         let train = try repository.create(
-            name: "Train pass", amount: TestSupport.money("111.00"), cadence: .monthly
+            name: "Train pass", amount: TestSupport.money("150.00"), cadence: .monthly
         )
 
         // The exact reductions the contract names.
@@ -390,13 +393,13 @@ final class OnboardingSetupTests: XCTestCase {
             ObligationMath.perPaycheckReserve(
                 amount: car.amount, cadence: car.cadence, paychecksPerYear: 26
             ),
-            TestSupport.money("335.08")
+            TestSupport.money("323.08")
         )
         XCTAssertEqual(
             ObligationMath.perPaycheckReserve(
                 amount: train.amount, cadence: train.cadence, paychecksPerYear: 26
             ),
-            TestSupport.money("51.23")
+            TestSupport.money("69.23")
         )
     }
 
@@ -410,12 +413,12 @@ final class OnboardingSetupTests: XCTestCase {
             protectedFloor: .zero, allowanceCap: .zero
         )
         try IncomeRepository(context: context).save(
-            cadence: .biweekly, anchorPayday: TestSupport.date(2026, 9, 3),
+            cadence: .biweekly, anchorPayday: TestSupport.date(2054, 9, 3),
             takeHome: TestSupport.money("2000.00"), monthlyDay: nil,
             semimonthlyFirstDay: nil, semimonthlySecondDay: nil, destinationAccountID: nil
         )
         let obligations = ObligationRepository(context: context)
-        try obligations.create(name: "Rent", amount: TestSupport.money("1200.00"), cadence: .monthly)
+        try obligations.create(name: "Rent", amount: TestSupport.money("1700.00"), cadence: .monthly)
         try obligations.create(
             name: "Streaming", amount: TestSupport.money("15.00"), cadence: .monthly, isEssential: false
         )
@@ -484,7 +487,7 @@ final class OnboardingSetupTests: XCTestCase {
                 allowanceCap: TestSupport.money("200.00")
             )
             try IncomeRepository(context: context).save(
-                cadence: .biweekly, anchorPayday: TestSupport.date(2026, 9, 3),
+                cadence: .biweekly, anchorPayday: TestSupport.date(2054, 9, 3),
                 takeHome: TestSupport.money("2000.00"), monthlyDay: nil,
                 semimonthlyFirstDay: nil, semimonthlySecondDay: nil, destinationAccountID: nil
             )
@@ -494,7 +497,7 @@ final class OnboardingSetupTests: XCTestCase {
                 apr: TestSupport.money("0.2499"), minimumAmount: TestSupport.money("60.00")
             )
             return try PlanGenerationService.generate(
-                context: context, asOf: TestSupport.date(2026, 8, 30)
+                context: context, asOf: TestSupport.date(2054, 8, 30)
             ).rows
         }
 
@@ -528,12 +531,12 @@ final class OnboardingSetupTests: XCTestCase {
             protectedFloor: TestSupport.money("1000.00"), allowanceCap: TestSupport.money("300.00")
         )
         try IncomeRepository(context: context).save(
-            cadence: .biweekly, anchorPayday: TestSupport.date(2026, 9, 3),
+            cadence: .biweekly, anchorPayday: TestSupport.date(2054, 9, 3),
             takeHome: TestSupport.money("2000.00"), monthlyDay: nil,
             semimonthlyFirstDay: nil, semimonthlySecondDay: nil, destinationAccountID: nil
         )
         try ObligationRepository(context: context).create(
-            name: "Rent", amount: TestSupport.money("1200.00"), cadence: .monthly, dueDay: 1
+            name: "Rent", amount: TestSupport.money("1700.00"), cadence: .monthly, dueDay: 1
         )
         try DebtRepository(context: context).create(
             type: .creditCard, displayName: "Card",
@@ -568,7 +571,7 @@ final class OnboardingSetupTests: XCTestCase {
         )
         context.insert(loan)
         let card = DebtAccount(
-            planID: "D2", displayName: "Blue", startingBalance: TestSupport.money("900.00"),
+            planID: "D2", displayName: "Blue", startingBalance: TestSupport.money("1500.00"),
             apr: TestSupport.money("0.2499"), minimumAmount: nil, priority: 2
         )
         context.insert(card)

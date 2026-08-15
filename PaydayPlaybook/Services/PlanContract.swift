@@ -1,70 +1,44 @@
 import Foundation
 
-/// Canonical values of Original Plan v1 as specified in soul.md / MVP_LAYOUT.md.
-/// The bundled OriginalPlanV1.json seed resource is validated against these
-/// constants before insertion, and unit tests assert both stay in agreement.
+/// Version stamps and the estimator constants shared by the engine, the
+/// migration, and the store.
+///
+/// This type once also carried the founding user's actual plan — balances,
+/// income, payday dates, per-card payoffs — because a bundled template was
+/// validated against it. That template is gone (V3-12) and so are those
+/// constants: nothing here describes any real person's finances, and nothing
+/// added here ever should. Values that vary per user live in the user's own
+/// rows, which is the only place they can be correct.
 enum PlanContract {
+    /// Name of the frozen calc-v1 baseline. Retained because installs that
+    /// migrated from 0.1.x still carry a `PlanVersion` row under this name and
+    /// look themselves up by it; it is a lookup key, not a template.
     static let planName = "Original Plan v1"
-    /// Schema/calc version of the frozen v1 seed resource. The bundled JSON
-    /// and Original Plan v1 rows are stamped with these forever.
+    /// Schema/calc version of a 0.1.x-era baseline row. Those rows stay
+    /// stamped with these forever.
     static let schemaVersion = 1
     static let calculationVersion = 1
-    /// Current store schema (v0.2.0). `AppSettings.seedSchemaVersion` below
+    /// Current store schema (v0.3.0). `AppSettings.seedSchemaVersion` below
     /// this value routes the launch through `MigrationService`.
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
     /// Calculation version for newly generated plans (MVP_LAYOUT §5).
+    ///
+    /// Still 2: this is the version the shipped engine actually produces, and
+    /// callers gate behaviour on it (`reforecastResult` returns nil below it).
+    /// Raising it before the v3 engine exists would silently disable those
+    /// paths on every plan in the store. The v0.3.0 bump to 3 belongs with the
+    /// engine that implements it — see the Agent 2 report's handoff.
     static let currentCalculationVersion = 2
     /// Name of the baseline a fresh install generates in onboarding (A-04).
-    /// The migrated install's row keeps its historical `planName` instead.
+    /// A migrated install's row keeps its historical `planName` instead.
     static let generatedPlanName = "Plan v1"
 
-    static let startingDebtTotal = Decimal(string: "29681.61")!
-    static let startingChecking1 = Decimal(string: "900.00")!
-    static let protectedBuffer = Decimal(string: "1000.00")!
-    static let allowanceCap = Decimal(string: "300.00")!
-    static let firstCheckBufferAdd = Decimal(string: "100.00")!
-    static let carReservePerCheck = Decimal(string: "335.08")!
-    static let trainReservePerCheck = Decimal(string: "51.23")!
-    static let totalFixedReserve = Decimal(string: "386.31")!
-    static let firstIncome = Decimal(string: "2094.00")!
-    static let raisedIncome = Decimal(string: "2190.00")!
-    static let firstCheckCardBudget = Decimal(string: "1307.69")!
-    static let standardCardBudget = Decimal(string: "1407.69")!
-    static let raisedCardBudget = Decimal(string: "1503.69")!
-    static let baselineModeledInterest = Decimal(string: "3461.16")!
-    static let baselineNoSpendCeiling = Decimal(string: "7900.00")!
+    /// Default pay period for calc-v1 plans. Calc-v2 and later read cadence
+    /// from the plan row; this remains the fallback for the frozen baseline.
     static let payFrequencyDays = 14
-    static let paydayCount = 23
-    static let debtCount = 6
+
+    /// Card minimum-payment estimator (R-06), used only when the user has not
+    /// supplied an authoritative minimum: `max(floor, rate × balance)`.
     static let minimumPaymentFloor = Decimal(string: "17.50")!
     static let minimumPaymentRate = Decimal(string: "0.005")!
-
-    static let avalancheOrder = ["B", "D", "A", "F", "C", "E"]
-
-    static var firstPayday: Date { DateMath.localDate(year: 2026, month: 8, day: 20) }
-    static var secondPayday: Date { DateMath.localDate(year: 2026, month: 9, day: 3) }
-    static var incomeRaiseDate: Date { DateMath.localDate(year: 2026, month: 12, day: 10) }
-    static var baselinePayoffDate: Date { DateMath.localDate(year: 2027, month: 6, day: 24) }
-
-    /// Baseline per-card payoff dates.
-    static var baselinePayoffDates: [String: Date] {
-        [
-            "B": DateMath.localDate(year: 2026, month: 8, day: 20),
-            "D": DateMath.localDate(year: 2026, month: 10, day: 15),
-            "A": DateMath.localDate(year: 2026, month: 11, day: 26),
-            "F": DateMath.localDate(year: 2027, month: 1, day: 7),
-            "C": DateMath.localDate(year: 2027, month: 5, day: 13),
-            "E": DateMath.localDate(year: 2027, month: 6, day: 24)
-        ]
-    }
-
-    /// (planID, startingBalance, apr) in avalanche priority order.
-    static let debtSeeds: [(planID: String, balance: Decimal, apr: Decimal)] = [
-        ("B", Decimal(string: "1049.00")!, Decimal(string: "0.2999")!),
-        ("D", Decimal(string: "4987.00")!, Decimal(string: "0.2899")!),
-        ("A", Decimal(string: "3787.65")!, Decimal(string: "0.2724")!),
-        ("F", Decimal(string: "3495.00")!, Decimal(string: "0.2649")!),
-        ("C", Decimal(string: "11650.40")!, Decimal(string: "0.2449")!),
-        ("E", Decimal(string: "4712.56")!, Decimal(string: "0.2199")!)
-    ]
 }

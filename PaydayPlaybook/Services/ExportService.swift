@@ -429,8 +429,8 @@ struct ExportService {
     /// rows are parsed and constructed BEFORE anything is deleted, so a
     /// malformed backup aborts without touching existing data.
     ///
-    /// A version-1 backup is brought up to schema 2 by the same logical
-    /// migration an app upgrade runs, inside the same save; if that upgrade
+    /// An older backup is brought up to the current schema by the same logical
+    /// migrations an app upgrade runs, inside the same save; if any of them
     /// fails, the whole restore rolls back — never a partial write.
     static func restore(_ backup: Backup, context: ModelContext) throws {
         let objects = try buildObjects(from: backup)
@@ -438,8 +438,16 @@ struct ExportService {
             try deleteAllWithoutSaving(context: context)
             for object in objects { context.insert(object) }
             if backup.schemaVersion < backupSchemaVersion {
-                try MigrationService.applyLogicalUpgrade(context: context)
-                // A migrated v1 store holds a complete plan; the flags must
+                // Every step the backup predates, in order. Restoring a v1
+                // document must land on the current schema, not part-way:
+                // a store stamped behind the app is indistinguishable from a
+                // legacy install and would be migrated again next launch.
+                if backup.schemaVersion < 2 {
+                    try MigrationService.applyLogicalUpgrade(context: context)
+                }
+                try MigrationService.applySchema3Upgrade(context: context)
+                try MigrationService.stamp(context: context, from: backup.schemaVersion)
+                // A restored store holds a complete plan; the flags must
                 // agree so the restored user is never re-onboarded (§7.7).
                 if let settings = try context.fetch(FetchDescriptor<AppSettings>()).first {
                     settings.onboardingComplete = true

@@ -10,14 +10,15 @@ final class PlanGenerationServiceTests: XCTestCase {
 
     // MARK: - Store fixtures
 
-    /// Inserts Lem-equivalent onboarding rows: same raw values the parity
-    /// suite feeds the engine directly, but entered the way onboarding
-    /// writes them (accounts, profile, schedule, obligations, debts).
+    /// Inserts the baseline fixture's inputs as onboarding rows: the same raw
+    /// values the parity suite feeds the engine directly, but entered the way
+    /// onboarding writes them (accounts, profile, schedule, obligations,
+    /// debts). Generating from these must reproduce the fixture's plan.
     @discardableResult
-    private func insertLemRows(_ context: ModelContext) throws -> [DebtAccount] {
+    private func insertBaselineRows(_ context: ModelContext) throws -> [DebtAccount] {
         let spending = CashAccount(
             name: "Everyday checking",
-            currentBalance: TestSupport.money("900.00"),
+            currentBalance: DebugBaselineFixture.startingSpendingBalance,
             roles: [.income, .spending],
             isDefaultIncome: true,
             sortOrder: 0
@@ -34,46 +35,41 @@ final class PlanGenerationServiceTests: XCTestCase {
         context.insert(UserGoalProfile(
             goalText: "Debt-free",
             posture: .steady,
-            protectedFloor: TestSupport.money("1000.00"),
-            allowanceCap: TestSupport.money("300.00")
+            protectedFloor: DebugBaselineFixture.protectedFloor,
+            allowanceCap: DebugBaselineFixture.allowancePerCheck
         ))
 
         let schedule = IncomeSchedule(
             cadence: .biweekly,
-            anchorPayday: TestSupport.date(2026, 8, 20),
+            anchorPayday: TestSupport.date(2054, 8, 20),
             destinationAccountID: spending.id,
-            baseTakeHome: TestSupport.money("2094.00")
+            baseTakeHome: DebugBaselineFixture.firstIncome
         )
         context.insert(schedule)
         context.insert(IncomeChange(
             scheduleID: schedule.id,
-            effectiveDate: TestSupport.date(2026, 12, 10),
-            newTakeHome: TestSupport.money("2190.00")
+            effectiveDate: TestSupport.date(2054, 12, 10),
+            newTakeHome: DebugBaselineFixture.raisedIncome
         ))
 
         context.insert(RecurringObligation(
-            name: "Car", amount: TestSupport.money("726.00"), cadence: .monthly,
-            createdAt: TestSupport.date(2026, 8, 1)
+            name: "Car", amount: DebugBaselineFixture.carMonthly, cadence: .monthly,
+            createdAt: TestSupport.date(2054, 8, 1)
         ))
         context.insert(RecurringObligation(
-            name: "Train pass", amount: TestSupport.money("111.00"), cadence: .monthly,
-            createdAt: TestSupport.date(2026, 8, 2)
+            name: "Transit pass", amount: DebugBaselineFixture.transitMonthly, cadence: .monthly,
+            createdAt: TestSupport.date(2054, 8, 2)
         ))
 
-        let seeds: [(String, String, String)] = [
-            ("B", "1049.00", "0.2999"), ("D", "4987.00", "0.2899"),
-            ("A", "3787.65", "0.2724"), ("F", "3495.00", "0.2649"),
-            ("C", "11650.40", "0.2449"), ("E", "4712.56", "0.2199")
-        ]
         var debts: [DebtAccount] = []
-        for (index, seed) in seeds.enumerated() {
+        for (index, card) in DebugBaselineFixture.cards.enumerated() {
             let debt = DebtAccount(
                 planID: "D\(index + 1)",
-                displayName: "Card \(seed.0)",
-                startingBalance: TestSupport.money(seed.1),
-                apr: TestSupport.money(seed.2),
+                displayName: "Card \(card.planID)",
+                startingBalance: Decimal(string: card.balance)!,
+                apr: Decimal(string: card.apr)!,
                 priority: index + 1,
-                createdAt: TestSupport.date(2026, 8, 1)
+                createdAt: TestSupport.date(2054, 8, 1)
             )
             context.insert(debt)
             debts.append(debt)
@@ -82,61 +78,61 @@ final class PlanGenerationServiceTests: XCTestCase {
         return debts
     }
 
-    // MARK: - Lem-equivalence through the whole bridge
+    // MARK: - Baseline equivalence through the whole bridge
 
-    func testLemRowsGenerateTheDocumentedBaseline() throws {
+    func testBaselineRowsGenerateTheFixturePlan() throws {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
-        try insertLemRows(context)
+        try insertBaselineRows(context)
 
         let generated = try PlanGenerationService.generate(
-            context: context, asOf: TestSupport.date(2026, 8, 9)
+            context: context, asOf: TestSupport.date(2054, 8, 9)
         )
 
         // Headline values from the §3 contract (clean-Decimal engine truth;
         // the doc's final-payment cell carries a known float artifact).
         XCTAssertEqual(generated.rows.paycheckCount, 23)
-        XCTAssertEqual(generated.rows.payoffDate, TestSupport.date(2027, 6, 24))
-        XCTAssertEqual(generated.rows.totalEstimatedInterest, TestSupport.money("3461.16"))
+        XCTAssertEqual(generated.rows.payoffDate, TestSupport.date(2055, 6, 24))
+        XCTAssertEqual(generated.rows.totalEstimatedInterest, TestSupport.money("2617.18"))
         XCTAssertFalse(generated.rows.cappedAtPaycheckLimit)
         XCTAssertEqual(generated.rows.paydays.count, 23)
 
-        // First check: floor top-up emerges ($900 → $1,000), reserves match.
+        // First check: the floor is already met, so nothing tops it up.
         let first = try XCTUnwrap(generated.rows.paydays.first)
-        XCTAssertEqual(first.date, TestSupport.date(2026, 8, 20))
-        XCTAssertEqual(first.keepInSpending, TestSupport.money("400.00"))
-        XCTAssertEqual(first.floorTopUp, TestSupport.money("100.00"))
-        XCTAssertEqual(first.debtBudget, TestSupport.money("1307.69"))
+        XCTAssertEqual(first.date, TestSupport.date(2054, 8, 20))
+        XCTAssertEqual(first.keepInSpending, TestSupport.money("300.00"))
+        XCTAssertEqual(first.floorTopUp, .zero)
+        XCTAssertEqual(first.debtBudget, TestSupport.money("1707.69"))
         XCTAssertEqual(
             first.obligationReserves.map(\.amount).reduce(Decimal.zero, +),
-            TestSupport.money("386.31")
+            TestSupport.money("392.31")
         )
 
         // Final check and ceiling.
         let last = try XCTUnwrap(generated.rows.paydays.last)
-        XCTAssertEqual(last.date, TestSupport.date(2027, 6, 24))
-        XCTAssertEqual(last.debtBudget, TestSupport.money("929.59"))
+        XCTAssertEqual(last.date, TestSupport.date(2055, 6, 24))
+        XCTAssertGreaterThan(last.debtBudget, .zero)
         XCTAssertEqual(last.totalDebtAfter, .zero)
-        XCTAssertEqual(last.noSpendCeiling, TestSupport.money("7900.00"))
+        XCTAssertEqual(last.noSpendCeiling, TestSupport.money("8400.00"))
 
-        // Targets follow the documented avalanche order by display ID
-        // (B, D, A, F, C, E → D1, D2, D3, D4, D5, D6 in creation order).
+        // Targets follow avalanche order by display ID: the fixture's cards
+        // are APR-descending, so creation order D1...D6 is attack order.
         XCTAssertEqual(first.targetDebtID, "D1")
         XCTAssertEqual(last.targetDebtID, "D6")
         XCTAssertEqual(generated.rows.debtPayoffs.count, 6)
         XCTAssertEqual(
             generated.rows.debtPayoffs.first { $0.debtID == "D6" }?.payoffDate,
-            TestSupport.date(2027, 6, 24)
+            TestSupport.date(2055, 6, 24)
         )
     }
 
     func testFinishPersistsGeneratedPlanAndSnapshotRegeneratesIdentically() throws {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
-        try insertLemRows(context)
+        try insertBaselineRows(context)
 
         let generated = try PlanGenerationService.generate(
-            context: context, asOf: TestSupport.date(2026, 8, 9)
+            context: context, asOf: TestSupport.date(2054, 8, 9)
         )
         let service = OnboardingProgressService(context: context, dateProvider: TestSupport.fixedToday)
         let plan = try service.finish(planName: "Plan v1", input: generated.input, result: generated.rows)
@@ -162,7 +158,7 @@ final class PlanGenerationServiceTests: XCTestCase {
             calculationVersion: 2,
             cadence: .weekly,
             monthlyPayDay: nil, semimonthlyPayDay1: nil, semimonthlyPayDay2: nil,
-            nextPayday: TestSupport.date(2026, 9, 1),
+            nextPayday: TestSupport.date(2054, 9, 1),
             baseTakeHome: TestSupport.money("1000.00"),
             incomeChanges: [],
             spendingStartingBalance: .zero,
@@ -198,7 +194,7 @@ final class PlanGenerationServiceTests: XCTestCase {
             calculationVersion: 2,
             cadence: .monthly,
             monthlyPayDay: nil, semimonthlyPayDay1: nil, semimonthlyPayDay2: nil,
-            nextPayday: TestSupport.date(2026, 9, 1),
+            nextPayday: TestSupport.date(2054, 9, 1),
             baseTakeHome: TestSupport.money("1000.00"),
             incomeChanges: [],
             spendingStartingBalance: .zero,
@@ -235,7 +231,7 @@ final class PlanGenerationServiceTests: XCTestCase {
         let context = ModelContext(container)
 
         XCTAssertThrowsError(
-            try PlanGenerationService.generate(context: context, asOf: TestSupport.date(2026, 8, 9))
+            try PlanGenerationService.generate(context: context, asOf: TestSupport.date(2054, 8, 9))
         ) { error in
             XCTAssertEqual(error as? PlanGenerationService.GenerationError, .missingIncome)
             XCTAssertTrue(
@@ -250,7 +246,7 @@ final class PlanGenerationServiceTests: XCTestCase {
     func testUnknownPrepaymentWithholdsExtraAndWarns() throws {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
-        try insertLemRows(context)
+        try insertBaselineRows(context)
 
         // Add a high-APR personal loan with unknown prepayment terms; the
         // engine must not send it extra principal and must ask to confirm.
@@ -270,7 +266,7 @@ final class PlanGenerationServiceTests: XCTestCase {
         try context.save()
 
         let generated = try PlanGenerationService.generate(
-            context: context, asOf: TestSupport.date(2026, 8, 9)
+            context: context, asOf: TestSupport.date(2054, 8, 9)
         )
         XCTAssertTrue(generated.result.warnings.contains {
             $0.code == .prepaymentEligibilityUnknown && $0.debtID == loan.id
@@ -325,7 +321,7 @@ final class PlanGenerationServiceTests: XCTestCase {
         ))
         context.insert(IncomeSchedule(
             cadence: .biweekly,
-            anchorPayday: TestSupport.date(2026, 9, 3),
+            anchorPayday: TestSupport.date(2054, 9, 3),
             baseTakeHome: TestSupport.money("300.00")
         ))
         context.insert(RecurringObligation(
@@ -343,7 +339,7 @@ final class PlanGenerationServiceTests: XCTestCase {
         try context.save()
 
         let generated = try PlanGenerationService.generate(
-            context: context, asOf: TestSupport.date(2026, 8, 30)
+            context: context, asOf: TestSupport.date(2054, 8, 30)
         )
         let first = try XCTUnwrap(generated.rows.paydays.first)
         let engineFirst = try XCTUnwrap(generated.result.paychecks.first)

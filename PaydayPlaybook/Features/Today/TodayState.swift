@@ -65,7 +65,7 @@ struct TodayState {
         do {
             let today = DateMath.startOfDay(environment.dateProvider.now)
             let plans = try context.fetch(FetchDescriptor<PlanVersion>())
-            let baseline = try PlanSeeder.existingBaseline(context: context)
+            let baseline = try PlanRepository.legacyBaseline(context: context)
             let active = plans.first(where: \.isActive)
 
             func items(for plan: PlanVersion) throws -> [PaydayPlanItem] {

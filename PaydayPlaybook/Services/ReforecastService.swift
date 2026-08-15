@@ -24,7 +24,7 @@ struct ReforecastService {
         if let generatedPlan, generatedPlan.calculationVersion >= PlanContract.currentCalculationVersion {
             return try reforecastCalcV2(plan: generatedPlan, trigger: trigger, varianceContext: varianceContext)
         }
-        guard let plan = try PlanSeeder.existingBaseline(context: context) else { return nil }
+        guard let plan = try PlanRepository.legacyBaseline(context: context) else { return nil }
         // Schedule dates come from the immutable baseline; allocation amounts
         // come from the active plan version when the user has created one.
         let allPlans = try context.fetch(FetchDescriptor<PlanVersion>())
@@ -173,7 +173,7 @@ struct ReforecastService {
     /// A plan without stored income rules falls back to the live income
     /// schedule; nothing here ever reports another user's number.
     static func currentIncome(context: ModelContext, on date: Date) throws -> Decimal {
-        if let plan = try PlanSeeder.currentPlan(context: context) {
+        if let plan = try PlanRepository.currentPlan(context: context) {
             let planID = plan.id
             let rules = try context.fetch(
                 FetchDescriptor<IncomeRule>(predicate: #Predicate { $0.planVersionID == planID })

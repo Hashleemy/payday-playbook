@@ -154,17 +154,17 @@ final class AvalanchePlanEngineTests: XCTestCase {
         func generate(windfallDate: Date) throws -> PlanningResult {
             try AvalanchePlanEngine.generatePlan(PlanningFixtures.simpleInput(
                 debts: [debts[0]],
-                windfalls: [Windfall(date: windfallDate, amount: TestSupport.money("1000.00"))]))
+                windfalls: [Windfall(date: windfallDate, amount: TestSupport.money("1500.00"))]))
         }
-        let early = try generate(windfallDate: TestSupport.date(2026, 8, 20))
-        let late = try generate(windfallDate: TestSupport.date(2026, 11, 1))
+        let early = try generate(windfallDate: TestSupport.date(2054, 8, 20))
+        let late = try generate(windfallDate: TestSupport.date(2054, 11, 1))
         XCTAssertLessThanOrEqual(early.estimatedTotalInterest, late.estimatedTotalInterest)
         if let earlyPayoff = early.forecastPayoffDate, let latePayoff = late.forecastPayoffDate {
             XCTAssertLessThanOrEqual(earlyPayoff, latePayoff)
         }
         // The windfall paycheck reconciles with the deposit included.
         let windfallCheck = try XCTUnwrap(early.paychecks.first)
-        XCTAssertEqual(windfallCheck.windfall, TestSupport.money("1000.00"))
+        XCTAssertEqual(windfallCheck.windfall, TestSupport.money("1500.00"))
         XCTAssertEqual(windfallCheck.income + windfallCheck.windfall,
                        windfallCheck.keepInSpending + windfallCheck.transferToReserves)
     }
@@ -172,19 +172,19 @@ final class AvalanchePlanEngineTests: XCTestCase {
     // 7. Promo APR expiration flips future priority.
     func testPromoExpirationChangesPriority() throws {
         let promo = PromoAPR(apr: TestSupport.money("0.0000"),
-                             expirationDate: TestSupport.date(2026, 11, 1))
+                             expirationDate: TestSupport.date(2054, 11, 1))
         let debts = [
-            PlanningFixtures.card("P", balance: "6000.00", apr: "0.2999",
+            PlanningFixtures.card("P", balance: "6000.00", apr: "0.2799",
                                   promo: promo, order: 1),
             PlanningFixtures.card("Q", balance: "6000.00", apr: "0.2200", order: 2)
         ]
         let result = try AvalanchePlanEngine.generatePlan(PlanningFixtures.simpleInput(
-            debts: debts, allowance: "300.00", income: "1300.00"))
+            debts: debts, allowance: "300.00", income: "1311.00"))
         // While the 0% promo runs, Q's 22% is the highest effective APR.
         XCTAssertEqual(result.currentTargetDebtID, id("Q"))
         var sawFlip = false
         for check in result.paychecks {
-            if check.date < TestSupport.date(2026, 11, 1) {
+            if check.date < TestSupport.date(2054, 11, 1) {
                 XCTAssertEqual(check.targetDebtID, id("Q"),
                                "promo debt must not be targeted while at 0%")
             } else if check.targetDebtID == id("P") {
@@ -298,24 +298,24 @@ final class AvalanchePlanEngineTests: XCTestCase {
     // 14. Authoritative balances change only the reforecast; the plan track
     //     is untouched and reproducible.
     func testAuthoritativeBalanceReforecastsOnly() throws {
-        let input = PlanningFixtures.lemInput()
+        let input = PlanningFixtures.baselineInput()
         let plan = try AvalanchePlanEngine.generatePlan(input)
         let actuals = ActualState(
-            asOf: TestSupport.date(2026, 9, 10),
+            asOf: TestSupport.date(2054, 9, 10),
             balances: [
                 BalanceAuthority(debtID: id("B"), balance: 0,
-                                 effectiveDate: TestSupport.date(2026, 9, 10)),
+                                 effectiveDate: TestSupport.date(2054, 9, 10)),
                 BalanceAuthority(debtID: id("D"), balance: TestSupport.money("2500.00"),
-                                 effectiveDate: TestSupport.date(2026, 9, 10))
+                                 effectiveDate: TestSupport.date(2054, 9, 10))
             ],
-            spendingBalance: TestSupport.money("1600.00")
+            spendingBalance: TestSupport.money("1611.00")
         )
         let reforecast = try AvalanchePlanEngine.reforecast(input, actuals: actuals)
         XCTAssertEqual(reforecast.kind, .reforecast)
         XCTAssertTrue(reforecast.recommendationReasons.contains(.authoritativeBalance))
         // The reforecast starts after asOf and reflects the snapshots.
         let firstCheck = try XCTUnwrap(reforecast.paychecks.first)
-        XCTAssertEqual(firstCheck.date, TestSupport.date(2026, 9, 17))
+        XCTAssertEqual(firstCheck.date, TestSupport.date(2054, 9, 17))
         XCTAssertEqual(firstCheck.sequence, 3, "sequence numbers stay aligned with the plan")
         let payoff = try XCTUnwrap(reforecast.forecastPayoffDate)
         let planPayoff = try XCTUnwrap(plan.forecastPayoffDate)
@@ -351,7 +351,7 @@ final class AvalanchePlanEngineTests: XCTestCase {
 
     // 16. Every paycheck reconciles to the cent.
     func testDecimalTotalsReconcileToTheCent() throws {
-        let result = try AvalanchePlanEngine.generatePlan(PlanningFixtures.lemInput())
+        let result = try AvalanchePlanEngine.generatePlan(PlanningFixtures.baselineInput())
         for check in result.paychecks {
             XCTAssertEqual(check.income + check.windfall,
                            check.keepInSpending + check.transferToReserves,
@@ -448,24 +448,25 @@ final class AvalanchePlanEngineTests: XCTestCase {
     // *planned* no-spend ceiling — it must not re-charge floor top-ups the
     // plan already made.
     func testReforecastNilSpendingBalanceKeepsPlannedCeiling() throws {
-        let input = PlanningFixtures.lemInput()
+        let input = PlanningFixtures.baselineInput()
         let actuals = ActualState(
-            asOf: TestSupport.date(2026, 9, 10),
+            asOf: TestSupport.date(2054, 9, 10),
             balances: [
                 BalanceAuthority(debtID: id("B"), balance: 0,
-                                 effectiveDate: TestSupport.date(2026, 9, 10)),
+                                 effectiveDate: TestSupport.date(2054, 9, 10)),
                 BalanceAuthority(debtID: id("D"), balance: TestSupport.money("2500.00"),
-                                 effectiveDate: TestSupport.date(2026, 9, 10))
+                                 effectiveDate: TestSupport.date(2054, 9, 10))
             ],
             spendingBalance: nil
         )
         let reforecast = try AvalanchePlanEngine.reforecast(input, actuals: actuals)
         let first = try XCTUnwrap(reforecast.paychecks.first)
-        // The plan topped the floor up on check 1 (ceiling $1,600 after
-        // check 2); the reforecast must not charge a second $100 top-up.
+        // The fixture's floor is already met, so no top-up is ever charged.
+        // Two paydays precede this reforecast, so the ceiling it reports is
+        // the planned one for check 3: 1,500 + 3 x 300.
         XCTAssertEqual(first.floorTopUp, 0)
         XCTAssertEqual(first.keepInSpending, TestSupport.money("300.00"))
-        XCTAssertEqual(first.spendingCeilingAfter, TestSupport.money("1900.00"))
+        XCTAssertEqual(first.spendingCeilingAfter, TestSupport.money("2400.00"))
     }
 
     // Review fix: stale debts (no snapshot) accrue estimated interest from
@@ -476,11 +477,11 @@ final class AvalanchePlanEngineTests: XCTestCase {
         // 42 days later — $420, not the 14-day $140.
         let debts = [PlanningFixtures.card("S", balance: "10000.00", apr: "0.3650", order: 1)]
         let input = PlanningFixtures.simpleInput(debts: debts)
-        let actuals = ActualState(asOf: TestSupport.date(2026, 9, 10), balances: [],
+        let actuals = ActualState(asOf: TestSupport.date(2054, 9, 10), balances: [],
                                   spendingBalance: TestSupport.money("500.00"))
         let reforecast = try AvalanchePlanEngine.reforecast(input, actuals: actuals)
         let first = try XCTUnwrap(reforecast.paychecks.first)
-        XCTAssertEqual(first.date, TestSupport.date(2026, 9, 17))
+        XCTAssertEqual(first.date, TestSupport.date(2054, 9, 17))
         XCTAssertEqual(first.interestAccrued, TestSupport.money("420.00"))
         XCTAssertTrue(reforecast.warnings.contains {
             $0.code == .staleBalanceInput && $0.debtID == id("S")
@@ -493,12 +494,12 @@ final class AvalanchePlanEngineTests: XCTestCase {
         let debts = [PlanningFixtures.card("X", balance: "5000.00", apr: "0.2000", order: 1)]
         let input = PlanningFixtures.simpleInput(debts: debts)
         let actuals = ActualState(
-            asOf: TestSupport.date(2026, 9, 10),
+            asOf: TestSupport.date(2054, 9, 10),
             balances: [
                 BalanceAuthority(debtID: id("X"), balance: TestSupport.money("3000.00"),
-                                 effectiveDate: TestSupport.date(2026, 9, 1)),
+                                 effectiveDate: TestSupport.date(2054, 9, 1)),
                 BalanceAuthority(debtID: id("X"), balance: TestSupport.money("2000.00"),
-                                 effectiveDate: TestSupport.date(2026, 9, 8))
+                                 effectiveDate: TestSupport.date(2054, 9, 8))
             ],
             spendingBalance: TestSupport.money("500.00")
         )
@@ -511,9 +512,9 @@ final class AvalanchePlanEngineTests: XCTestCase {
     func testReforecastPastHorizonMarksNotPayable() throws {
         let debts = [PlanningFixtures.card("X", balance: "5000.00", apr: "0.2000", order: 1)]
         let input = PlanningFixtures.simpleInput(debts: debts)
-        let actuals = ActualState(asOf: TestSupport.date(2050, 1, 1), balances: [
+        let actuals = ActualState(asOf: TestSupport.date(2078, 1, 1), balances: [
             BalanceAuthority(debtID: id("X"), balance: TestSupport.money("4000.00"),
-                             effectiveDate: TestSupport.date(2050, 1, 1))
+                             effectiveDate: TestSupport.date(2078, 1, 1))
         ], spendingBalance: nil)
         let reforecast = try AvalanchePlanEngine.reforecast(input, actuals: actuals)
         XCTAssertTrue(reforecast.paychecks.isEmpty)

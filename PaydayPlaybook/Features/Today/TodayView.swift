@@ -556,13 +556,18 @@ struct TodayView: View {
         }
     }
 
+    /// Cash freed per check once debts are gone. Falls back to zero rather
+    /// than to a hard-coded figure — without a plan or an income on record
+    /// there is genuinely nothing to report, and a stand-in number here would
+    /// be someone else's.
     private var releasedPerPaycheck: Decimal {
-        guard let plan = state.plan else { return PlanContract.raisedCardBudget }
+        guard let plan = state.plan else { return .zero }
         let income = (try? ReforecastService.currentIncome(
             context: modelContext,
             on: appEnvironment.dateProvider.now
-        )) ?? PlanContract.raisedIncome
-        return (income - plan.allowanceCap - plan.totalFixedReservePerCheck).rounded2
+        )) ?? .zero
+        guard income > 0 else { return .zero }
+        return max(.zero, (income - plan.allowanceCap - plan.totalFixedReservePerCheck).rounded2)
     }
 
     private var phaseTwoEditButton: some View {

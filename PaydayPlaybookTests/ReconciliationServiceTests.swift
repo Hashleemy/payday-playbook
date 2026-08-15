@@ -15,21 +15,85 @@ final class ReconciliationServiceTests: XCTestCase {
         return (context, plan, items, byID)
     }
 
-    private func balancedDraft(for item: PaydayPlanItem) -> ReconciliationService.DraftAmounts {
+    /// A draft that reconciles exactly, derived from the payday's own planned
+    /// figures rather than transcribed amounts — so it stays balanced whatever
+    /// the fixture's numbers are.
+    ///
+    /// `cardPayments` defaults to the payday's whole budget on its target
+    /// debt, which balances the income identities. Tests that need the check
+    /// to be *on plan* — where the forecast must not move — pass the
+    /// per-card split from `onPlanCardPayments` instead, because paying the
+    /// same total to a different card is a different plan.
+    private func balancedDraft(
+        for item: PaydayPlanItem,
+        cardPayments: [String: Decimal]? = nil
+    ) -> ReconciliationService.DraftAmounts {
         ReconciliationService.DraftAmounts(
             actualIncome: item.plannedIncome,
             actualC1Kept: item.plannedC1Keep,
-            actualC1Balance: TestSupport.money("1300.00"),
+            actualC1Balance: item.plannedC1NoSpendCeiling,
             actualAllowanceSpent: nil,
             actualC2Transfer: item.plannedC2Transfer,
             actualCarReserve: item.plannedCarReserve,
             actualTrainReserve: item.plannedTrainReserve,
-            cardPayments: [
-                "B": TestSupport.money("1061.07"),
-                "D": TestSupport.money("246.62")
-            ],
-            reportedBalances: ["B": .zero]
+            cardPayments: cardPayments ?? [item.plannedTargetDebtID: item.plannedCardBudget],
+            reportedBalances: [:]
         )
+    }
+
+    /// The per-card payments that land the *actual* track exactly on the
+    /// plan's stored balances: `payment = before − after`.
+    ///
+    /// Deliberately excludes accrued interest. The plan's `balanceAfter`
+    /// already has the period's interest baked in, while the actual track
+    /// derives balances from recorded payments alone. Paying the
+    /// interest-inclusive figure would leave every card a period's interest
+    /// *below* plan and the forecast would run a check early — which is a
+    /// real difference, not an on-plan check.
+    private func onPlanCardPayments(
+        for item: PaydayPlanItem,
+        previous: PaydayPlanItem?,
+        context: ModelContext,
+        debts: [String: DebtAccount]
+    ) throws -> [String: Decimal] {
+        func balances(_ item: PaydayPlanItem) throws -> [String: Decimal] {
+            let itemID = item.id
+            let rows = try context.fetch(
+                FetchDescriptor<PlannedCardBalance>(
+                    predicate: #Predicate { $0.paydayPlanItemID == itemID }
+                )
+            )
+            return Dictionary(rows.map { ($0.debtPlanID, $0.balanceAfter) },
+                              uniquingKeysWith: { first, _ in first })
+        }
+
+        let after = try balances(item)
+        let before: [String: Decimal]
+        if let previous {
+            before = try balances(previous)
+        } else {
+            before = debts.mapValues(\.startingBalance)
+        }
+
+        var payments: [String: Decimal] = [:]
+        for (planID, start) in before {
+            guard debts[planID] != nil, let end = after[planID] else { continue }
+            let payment = (start - end).rounded2
+            if payment > 0 { payments[planID] = payment }
+        }
+        return payments
+    }
+
+    /// The plan's own per-card balances after a payday.
+    private func plannedBalances(
+        for item: PaydayPlanItem, context: ModelContext
+    ) throws -> [String: Decimal] {
+        let itemID = item.id
+        let rows = try context.fetch(
+            FetchDescriptor<PlannedCardBalance>(predicate: #Predicate { $0.paydayPlanItemID == itemID })
+        )
+        return Dictionary(rows.map { ($0.debtPlanID, $0.balanceAfter) },
+                          uniquingKeysWith: { first, _ in first })
     }
 
     // Required test 14: negative currency inputs are rejected.
@@ -42,7 +106,7 @@ final class ReconciliationServiceTests: XCTestCase {
         })
 
         draft = ReconciliationService.DraftAmounts(
-            actualIncome: TestSupport.money("2094.00"),
+            actualIncome: TestSupport.money("2400.00"),
             cardPayments: ["B": TestSupport.money("-50.00")]
         )
         issues = ReconciliationService.validate(draft)
@@ -63,9 +127,9 @@ final class ReconciliationServiceTests: XCTestCase {
     func testOverallocationAndNegativeC2Caught() {
         // Kept + transferred exceeds income.
         var draft = ReconciliationService.DraftAmounts(
-            actualIncome: TestSupport.money("2094.00"),
+            actualIncome: TestSupport.money("2400.00"),
             actualC1Kept: TestSupport.money("500.00"),
-            actualC2Transfer: TestSupport.money("1794.00")
+            actualC2Transfer: TestSupport.money("2100.00")
         )
         var issues = ReconciliationService.validate(draft)
         XCTAssertTrue(issues.contains { issue in
@@ -75,11 +139,11 @@ final class ReconciliationServiceTests: XCTestCase {
 
         // Card payments exceed what Checking 2 holds.
         draft = ReconciliationService.DraftAmounts(
-            actualIncome: TestSupport.money("2094.00"),
-            actualC1Kept: TestSupport.money("400.00"),
-            actualC2Transfer: TestSupport.money("1694.00"),
-            actualCarReserve: TestSupport.money("335.08"),
-            actualTrainReserve: TestSupport.money("51.23"),
+            actualIncome: TestSupport.money("2400.00"),
+            actualC1Kept: TestSupport.money("300.00"),
+            actualC2Transfer: TestSupport.money("2100.00"),
+            actualCarReserve: TestSupport.money("323.08"),
+            actualTrainReserve: TestSupport.money("69.23"),
             cardPayments: ["B": TestSupport.money("2000.00")]
         )
         issues = ReconciliationService.validate(draft, priorC2Available: .zero)
@@ -96,7 +160,7 @@ final class ReconciliationServiceTests: XCTestCase {
         let checkIn = PaydayCheckIn(paydayPlanItemID: first.id)
         context.insert(checkIn)
 
-        let now = TestSupport.date(2026, 8, 20)
+        let now = TestSupport.date(2054, 8, 20)
         let result = try ReconciliationService.completeCheckIn(
             context: context,
             checkIn: checkIn,
@@ -115,15 +179,15 @@ final class ReconciliationServiceTests: XCTestCase {
         func entriesOf(_ type: LedgerEntryType) -> [LedgerEntry] {
             entries.filter { $0.type == type }
         }
-        XCTAssertEqual(entriesOf(.c2Transfer).first?.amount, TestSupport.money("1694.00"))
-        XCTAssertEqual(entriesOf(.carReserveContribution).first?.amount, TestSupport.money("335.08"))
-        XCTAssertEqual(entriesOf(.trainReserveContribution).first?.amount, TestSupport.money("51.23"))
-        XCTAssertEqual(entriesOf(.c1BufferAddition).first?.amount, TestSupport.money("100.00"))
+        XCTAssertEqual(entriesOf(.c2Transfer).first?.amount, first.plannedC2Transfer)
+        XCTAssertEqual(entriesOf(.carReserveContribution).first?.amount, TestSupport.money("323.08"))
+        XCTAssertEqual(entriesOf(.trainReserveContribution).first?.amount, TestSupport.money("69.23"))
+        XCTAssertEqual(entriesOf(.c1BufferAddition).first?.amount, first.plannedBufferAdd == 0 ? nil : first.plannedBufferAdd)
         let payments = entriesOf(.cardPayment)
-        XCTAssertEqual(payments.count, 2)
+        XCTAssertEqual(payments.count, 1)
         XCTAssertEqual(
             payments.reduce(Decimal.zero) { $0 + $1.amount },
-            TestSupport.money("1307.69")
+            first.plannedCardBudget
         )
         // Every entry links back to the check-in for the audit trail.
         XCTAssertTrue(entries.allSatisfy { $0.paydayCheckInID == checkIn.id })
@@ -131,8 +195,29 @@ final class ReconciliationServiceTests: XCTestCase {
         // The confirmed C1 balance became an authoritative snapshot; the paid
         // card's reported balance did too.
         let snapshots = try context.fetch(FetchDescriptor<BalanceSnapshot>())
-        XCTAssertTrue(snapshots.contains { $0.cashAccount == .checking1 && $0.amount == TestSupport.money("1300.00") })
-        XCTAssertTrue(snapshots.contains { $0.debtPlanID == "B" && $0.amount == .zero })
+        XCTAssertTrue(snapshots.contains { $0.cashAccount == .checking1 && $0.amount == first.plannedC1NoSpendCeiling })
+    }
+
+    /// A user-reported card balance becomes an authoritative snapshot.
+    func testReportedCardBalanceBecomesAnAuthoritativeSnapshot() throws {
+        let (context, plan, items, debts) = try makeSeededContext()
+        let first = try XCTUnwrap(items.first)
+        let checkIn = PaydayCheckIn(paydayPlanItemID: first.id)
+        context.insert(checkIn)
+
+        var draft = balancedDraft(for: first)
+        let reported = TestSupport.money("1234.56")
+        draft.reportedBalances = [first.plannedTargetDebtID: reported]
+
+        _ = try ReconciliationService.completeCheckIn(
+            context: context, checkIn: checkIn, planItem: first, plan: plan,
+            draft: draft, debtsByPlanID: debts
+        )
+
+        let snapshots = try context.fetch(FetchDescriptor<BalanceSnapshot>())
+        XCTAssertTrue(snapshots.contains {
+            $0.debtPlanID == first.plannedTargetDebtID && $0.amount == reported && $0.isAuthoritative
+        })
     }
 
     // Unreconciled completion requires an explanation (F-03).
@@ -177,19 +262,19 @@ final class ReconciliationServiceTests: XCTestCase {
         try ReconciliationService.completeCheckIn(
             context: context, checkIn: checkIn, planItem: first, plan: plan,
             draft: balancedDraft(for: first), debtsByPlanID: debts,
-            now: TestSupport.date(2026, 8, 20)
+            now: TestSupport.date(2054, 8, 20)
         )
 
-        let provider = FixedDateProvider(fixed: TestSupport.date(2026, 8, 21))
+        let provider = FixedDateProvider(fixed: TestSupport.date(2054, 8, 21))
         let service = AccountBalanceService(context: context, dateProvider: provider)
         let before = try service.checking1State(plan: plan, planItems: items)
-        XCTAssertEqual(before.actualBalance, TestSupport.money("1300.00"))
-        XCTAssertEqual(before.noSpendCeiling, TestSupport.money("1300.00"))
+        XCTAssertEqual(before.actualBalance, TestSupport.money("1800.00"))
+        XCTAssertEqual(before.noSpendCeiling, TestSupport.money("1800.00"))
         XCTAssertEqual(before.allowanceAvailable, TestSupport.money("300.00"))
 
         // Record $100 of actual allowance spending the day after payday.
         context.insert(LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 21),
+            effectiveDate: TestSupport.date(2054, 8, 21),
             type: .c1Spending,
             amount: TestSupport.money("100.00"),
             sourceAccount: .checking1,
@@ -198,13 +283,13 @@ final class ReconciliationServiceTests: XCTestCase {
         try context.save()
 
         let after = try service.checking1State(plan: plan, planItems: items)
-        XCTAssertEqual(after.actualBalance, TestSupport.money("1200.00"))
+        XCTAssertEqual(after.actualBalance, TestSupport.money("1700.00"))
         XCTAssertEqual(after.allowanceAvailable, TestSupport.money("200.00"))
         XCTAssertEqual(after.allowanceSpentThisPeriod, TestSupport.money("100.00"))
         // Ceiling did not move.
-        XCTAssertEqual(after.noSpendCeiling, TestSupport.money("1300.00"))
+        XCTAssertEqual(after.noSpendCeiling, TestSupport.money("1800.00"))
         // And the stored baseline row is untouched.
-        XCTAssertEqual(first.plannedC1NoSpendCeiling, TestSupport.money("1300.00"))
+        XCTAssertEqual(first.plannedC1NoSpendCeiling, TestSupport.money("1800.00"))
     }
 
     // Required test 12: an authoritative snapshot changes the forecast while
@@ -216,7 +301,7 @@ final class ReconciliationServiceTests: XCTestCase {
         let reforecastService = ReforecastService(context: context, dateProvider: provider)
 
         let baselineForecast = try XCTUnwrap(try reforecastService.reforecast(trigger: .manual))
-        XCTAssertEqual(baselineForecast.projectedPayoffDate, TestSupport.date(2027, 6, 24))
+        XCTAssertEqual(baselineForecast.projectedPayoffDate, TestSupport.date(2055, 6, 24))
         XCTAssertEqual(baselineForecast.remainingPaychecks, 23)
 
         // The user pays C down dramatically and records the real balance.
@@ -224,8 +309,8 @@ final class ReconciliationServiceTests: XCTestCase {
         context.insert(BalanceSnapshot(
             debtAccountID: cardC.id,
             debtPlanID: "C",
-            effectiveDate: TestSupport.date(2026, 8, 10),
-            amount: TestSupport.money("5000.00"),
+            effectiveDate: TestSupport.date(2054, 8, 10),
+            amount: TestSupport.money("500.00"),
             sourceType: .currentOnlineBalance,
             isAuthoritative: true
         ))
@@ -233,16 +318,16 @@ final class ReconciliationServiceTests: XCTestCase {
 
         let updated = try XCTUnwrap(try reforecastService.reforecast(trigger: .balanceSnapshot))
         let newPayoff = try XCTUnwrap(updated.projectedPayoffDate)
-        XCTAssertLessThan(newPayoff, TestSupport.date(2027, 6, 24))
+        XCTAssertLessThan(newPayoff, TestSupport.date(2055, 6, 24))
         XCTAssertLessThan(updated.remainingPaychecks, 23)
 
         // Original Plan v1 rows are untouched.
         let itemsAfter = try TestSupport.planItems(context, plan: plan)
         XCTAssertEqual(itemsAfter.count, 23)
-        XCTAssertEqual(itemsAfter.first?.plannedDebtAfter, TestSupport.money("28665.71"))
+        XCTAssertEqual(itemsAfter.first?.plannedDebtAfter, TestSupport.money("34948.24"))
         XCTAssertEqual(itemsAfter.last?.plannedDebtAfter, 0)
-        XCTAssertEqual(plan.baselineModeledInterest, TestSupport.money("3461.16"))
-        XCTAssertEqual(items.first?.plannedCardBudget, TestSupport.money("1307.69"))
+        XCTAssertEqual(plan.baselineModeledInterest, TestSupport.money("2617.18"))
+        XCTAssertEqual(items.first?.plannedCardBudget, TestSupport.money("1707.69"))
     }
 
     // Completing the first payday exactly to plan keeps the forecast on the
@@ -252,16 +337,26 @@ final class ReconciliationServiceTests: XCTestCase {
         let first = try XCTUnwrap(items.first)
         let checkIn = PaydayCheckIn(paydayPlanItemID: first.id)
         context.insert(checkIn)
+        // Exactly on plan means the same money to the same cards, not just
+        // the same total — a different split is a different plan.
+        let onPlan = try onPlanCardPayments(
+            for: first, previous: nil, context: context, debts: debts
+        )
+        var draft = balancedDraft(for: first, cardPayments: onPlan)
+        // On plan also means the user confirms the balances the plan
+        // predicted, so the forecast restarts from the plan's own position
+        // rather than from payments alone (which carry no accrued interest).
+        draft.reportedBalances = try plannedBalances(for: first, context: context)
         try ReconciliationService.completeCheckIn(
             context: context, checkIn: checkIn, planItem: first, plan: plan,
-            draft: balancedDraft(for: first), debtsByPlanID: debts,
-            now: TestSupport.date(2026, 8, 20)
+            draft: draft, debtsByPlanID: debts,
+            now: TestSupport.date(2054, 8, 20)
         )
 
-        let provider = FixedDateProvider(fixed: TestSupport.date(2026, 8, 21))
+        let provider = FixedDateProvider(fixed: TestSupport.date(2054, 8, 21))
         let reforecastService = ReforecastService(context: context, dateProvider: provider)
         let forecast = try XCTUnwrap(try reforecastService.reforecast(trigger: .paydayCompleted))
-        XCTAssertEqual(forecast.projectedPayoffDate, TestSupport.date(2027, 6, 24))
+        XCTAssertEqual(forecast.projectedPayoffDate, TestSupport.date(2055, 6, 24))
         XCTAssertEqual(forecast.remainingPaychecks, 22)
     }
 
@@ -274,22 +369,23 @@ final class ReconciliationServiceTests: XCTestCase {
         try ReconciliationService.completeCheckIn(
             context: context, checkIn: checkIn, planItem: first, plan: plan,
             draft: balancedDraft(for: first), debtsByPlanID: debts,
-            now: TestSupport.date(2026, 8, 20)
+            now: TestSupport.date(2054, 8, 20)
         )
 
-        let provider = FixedDateProvider(fixed: TestSupport.date(2026, 8, 21))
+        let provider = FixedDateProvider(fixed: TestSupport.date(2054, 8, 21))
         let service = AccountBalanceService(context: context, dateProvider: provider)
         let c2 = try service.checking2State()
-        // 1694 in, 1307.69 paid out to cards.
-        XCTAssertEqual(c2.totalBalance, TestSupport.money("386.31"))
-        XCTAssertEqual(c2.carReserved, TestSupport.money("335.08"))
-        XCTAssertEqual(c2.trainReserved, TestSupport.money("51.23"))
+        // The transfer went in and the whole card budget went out, leaving
+        // exactly the two obligation reserves behind.
+        XCTAssertEqual(c2.totalBalance, TestSupport.money("392.31"))
+        XCTAssertEqual(c2.carReserved, TestSupport.money("323.08"))
+        XCTAssertEqual(c2.trainReserved, TestSupport.money("69.23"))
         XCTAssertEqual(c2.availableForDebt, .zero)
         XCTAssertFalse(c2.hasNegativeBucket)
 
-        // Debt balances follow the payments.
+        // Debt balances follow the payments: the target took the whole budget.
         let balances = try service.debtBalances()
-        let cardB = try XCTUnwrap(balances.first { $0.debt.planID == "B" })
-        XCTAssertTrue(cardB.isPaidOff)
+        let target = try XCTUnwrap(balances.first { $0.debt.planID == first.plannedTargetDebtID })
+        XCTAssertLessThan(target.balance, target.debt.startingBalance)
     }
 }

@@ -20,7 +20,7 @@ final class PaydayPlaybookUITests: XCTestCase {
     private func launch(
         reset: Bool = true,
         skipOnboarding: Bool = false,
-        today: String = "2026-08-20",
+        today: String = "2054-08-20",
         extraArguments: [String] = []
     ) -> XCUIApplication {
         let app = XCUIApplication()
@@ -191,21 +191,17 @@ final class PaydayPlaybookUITests: XCTestCase {
         )
     }
 
-    // The template path still produces the exact Original Plan v1, behind an
-    // explicit warning that it is one person's plan (§4.1).
+    // The template path is gone (V3-12): the Welcome screen offers setup and
+    // nothing else, because there is no longer any plan to hand a new user.
     @MainActor
-    func testTemplateLoadShowsWarningAndSeedsOriginalPlan() throws {
+    func testWelcomeOffersNoTemplateAffordance() throws {
         let app = launch()
 
-        XCTAssertTrue(app.buttons["onboarding.loadTemplate"].waitForExistence(timeout: 10))
-        app.buttons["onboarding.loadTemplate"].tap()
-        XCTAssertTrue(anyText(app, containing: "one specific person's plan").waitForExistence(timeout: 5))
-        app.buttons["Load template"].tap()
-
-        XCTAssertTrue(app.buttons["today.checkInButton"].waitForExistence(timeout: 15))
-        app.tabBars.buttons["Debts"].tap()
-        XCTAssertTrue(anyText(app, containing: "$29,681.61").waitForExistence(timeout: 5)
-            || anyText(app, containing: "Card B").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["onboarding.setUpPlan"].waitForExistence(timeout: 10))
+        XCTAssertFalse(
+            app.buttons["onboarding.loadTemplate"].exists,
+            "the withdrawn template affordance must not be drawn"
+        )
     }
 
     // Setup is usable at accessibility text sizes: nothing clipped away, and

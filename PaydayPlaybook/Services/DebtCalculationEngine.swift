@@ -146,28 +146,6 @@ enum DebtCalculationEngine {
         )
     }
 
-    /// The baseline projection over the seeded 23-check schedule.
-    static func baselineProjection() -> ProjectionResult {
-        let debts = PlanContract.debtSeeds.map {
-            EngineDebt(planID: $0.planID, apr: $0.apr, balance: $0.balance)
-        }
-        var paydays: [EnginePayday] = []
-        var date = PlanContract.firstPayday
-        for sequence in 1...PlanContract.paydayCount {
-            let budget: Decimal
-            if sequence == 1 {
-                budget = PlanContract.firstCheckCardBudget
-            } else if date < PlanContract.incomeRaiseDate {
-                budget = PlanContract.standardCardBudget
-            } else {
-                budget = PlanContract.raisedCardBudget
-            }
-            paydays.append(EnginePayday(sequence: sequence, date: date, cardBudget: budget))
-            date = DateMath.addingDays(PlanContract.payFrequencyDays, to: date)
-        }
-        return project(debts: debts, paydays: paydays)
-    }
-
     // MARK: - Reforecast
 
     struct ReforecastInput {

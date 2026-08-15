@@ -21,16 +21,35 @@ enum OnboardingStep: String, Codable, CaseIterable, Identifiable {
     case notifications
     case review
     case finished
+    /// Schema-3 combined bills-and-debts step (V3-01). Declared here so the
+    /// raw value is persistable now; it is deliberately **not** in
+    /// `flowOrder` yet — see the note there.
+    case billsAndDebts
 
     var id: String { rawValue }
 
+    /// The traversal order, stated explicitly rather than derived from
+    /// `allCases`.
+    ///
+    /// Declaring a case and scheduling it are separate decisions. A resume
+    /// position is persisted user data: if traversal were `allCases`, adding
+    /// any case would silently move every later step's index and could land a
+    /// half-onboarded user on a different screen than the one they left. An
+    /// explicit list means a new case is inert until someone puts it in the
+    /// sequence on purpose — which is the onboarding owner's call, not the
+    /// schema's.
+    static let flowOrder: [OnboardingStep] = [
+        .none, .welcome, .goals, .accounts, .debts,
+        .income, .obligations, .notifications, .review, .finished
+    ]
+
     var sortIndex: Int {
-        OnboardingStep.allCases.firstIndex(of: self) ?? 0
+        OnboardingStep.flowOrder.firstIndex(of: self) ?? OnboardingStep.flowOrder.count
     }
 
     /// The step to resume at when this is the last completed step.
     var next: OnboardingStep {
-        let all = OnboardingStep.allCases
+        let all = OnboardingStep.flowOrder
         guard let index = all.firstIndex(of: self), index + 1 < all.count else { return .finished }
         return all[index + 1]
     }

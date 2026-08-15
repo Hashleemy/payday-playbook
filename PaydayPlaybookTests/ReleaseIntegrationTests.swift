@@ -19,11 +19,11 @@ final class ReleaseIntegrationTests: XCTestCase {
     /// accrual anchor than the run that produced the saved plan.
     func testPresentationBridgeHonoursTheSnapshotAsOfStamp() throws {
         var snapshot = Self.biweeklySnapshot()
-        snapshot.asOf = TestSupport.date(2026, 8, 3)
+        snapshot.asOf = TestSupport.date(2054, 8, 3)
 
         let input = try GeneratedPlanService.engineInput(from: snapshot)
 
-        XCTAssertEqual(input.asOf, TestSupport.date(2026, 8, 3))
+        XCTAssertEqual(input.asOf, TestSupport.date(2054, 8, 3))
         XCTAssertEqual(
             input,
             try PlanGenerationService.engineInput(from: snapshot),
@@ -35,12 +35,12 @@ final class ReleaseIntegrationTests: XCTestCase {
     /// stored stamp — the preview screen depends on it.
     func testExplicitAsOfOverridesTheStoredStamp() throws {
         var snapshot = Self.biweeklySnapshot()
-        snapshot.asOf = TestSupport.date(2026, 8, 3)
+        snapshot.asOf = TestSupport.date(2054, 8, 3)
 
         let input = try GeneratedPlanService.engineInput(
-            from: snapshot, asOf: TestSupport.date(2026, 8, 10)
+            from: snapshot, asOf: TestSupport.date(2054, 8, 10)
         )
-        XCTAssertEqual(input.asOf, TestSupport.date(2026, 8, 10))
+        XCTAssertEqual(input.asOf, TestSupport.date(2054, 8, 10))
     }
 
     /// Semimonthly days entered as (15, 1) are the same paydays as (1, 15).
@@ -91,25 +91,25 @@ final class ReleaseIntegrationTests: XCTestCase {
         )
     }
 
-    // MARK: - No template money on a generated-plan install
+    // MARK: - One install's money never leaks into another's
 
-    /// `ReforecastService.currentIncome` read the template-only lookup and
-    /// fell through to `PlanContract.firstIncome`, so a freshly onboarded user
-    /// saw the template user's $2,094.00 as their own paycheck on Today,
-    /// Settings and the Phase II screen.
-    func testCurrentIncomeReportsThisUsersPaycheckNotTheTemplateConstant() throws {
+    /// `ReforecastService.currentIncome` once fell through to a hard-coded
+    /// income constant, so a freshly onboarded user saw someone else's
+    /// paycheck as their own on Today, Settings and the Phase II screen.
+    /// The constant is gone; this pins the behaviour it was hiding.
+    func testCurrentIncomeReportsThisUsersPaycheck() throws {
         let takeHome = TestSupport.money("1500.00")
         let fixture = try DashboardFixtures.generatedPlan(takeHome: takeHome)
 
         let income = try ReforecastService.currentIncome(
             context: fixture.context,
-            on: TestSupport.date(2026, 8, 20)
+            on: TestSupport.date(2054, 8, 20)
         )
 
         XCTAssertEqual(income, takeHome)
         XCTAssertNotEqual(
-            income, PlanContract.firstIncome,
-            "A generated plan must never report the bundled template's income."
+            income, DebugBaselineFixture.firstIncome,
+            "A generated plan must never report another plan's income."
         )
     }
 
@@ -117,13 +117,19 @@ final class ReleaseIntegrationTests: XCTestCase {
     /// above must not disturb the existing user.
     func testMigratedBaselineStillReportsItsStoredIncome() throws {
         let fixture = try DashboardFixtures.legacyMigrated()
+        let plan = try XCTUnwrap(PlanRepository.legacyBaseline(context: fixture.context))
+        let planID = plan.id
+        let storedRules = try fixture.context.fetch(
+            FetchDescriptor<IncomeRule>(predicate: #Predicate { $0.planVersionID == planID })
+        ).sorted { $0.effectiveDate < $1.effectiveDate }
+        let firstRule = try XCTUnwrap(storedRules.first)
 
         let income = try ReforecastService.currentIncome(
             context: fixture.context,
-            on: TestSupport.date(2026, 8, 20)
+            on: firstRule.effectiveDate
         )
 
-        XCTAssertEqual(income, PlanContract.firstIncome)
+        XCTAssertEqual(income, firstRule.netPaycheckAmount)
     }
 
     // MARK: - Fixtures
@@ -135,10 +141,10 @@ final class ReleaseIntegrationTests: XCTestCase {
             monthlyPayDay: nil,
             semimonthlyPayDay1: nil,
             semimonthlyPayDay2: nil,
-            nextPayday: TestSupport.date(2026, 8, 20),
-            baseTakeHome: TestSupport.money("2094.00"),
+            nextPayday: TestSupport.date(2054, 8, 20),
+            baseTakeHome: TestSupport.money("2400.00"),
             incomeChanges: [],
-            spendingStartingBalance: TestSupport.money("900.00"),
+            spendingStartingBalance: TestSupport.money("1500.00"),
             protectedFloor: TestSupport.money("1000.00"),
             allowanceCap: TestSupport.money("300.00"),
             firstCheckBufferAdd: .zero,
@@ -146,7 +152,7 @@ final class ReleaseIntegrationTests: XCTestCase {
             debts: [
                 PlanningDebt(
                     id: UUID(), displayID: "D1", name: "Blue Card", debtType: .creditCard,
-                    currentBalance: TestSupport.money("1049.00"), apr: TestSupport.money("0.2999"),
+                    currentBalance: TestSupport.money("1100.00"), apr: TestSupport.money("0.2600"),
                     minimumAmount: nil, isExtraPrincipalEligible: true,
                     creditLimit: TestSupport.money("2000.00"), dueDayOfMonth: 12,
                     originalPrincipal: nil

@@ -125,7 +125,7 @@ struct DebtInput: Codable, Equatable, Sendable {
     var debtType: DebtType
     /// Current balance / remaining principal.
     var balance: Decimal
-    /// Standard APR as a fraction (0.2999 = 29.99%).
+    /// Standard APR as a fraction (0.2799 = 29.99%).
     var apr: Decimal
     /// Optional promotional APR with expiration; effective APR switches to
     /// the standard rate on the expiration date.
