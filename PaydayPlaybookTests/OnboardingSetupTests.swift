@@ -16,13 +16,14 @@ final class OnboardingSetupTests: XCTestCase {
 
     func testResumeLandsOnTheRightStepAfterEveryBoundary() throws {
         let container = try TestSupport.makeContainer()
+        // v0.3.0 (V3-08): debts and bills are one step, placed after income so
+        // the per-paycheck reserve preview smooths against the real cadence.
         let expectedResume: [(completed: OnboardingStep, resume: OnboardingStep)] = [
             (.welcome, .goals),
             (.goals, .accounts),
-            (.accounts, .debts),
-            (.debts, .income),
-            (.income, .obligations),
-            (.obligations, .notifications),
+            (.accounts, .income),
+            (.income, .billsAndDebts),
+            (.billsAndDebts, .notifications),
             (.notifications, .review),
             (.review, .finished)
         ]
@@ -47,12 +48,91 @@ final class OnboardingSetupTests: XCTestCase {
     func testStepOrderMatchesTheMissionFlow() {
         XCTAssertEqual(
             OnboardingStep.userFacing,
-            [.welcome, .goals, .accounts, .debts, .income, .obligations, .notifications, .review]
+            [.welcome, .goals, .accounts, .income, .billsAndDebts, .notifications, .review]
         )
         XCTAssertEqual(OnboardingStep.welcome.displayIndex, 1)
-        XCTAssertEqual(OnboardingStep.review.displayIndex, 8)
+        XCTAssertEqual(OnboardingStep.review.displayIndex, 7)
         XCTAssertFalse(OnboardingStep.welcome.showsProgress)
-        XCTAssertTrue(OnboardingStep.debts.showsProgress)
+        XCTAssertTrue(OnboardingStep.billsAndDebts.showsProgress)
+    }
+
+    // MARK: - Retired steps and interrupted v0.2 setups (V3-08)
+
+    /// A v0.2 store can hold `.debts` or `.obligations` as its last completed
+    /// step. Those cases left `flowOrder`, so without the resume mapping
+    /// `sortIndex` would fall off the end of the list and `next` would send a
+    /// half-onboarded user straight to `.finished`, skipping income entirely.
+    func testInterruptedV2SetupResumesWithoutSkippingAStep() throws {
+        let cases: [(stored: OnboardingStep, resume: OnboardingStep)] = [
+            // Old order: accounts → debts → income. Debts done, income not.
+            (.debts, .income),
+            // Old order: income → obligations → notifications. Everything up
+            // to and including bills and debts is done.
+            (.obligations, .notifications)
+        ]
+
+        for (stored, resume) in cases {
+            let container = try TestSupport.makeContainer()
+            let service = OnboardingProgressService(
+                context: ModelContext(container), dateProvider: TestSupport.fixedToday
+            )
+            try service.markStepCompleted(stored)
+
+            let relaunched = OnboardingProgressService(
+                context: ModelContext(container), dateProvider: TestSupport.fixedToday
+            )
+            XCTAssertEqual(
+                try relaunched.resumeStep(), resume,
+                "A v0.2 store interrupted at \(stored.rawValue) must resume at \(resume.rawValue)"
+            )
+        }
+    }
+
+    /// The retired cases must still sort inside the sequence, or
+    /// `markStepCompleted`'s "position only advances" guard would treat them
+    /// as later than `.finished` and refuse every subsequent step.
+    func testRetiredStepsSortInsideTheCurrentSequence() {
+        for retired in OnboardingStep.retiredSteps {
+            XCTAssertFalse(
+                OnboardingStep.flowOrder.contains(retired),
+                "\(retired.rawValue) must not be traversable"
+            )
+            XCTAssertLessThan(
+                retired.sortIndex, OnboardingStep.finished.sortIndex,
+                "\(retired.rawValue) must sort before finished"
+            )
+        }
+        XCTAssertEqual(OnboardingStep.debts.sortIndex, OnboardingStep.accounts.sortIndex)
+        XCTAssertEqual(OnboardingStep.obligations.sortIndex, OnboardingStep.billsAndDebts.sortIndex)
+    }
+
+    /// A user interrupted under the old flow keeps every debt and bill they
+    /// entered, and the consolidated step shows them rather than asking again.
+    func testDebtsEnteredUnderTheOldFlowAreNotReAskedOrDuplicated() throws {
+        let container = try TestSupport.makeContainer()
+        let first = ModelContext(container)
+        try DebtRepository(context: first).create(
+            type: .creditCard, displayName: "Blue card",
+            currentBalance: TestSupport.money("1200.00"), apr: TestSupport.money("0.2199"),
+            minimumAmount: TestSupport.money("40.00"), now: TestSupport.fixedToday.now
+        )
+        try ObligationRepository(context: first).create(
+            name: "Rent", amount: TestSupport.money("1400.00"), cadence: .monthly,
+            dueDay: 1, now: TestSupport.fixedToday.now
+        )
+        try OnboardingProgressService(context: first, dateProvider: TestSupport.fixedToday)
+            .markStepCompleted(.debts)
+
+        let second = ModelContext(container)
+        XCTAssertEqual(
+            try OnboardingProgressService(context: second, dateProvider: TestSupport.fixedToday).resumeStep(),
+            .income
+        )
+        let state = try BillsAndDebtsLoader(context: second).load()
+        XCTAssertEqual(state.debts.count, 1)
+        XCTAssertEqual(state.bills.count, 1)
+        XCTAssertEqual(state.debts.first?.name, "Blue card")
+        XCTAssertEqual(state.bills.first?.name, "Rent")
     }
 
     /// Answers live in real rows, so a mid-step kill keeps everything the
@@ -80,7 +160,7 @@ final class OnboardingSetupTests: XCTestCase {
         let secondLaunch = ModelContext(container)
         XCTAssertEqual(
             try OnboardingProgressService(context: secondLaunch, dateProvider: TestSupport.fixedToday).resumeStep(),
-            .debts
+            .income
         )
         let profile = try XCTUnwrap(try GoalProfileRepository(context: secondLaunch).profile())
         XCTAssertEqual(profile.goalText, "Debt-free before the wedding")
