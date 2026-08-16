@@ -132,7 +132,9 @@ struct ScenarioWorkspaceLoader {
         let effectiveDate = state.overrides.effectiveDate
             ?? DateMath.startOfDay(dateProvider.now)
 
-        state.definitions = Self.definitions(profile: profile, effectiveDate: effectiveDate)
+        state.definitions = ScenarioDefinitionBuilder.definitions(
+            profile: profile, effectiveDate: effectiveDate
+        )
         do {
             state.results = try calculator.scenarios(from: input, definitions: state.definitions)
             state.blockingError = nil
@@ -142,37 +144,11 @@ struct ScenarioWorkspaceLoader {
         }
     }
 
-    /// One definition per contracted scenario kind, in card order.
-    ///
-    /// Every value is the user's own or nil. A nil the scenario needs comes
-    /// back as a named missing input from the calculator — this layer never
-    /// substitutes a default to make a card appear.
-    static func definitions(
-        profile: UserGoalProfile?,
-        effectiveDate: Date
-    ) -> [StoredScenarioDefinition] {
-        // Zero is how the profile spells "not stated" for these columns, so it
-        // is mapped back to nil rather than passed on as a real constraint.
-        func stated(_ value: Decimal?) -> Decimal? {
-            guard let value, value > 0 else { return nil }
-            return value
-        }
-
-        return ScenarioKind.allCases.map { kind in
-            StoredScenarioDefinition(
-                kind: kind,
-                incomeOverride: nil,
-                minimumProtectedCash: stated(profile?.minimumProtectedCash),
-                preferredFloor: profile?.protectedFloor,
-                preferredAllowance: profile?.allowanceCap,
-                plannedSavingsPerPaycheck: stated(profile?.plannedSavingsPerPaycheck),
-                additionalReserve: stated(profile?.additionalCushionReserve),
-                extraPaymentCeiling: stated(profile?.extraPaymentCeiling),
-                zeroAllowanceConfirmedAt: profile?.zeroAllowanceConfirmedAt,
-                effectiveDate: effectiveDate
-            )
-        }
-    }
+    // The store -> [StoredScenarioDefinition] mapping lives in
+    // `ScenarioDefinitionBuilder`, which the generated PDF report also reads.
+    // This screen deliberately does not keep a second copy: two mappings would
+    // let a report disagree with the screen it was generated from, which is the
+    // duplicated-bridge failure MVP_LAYOUT §10 pins.
 }
 
 // MARK: - Missing-input presentation

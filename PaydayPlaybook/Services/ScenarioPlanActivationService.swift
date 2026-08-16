@@ -109,6 +109,9 @@ struct ScenarioPlanActivationService {
 // MARK: - Presentation vocabulary
 
 extension ScenarioKind {
+    /// The one place the three cards are named. The scenario screens, the
+    /// comparison view and the generated PDF report all read it, so a printout
+    /// and the screen it was generated from agree word for word.
     var displayName: String {
         switch self {
         case .fastestSafe: return "Fastest Safe"
