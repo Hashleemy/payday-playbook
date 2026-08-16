@@ -6,6 +6,7 @@ import Charts
 struct ProgressTabView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appEnvironment: AppEnvironment
+    @EnvironmentObject private var router: AppRouter
     @Query private var checkIns: [PaydayCheckIn]
     @Query private var ledgerEntries: [LedgerEntry]
     @Query private var balanceSnapshots: [BalanceSnapshot]
@@ -26,11 +27,35 @@ struct ProgressTabView: View {
     }
 
     @State private var track: Track = .actual
+    @State private var highlightedMilestoneID: UUID?
     @State private var debtSeries: [DebtPoint] = []
     @State private var perCardBalances: [AccountBalanceService.DebtBalance] = []
     @State private var forecast: ForecastSnapshot?
     @State private var stats: Stats = Stats()
     @State private var c1Series: [DebtPoint] = []
+    @State private var insights: [InsightCardData] = []
+
+    /// The plan that owns the schedule: the active version, else the stored
+    /// baseline. Progress renders generated plans the same as Original Plan v1.
+    private var schedulePlan: PlanVersion? {
+        let plans = (try? modelContext.fetch(FetchDescriptor<PlanVersion>())) ?? []
+        let baseline = (try? PlanRepository.legacyBaseline(context: modelContext)) ?? nil
+        let active = plans.first(where: \.isActive)
+        if let active {
+            let activeID = active.id
+            let itemCount = (try? modelContext.fetchCount(
+                FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == activeID })
+            )) ?? 0
+            if itemCount > 0 { return active }
+        }
+        return baseline ?? active
+    }
+
+    /// Total principal when the tracked debts started, summed from the debt
+    /// rows themselves so it is right for every install.
+    private var startingDebtTotal: Decimal {
+        perCardBalances.reduce(Decimal.zero) { $0 + $1.debt.startingBalance }.rounded2
+    }
 
     struct Stats {
         var eliminated: Decimal = .zero
@@ -45,8 +70,13 @@ struct ProgressTabView: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 14) {
+                    InsightsRow(insights: insights)
+                    // §8.6: the primary entry to the three-plan calculator,
+                    // directly after the insights row.
+                    ScenariosEntryCard()
                     statsGrid
                     debtChartCard
                     perCardCard
@@ -58,6 +88,17 @@ struct ProgressTabView: View {
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 24)
+            }
+            // A milestone deep link (calendar tap or "milestone ahead"
+            // reminder) scrolls to that milestone and highlights it. A
+            // milestone that no longer exists simply leaves Progress as it
+            // is — the tap still landed somewhere useful.
+            .onChange(of: router.pendingMilestoneID) { _, milestoneID in
+                revealMilestone(milestoneID, proxy: proxy)
+            }
+            .onAppear {
+                revealMilestone(router.pendingMilestoneID, proxy: proxy)
+            }
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Progress")
@@ -135,12 +176,14 @@ struct ProgressTabView: View {
     }
 
     private var debtChartSummary: String {
-        let start = MoneyFormat.string(PlanContract.startingDebtTotal)
+        let start = MoneyFormat.string(startingDebtTotal)
         switch track {
         case .plan:
-            return "The original plan takes debt from \(start) on Aug 20, 2026 to $0.00 on Jun 24, 2027 across 23 paychecks."
+            guard let plan = schedulePlan else { return "No plan schedule is stored yet." }
+            let count = debtSeries.filter { $0.track == "Plan" }.count - 1
+            return "The plan takes debt from \(start) on \(DateMath.mediumString(plan.firstPayday)) to $0.00 on \(DateMath.mediumString(plan.baselinePayoffDate)) across \(max(count, 0)) paychecks."
         case .actual:
-            let current = MoneyFormat.string(PlanContract.startingDebtTotal - stats.eliminated)
+            let current = MoneyFormat.string((startingDebtTotal - stats.eliminated).rounded2)
             return "Actual debt is \(current); \(MoneyFormat.string(stats.eliminated)) of \(start) has been eliminated."
         case .reforecast:
             if let payoff = forecast?.projectedPayoffDate {
@@ -151,17 +194,17 @@ struct ProgressTabView: View {
     }
 
     private var perCardCard: some View {
-        DashboardCard(title: "Balance by card", systemImage: "creditcard") {
+        DashboardCard(title: "Balance by debt", systemImage: "creditcard") {
             Chart(perCardBalances, id: \.debt.planID) { item in
                 BarMark(
-                    x: .value("Card", "\(item.debt.planID)"),
+                    x: .value("Debt", item.debt.debtType.shortReference(planID: item.debt.planID)),
                     y: .value("Balance", item.balance.asDouble)
                 )
                 .foregroundStyle(item.isPaidOff ? Color.mint : Color.accentColor)
             }
             .chartYAxisLabel("Balance ($)")
             .frame(height: 180)
-            .accessibilityLabel("Bar chart of balance by card")
+            .accessibilityLabel("Bar chart of balance by debt")
 
             AccessibleChartSummary(summary: perCardSummary)
         }
@@ -169,7 +212,7 @@ struct ProgressTabView: View {
 
     private var perCardSummary: String {
         perCardBalances
-            .map { "Card \($0.debt.planID): \(MoneyFormat.string($0.balance))" }
+            .map { "\($0.debt.displayName): \(MoneyFormat.string($0.balance))" }
             .joined(separator: ", ")
     }
 
@@ -190,7 +233,7 @@ struct ProgressTabView: View {
     }
 
     private var c1Card: some View {
-        DashboardCard(title: "Checking 1 versus floor and ceiling", systemImage: "1.circle") {
+        DashboardCard(title: "Spending account versus floor and ceiling", systemImage: "1.circle") {
             Chart(c1Series) { point in
                 LineMark(
                     x: .value("Date", point.date),
@@ -200,11 +243,19 @@ struct ProgressTabView: View {
             }
             .chartYAxisLabel("Balance ($)")
             .frame(height: 180)
-            .accessibilityLabel("Line chart of Checking 1 balance versus the protected floor and no-spend ceiling")
-            AccessibleChartSummary(
-                summary: "The no-spend ceiling grows from $1,300 to $7,900; the protected floor stays at $1,000. Your actual balance lands between them based on what you spend."
-            )
+            .accessibilityLabel("Line chart of the spending account balance versus the protected floor and no-spend ceiling")
+            AccessibleChartSummary(summary: c1ChartSummary)
         }
+    }
+
+    /// Computed from the plan's own ceiling path — never a fixed sentence,
+    /// which would be wrong for any plan but the one it was written for.
+    private var c1ChartSummary: String {
+        let ceilings = c1Series.filter { $0.track == "No-spend ceiling" }
+        guard let first = ceilings.first, let last = ceilings.last, let plan = schedulePlan else {
+            return "No spending-account path is stored for this plan yet."
+        }
+        return "The no-spend ceiling grows from \(MoneyFormat.string(first.amount)) to \(MoneyFormat.string(last.amount)); the protected floor stays at \(MoneyFormat.string(plan.protectedBuffer)). Your actual balance lands between them based on what you spend."
     }
 
     private var varianceCard: some View {
@@ -242,17 +293,17 @@ struct ProgressTabView: View {
     }
 
     private var payoffTimelineCard: some View {
-        DashboardCard(title: "Card payoff timeline", systemImage: "flag.checkered") {
+        DashboardCard(title: "Payoff timeline", systemImage: "flag.checkered") {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
                 GridRow {
-                    Text("Card").font(.caption).foregroundStyle(.secondary)
+                    Text("Debt").font(.caption).foregroundStyle(.secondary)
                     Text("Baseline").font(.caption).foregroundStyle(.secondary)
                     Text("Forecast").font(.caption).foregroundStyle(.secondary)
                 }
-                ForEach(PlanContract.avalancheOrder, id: \.self) { planID in
+                ForEach(timelineOrder, id: \.self) { planID in
                     GridRow {
-                        Text("Card \(planID)").font(.subheadline.weight(.medium))
-                        Text(PlanContract.baselinePayoffDates[planID].map(DateMath.mediumString) ?? "—")
+                        Text(debtLabel(planID)).font(.subheadline.weight(.medium))
+                        Text(baselinePayoffText(planID))
                             .font(.subheadline)
                         Text(forecastPayoffText(planID))
                             .font(.subheadline)
@@ -264,9 +315,31 @@ struct ProgressTabView: View {
         }
     }
 
+    /// Debts in this install's own avalanche order.
+    private var timelineOrder: [String] {
+        perCardBalances.map(\.debt.planID)
+    }
+
+    private func debtLabel(_ planID: String) -> String {
+        guard let debt = perCardBalances.first(where: { $0.debt.planID == planID })?.debt else {
+            return "Card \(planID)"
+        }
+        return debt.displayName
+    }
+
+    /// This install's own baseline payoff milestone. There is no fallback
+    /// table: a date this store does not hold is shown as unknown rather
+    /// than filled in from somewhere else.
+    private func baselinePayoffText(_ planID: String) -> String {
+        guard let milestone = milestones.first(where: {
+            $0.type == .cardPaidOff && $0.relatedDebtPlanID == planID
+        }), let date = milestone.baselineDate else { return "—" }
+        return DateMath.mediumString(date)
+    }
+
     private var payoffTimelineAccessibility: String {
-        PlanContract.avalancheOrder.map { planID in
-            "Card \(planID): baseline \(PlanContract.baselinePayoffDates[planID].map(DateMath.mediumString) ?? "unknown"), forecast \(forecastPayoffText(planID))"
+        timelineOrder.map { planID in
+            "\(debtLabel(planID)): baseline \(baselinePayoffText(planID)), forecast \(forecastPayoffText(planID))"
         }.joined(separator: ". ")
     }
 
@@ -305,10 +378,30 @@ struct ProgressTabView: View {
                         }
                         Spacer()
                     }
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(highlightedMilestoneID == milestone.id
+                                  ? Color.accentColor.opacity(0.18)
+                                  : Color.clear)
+                    )
+                    .id(milestone.id)
                     .accessibilityElement(children: .combine)
                 }
             }
         }
+    }
+
+    /// Honors a milestone deep link once, then clears it so returning to
+    /// the tab later does not re-scroll.
+    private func revealMilestone(_ milestoneID: UUID?, proxy: ScrollViewProxy) {
+        guard let milestoneID, milestones.contains(where: { $0.id == milestoneID }) else {
+            router.pendingMilestoneID = nil
+            return
+        }
+        highlightedMilestoneID = milestoneID
+        router.pendingMilestoneID = nil
+        withAnimation { proxy.scrollTo(milestoneID, anchor: .center) }
     }
 
     private func milestoneSubtitle(_ milestone: Milestone) -> String {
@@ -328,7 +421,9 @@ struct ProgressTabView: View {
     // MARK: - Data
 
     private func paydayVariances() -> [(Int, Decimal)] {
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return [] }
+        // `schedulePlan`, not `existingBaseline`: the latter is template-only,
+        // so a generated plan produced an empty variance chart.
+        guard let plan = schedulePlan else { return [] }
         let planVersionID = plan.id
         let items = (try? modelContext.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planVersionID })
@@ -376,10 +471,11 @@ struct ProgressTabView: View {
 
         debtSeries = buildDebtSeries()
         c1Series = buildC1Series()
+        insights = InsightsBuilder.build(context: modelContext, environment: environment)
     }
 
     private func buildDebtSeries() -> [DebtPoint] {
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return [] }
+        guard let plan = schedulePlan else { return [] }
         let planVersionID = plan.id
         let items = ((try? modelContext.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planVersionID })
@@ -389,7 +485,7 @@ struct ProgressTabView: View {
         case .plan:
             var points = [DebtPoint(
                 date: DateMath.addingDays(-1, to: plan.firstPayday),
-                amount: PlanContract.startingDebtTotal,
+                amount: startingDebtTotal,
                 track: "Plan"
             )]
             points += items.map { DebtPoint(date: $0.date, amount: $0.plannedDebtAfter, track: "Plan") }
@@ -414,8 +510,10 @@ struct ProgressTabView: View {
     private func buildActualSeries() -> [DebtPoint] {
         var points: [DebtPoint] = [
             DebtPoint(
-                date: DateMath.addingDays(-1, to: PlanContract.firstPayday),
-                amount: PlanContract.startingDebtTotal,
+                date: DateMath.addingDays(
+                    -1, to: schedulePlan?.firstPayday ?? appEnvironment.dateProvider.now
+                ),
+                amount: startingDebtTotal,
                 track: "Actual"
             )
         ]
@@ -471,7 +569,7 @@ struct ProgressTabView: View {
     }
 
     private func buildC1Series() -> [DebtPoint] {
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return [] }
+        guard let plan = schedulePlan else { return [] }
         let planVersionID = plan.id
         let items = ((try? modelContext.fetch(
             FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planVersionID })

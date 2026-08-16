@@ -9,8 +9,38 @@ struct SettingsView: View {
     @Query private var allSettings: [AppSettings]
     @Query(sort: \PlanVersion.createdAt) private var planVersions: [PlanVersion]
 
+    /// Count of unresolved setup items, so the row can say how many.
+    private var openSetupItems: Int {
+        (try? SetupCompletenessService(context: modelContext).gaps().count) ?? 0
+    }
+
     var body: some View {
         List {
+            Section("Setup") {
+                NavigationLink {
+                    ReviewSetupView()
+                } label: {
+                    HStack {
+                        Text("Review setup")
+                        if openSetupItems > 0 {
+                            Spacer()
+                            Text("\(openSetupItems)")
+                                .font(.caption.weight(.medium))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.18), in: Capsule())
+                                .accessibilityLabel("\(openSetupItems) items to review")
+                        }
+                    }
+                }
+                .accessibilityIdentifier("settings.reviewSetup")
+                NavigationLink("Accounts") { SettingsAccountsView() }
+                // V3-08: one destination for bills and debts, replacing the
+                // separate "Essential bills" entry. The Debts tab stays the
+                // place you track and pay them; this is where they are set up.
+                NavigationLink("Bills & debts") { SettingsBillsAndDebtsView() }
+                    .accessibilityIdentifier("settings.billsAndDebtsLink")
+            }
             Section("Plan") {
                 NavigationLink("Plan versions") { PlanVersionsView() }
                 NavigationLink("Pay schedule & paycheck changes") { PayScheduleView() }
@@ -19,6 +49,7 @@ struct SettingsView: View {
             }
             Section("Cards") {
                 NavigationLink("Debt accounts") { SettingsDebtListView() }
+                NavigationLink("Obligation due dates") { ObligationDueDatesView() }
             }
             Section("Notifications") {
                 NavigationLink("Reminders") { NotificationSettingsView() }
@@ -26,14 +57,26 @@ struct SettingsView: View {
             Section("Security") {
                 AppLockToggleRow()
             }
+            // V3-09…V3-11: machine-readable protection and human-readable
+            // reporting are separate groups. Raw JSON is never a "report".
+            Section("Back Up & Restore") {
+                NavigationLink("Create JSON Backup") { CreateBackupView() }
+                NavigationLink("Restore JSON Backup") { RestoreBackupView() }
+                NavigationLink("Export Template") { ExportTemplateView() }
+                NavigationLink("Import Template") { ImportTemplateView() }
+                NavigationLink("Export CSV Files") { ExportCSVView() }
+            }
+            Section("Reports") {
+                NavigationLink("Generate Financial Report") { FinancialReportView() }
+            }
             Section("Data") {
-                NavigationLink("Backup & export") { ExportView() }
                 NavigationLink("Privacy") { PrivacyView() }
             }
             Section("About") {
                 NavigationLink("Calculation assumptions") { AssumptionsView() }
                 #if DEBUG
                 NavigationLink("Plan verification (debug)") { PlanVerificationView() }
+                NavigationLink("Notification diagnostics (debug)") { NotificationDiagnosticsView() }
                 #endif
             }
         }
@@ -81,27 +124,31 @@ struct PlanVersionsView: View {
     var body: some View {
         List {
             ForEach(planVersions) { plan in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(plan.name).font(.body.weight(.medium))
-                        if plan.isOriginalBaseline {
-                            Text("Immutable")
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.15), in: Capsule())
-                                .foregroundStyle(.blue)
+                NavigationLink {
+                    PlanOverviewView(plan: plan)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(plan.name).font(.body.weight(.medium))
+                            if plan.isOriginalBaseline {
+                                Text("Immutable")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(Color.blue.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(.blue)
+                            }
+                            if plan.isActive {
+                                Text("Active")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(Color.mint.opacity(0.2), in: Capsule())
+                                    .foregroundStyle(.mint)
+                            }
                         }
-                        if plan.isActive {
-                            Text("Active")
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color.mint.opacity(0.2), in: Capsule())
-                                .foregroundStyle(.mint)
-                        }
+                        Text("Created \(DateMath.mediumString(plan.createdAt)) · calculation v\(plan.calculationVersion) · allowance \(MoneyFormat.string(plan.allowanceCap))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    Text("Created \(DateMath.mediumString(plan.createdAt)) · allowance \(MoneyFormat.string(plan.allowanceCap)) · reserves \(MoneyFormat.string(plan.totalFixedReservePerCheck))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -142,7 +189,9 @@ struct OriginalPlanTimelineView: View {
         }
         .navigationTitle("Original Plan v1")
         .onAppear {
-            guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return }
+            // Deliberately the template, not the current plan: this screen is
+            // the Original Plan v1 reference itself.
+            guard let plan = (try? PlanRepository.legacyBaseline(context: modelContext)) ?? nil else { return }
             let planID = plan.id
             items = ((try? modelContext.fetch(
                 FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planID })
@@ -220,7 +269,7 @@ struct PayScheduleView: View {
             errorMessage = "Enter a paycheck amount greater than zero."
             return
         }
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return }
+        guard let plan = (try? PlanRepository.currentPlan(context: modelContext)) ?? nil else { return }
         modelContext.insert(IncomeRule(
             planVersionID: plan.id,
             effectiveDate: DateMath.startOfDay(newDate),
@@ -301,10 +350,15 @@ struct AllowanceReservesView: View {
             return
         }
         guard activePlan != nil else { return }
-        let income = (try? ReforecastService.currentIncome(
+        // No stand-in income: previewing an impact against a number the user
+        // never entered would state someone else's paycheck as theirs.
+        guard let income = (try? ReforecastService.currentIncome(
             context: modelContext,
             on: appEnvironment.dateProvider.now
-        )) ?? PlanContract.raisedIncome
+        )), income > 0 else {
+            impact = "Add your income in Settings to preview the impact."
+            return
+        }
         let budget = income - allowance - car - train
         impact = "Future card budget per check becomes about \(MoneyFormat.string(max(budget, .zero))) at the current paycheck level. Saving creates a new plan version and reforecasts."
     }
@@ -415,8 +469,13 @@ struct NotificationSettingsView: View {
                 Section {
                     Button {
                         Task {
-                            _ = await notificationScheduler.requestAuthorization()
-                            await reschedule()
+                            // Permission change is a reconcile trigger
+                            // (V3-07): a grant produces a schedule now, not
+                            // at the next foreground.
+                            _ = await notificationScheduler.requestAuthorizationAndReconcile(
+                                context: modelContext,
+                                dateProvider: appEnvironment.dateProvider
+                            )
                         }
                     } label: {
                         Label("Enable notifications", systemImage: "bell.badge")
@@ -448,7 +507,8 @@ struct NotificationSettingsView: View {
         try? modelContext.save()
         await notificationScheduler.rescheduleAll(
             context: modelContext,
-            dateProvider: appEnvironment.dateProvider
+            dateProvider: appEnvironment.dateProvider,
+            trigger: .appSettingsChange
         )
     }
 }
@@ -500,135 +560,6 @@ struct NotificationPreferenceRow: View {
         components.minute = preference.minute
         let date = Calendar.current.date(from: components) ?? Date()
         return formatter.string(from: date)
-    }
-}
-
-// MARK: - Export / restore
-
-struct ExportView: View {
-    @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var appEnvironment: AppEnvironment
-
-    @State private var jsonURL: URL?
-    @State private var csvURLs: [URL] = []
-    @State private var errorMessage: String?
-    @State private var showImporter = false
-    @State private var pendingBackup: ExportService.Backup?
-    @State private var pendingSummary: ExportService.RestoreSummary?
-    @State private var restoreDone = false
-
-    var body: some View {
-        List {
-            Section("Backup") {
-                Button {
-                    do {
-                        jsonURL = try ExportService.exportJSON(context: modelContext)
-                    } catch {
-                        errorMessage = error.localizedDescription
-                    }
-                } label: {
-                    Label("Create JSON backup", systemImage: "doc.badge.arrow.up")
-                }
-                if let jsonURL {
-                    ShareLink(item: jsonURL) {
-                        Label("Share \(jsonURL.lastPathComponent)", systemImage: "square.and.arrow.up")
-                    }
-                }
-            }
-            Section("CSV exports") {
-                Button {
-                    do {
-                        csvURLs = try ExportService.exportCSVs(context: modelContext)
-                    } catch {
-                        errorMessage = error.localizedDescription
-                    }
-                } label: {
-                    Label("Create CSV files", systemImage: "tablecells")
-                }
-                ForEach(csvURLs, id: \.self) { url in
-                    ShareLink(item: url) {
-                        Label(url.lastPathComponent, systemImage: "square.and.arrow.up")
-                    }
-                }
-            }
-            Section("Restore") {
-                Button {
-                    showImporter = true
-                } label: {
-                    Label("Restore from JSON backup", systemImage: "doc.badge.arrow.down")
-                }
-                Text("Restoring replaces all current data. A rollback backup is created automatically first.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            if restoreDone {
-                Section {
-                    Label("Restore complete.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.mint)
-                }
-            }
-            if let errorMessage {
-                Section {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                }
-            }
-        }
-        .navigationTitle("Backup & export")
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
-            switch result {
-            case .success(let url):
-                readBackup(url)
-            case .failure(let error):
-                errorMessage = error.localizedDescription
-            }
-        }
-        .confirmationDialog(
-            restoreSummaryText,
-            isPresented: Binding(
-                get: { pendingBackup != nil },
-                set: { if !$0 { pendingBackup = nil; pendingSummary = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Replace all data", role: .destructive) { performRestore() }
-            Button("Cancel", role: .cancel) { pendingBackup = nil; pendingSummary = nil }
-        }
-    }
-
-    private var restoreSummaryText: String {
-        guard let summary = pendingSummary else { return "" }
-        return "Backup from \(DateMath.mediumString(summary.exportedAt)): \(summary.planVersions) plan version(s), \(summary.debts) debts, \(summary.paydays) paydays, \(summary.checkIns) check-ins, \(summary.ledgerEntries) ledger entries. Replace everything currently in the app?"
-    }
-
-    private func readBackup(_ url: URL) {
-        do {
-            let secured = url.startAccessingSecurityScopedResource()
-            defer { if secured { url.stopAccessingSecurityScopedResource() } }
-            let data = try Data(contentsOf: url)
-            let backup = try ExportService.readBackup(from: data)
-            pendingBackup = backup
-            pendingSummary = ExportService.summarize(backup)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func performRestore() {
-        guard let backup = pendingBackup else { return }
-        do {
-            // Local rollback backup before the destructive replace.
-            _ = try ExportService.exportJSON(
-                context: modelContext,
-                to: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            )
-            try ExportService.restore(backup, context: modelContext)
-            restoreDone = true
-            pendingBackup = nil
-            pendingSummary = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 }
 
@@ -697,7 +628,8 @@ struct PlanVerificationView: View {
     private func verify() {
         var output: [String] = []
         do {
-            guard let plan = try PlanSeeder.existingBaseline(context: modelContext) else {
+            // The §3 baseline checklist verifies the template specifically.
+            guard let plan = try PlanRepository.legacyBaseline(context: modelContext) else {
                 lines = ["No baseline plan found."]
                 return
             }
@@ -720,7 +652,24 @@ struct PlanVerificationView: View {
             output.append("Modeled interest: \(MoneyFormat.string(plan.baselineModeledInterest))")
             output.append("Final no-spend ceiling: \(MoneyFormat.string(items.last?.plannedC1NoSpendCeiling ?? 0))")
 
-            let engineResult = DebtCalculationEngine.baselineProjection()
+            // Re-project the plan from its own stored rows and compare. This
+            // used to run a projection assembled from hard-coded constants,
+            // which only ever checked one particular plan; driving it from
+            // the store checks whichever plan this install actually holds.
+            let order = plan.avalancheOrder
+            let byPlanID = Dictionary(debts.map { ($0.planID, $0) }, uniquingKeysWith: { first, _ in first })
+            let engineDebts = order.compactMap { planID -> DebtCalculationEngine.EngineDebt? in
+                guard let debt = byPlanID[planID] else { return nil }
+                return DebtCalculationEngine.EngineDebt(
+                    planID: debt.planID, apr: debt.apr, balance: debt.startingBalance
+                )
+            }
+            let enginePaydays = items.map {
+                DebtCalculationEngine.EnginePayday(
+                    sequence: $0.sequenceNumber, date: $0.date, cardBudget: $0.plannedCardBudget
+                )
+            }
+            let engineResult = DebtCalculationEngine.project(debts: engineDebts, paydays: enginePaydays)
             output.append("— Engine check —")
             output.append("Engine payoff: \((engineResult.payoffDate).map(DateMath.mediumString) ?? "—") after \(engineResult.paychecksUsed) checks")
             output.append("Engine interest: \(MoneyFormat.string(engineResult.totalInterest))")

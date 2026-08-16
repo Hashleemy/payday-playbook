@@ -20,16 +20,30 @@ struct DebtFreeTransitionView: View {
     @State private var targetAmount: Decimal?
     @State private var celebrationScale = 0.6
 
+    /// What the user actually paid off, summed from their own debt rows.
+    /// Previously a fixed constant, which showed every install the same
+    /// figure regardless of what they had cleared.
+    private var eliminatedDebtTotal: Decimal {
+        let debts = (try? modelContext.fetch(FetchDescriptor<DebtAccount>())) ?? []
+        return debts.reduce(Decimal.zero) { $0 + $1.startingBalance }.rounded2
+    }
+
     private var releasedPerPaycheck: Decimal {
         // Cash freed per check once cards are gone: income − allowance − reserves.
-        guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else {
-            return PlanContract.raisedCardBudget
+        //
+        // The fallbacks here were once hard-coded amounts from one user's
+        // plan, so an install without a readable plan was shown a stranger's
+        // figure as if it were their own. Zero is the honest answer: with no
+        // plan and no income on record there is nothing to report freed.
+        guard let plan = (try? PlanRepository.currentPlan(context: modelContext)) ?? nil else {
+            return .zero
         }
         let income = (try? ReforecastService.currentIncome(
             context: modelContext,
             on: appEnvironment.dateProvider.now
-        )) ?? PlanContract.raisedIncome
-        return (income - plan.allowanceCap - plan.totalFixedReservePerCheck).rounded2
+        )) ?? .zero
+        guard income > 0 else { return .zero }
+        return max(.zero, (income - plan.allowanceCap - plan.totalFixedReservePerCheck).rounded2)
     }
 
     var body: some View {
@@ -97,7 +111,7 @@ struct DebtFreeTransitionView: View {
                 .accessibilityHidden(true)
             Text("Debt-free!")
                 .font(.largeTitle.bold())
-            Text("\(MoneyFormat.string(PlanContract.startingDebtTotal)) of card debt is gone. Every history entry stays saved in the app.")
+            Text("\(MoneyFormat.string(eliminatedDebtTotal)) of debt is gone. Every history entry stays saved in the app.")
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)

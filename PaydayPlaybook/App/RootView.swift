@@ -41,6 +41,11 @@ struct RootView: View {
                 coldLaunchHandled = true
                 // A fresh process must authenticate too, not just resumes.
                 appLock.lockIfEnabled()
+                // A-11: clear generated backups, templates, CSVs, and PDF
+                // reports left in temporary storage by the previous run.
+                // Anything the user meant to keep left through the share
+                // sheet, which copies the file out.
+                PortableFileStore.purgeTransient()
             }
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--uitest-skip-onboarding") {
@@ -54,13 +59,15 @@ struct RootView: View {
     }
 
     #if DEBUG
+    /// Puts a UI test straight into the app with a plan already in place.
+    /// The plan is `DebugBaselineFixture`'s invented one — a UI test needs
+    /// *a* plan to drive, not anyone's real one.
     private func completeOnboardingForUITest() throws {
-        let summary = try PlanSeeder.seedIfNeeded(context: modelContext)
+        try DebugBaselineFixture.insertIfNeeded(context: modelContext)
         if let row = try modelContext.fetch(FetchDescriptor<AppSettings>()).first {
             row.onboardingComplete = true
             try modelContext.save()
         }
-        _ = summary
     }
     #endif
 }
@@ -129,6 +136,9 @@ struct MainTabView: View {
             CalendarTabView()
                 .tabItem { Label("Calendar", systemImage: "calendar") }
                 .tag(AppTab.calendar)
+            AccountsTabView()
+                .tabItem { Label("Accounts", systemImage: "building.columns") }
+                .tag(AppTab.accounts)
             DebtsView()
                 .tabItem { Label("Debts", systemImage: "creditcard.fill") }
                 .tag(AppTab.debts)

@@ -47,18 +47,18 @@ final class SupportingServiceTests: XCTestCase {
         // Pay B to zero and record $5,000+ of total elimination.
         context.insert(BalanceSnapshot(
             debtAccountID: cardB.id, debtPlanID: "B",
-            effectiveDate: TestSupport.date(2026, 8, 20),
+            effectiveDate: TestSupport.date(2054, 8, 20),
             amount: .zero, sourceType: .currentOnlineBalance
         ))
         let cardC = try XCTUnwrap(debts.first { $0.planID == "C" })
         context.insert(BalanceSnapshot(
             debtAccountID: cardC.id, debtPlanID: "C",
-            effectiveDate: TestSupport.date(2026, 8, 20),
-            amount: TestSupport.money("7000.00"), sourceType: .currentOnlineBalance
+            effectiveDate: TestSupport.date(2054, 8, 20),
+            amount: TestSupport.money("7011.00"), sourceType: .currentOnlineBalance
         ))
         try context.save()
 
-        let provider = FixedDateProvider(fixed: TestSupport.date(2026, 8, 21))
+        let provider = FixedDateProvider(fixed: TestSupport.date(2054, 8, 21))
         try MilestoneService(context: context, dateProvider: provider).refreshAchievements()
 
         let milestones = try context.fetch(FetchDescriptor<Milestone>())
@@ -77,7 +77,7 @@ final class SupportingServiceTests: XCTestCase {
         let context = ModelContext(container)
         try TestSupport.seed(context)
         context.insert(LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 21),
+            effectiveDate: TestSupport.date(2054, 8, 21),
             type: .c1Spending,
             amount: TestSupport.money("40.00"),
             sourceAccount: .checking1,
@@ -85,47 +85,56 @@ final class SupportingServiceTests: XCTestCase {
         ))
         try context.save()
 
-        let provider = FixedDateProvider(fixed: TestSupport.date(2026, 8, 10))
+        let provider = FixedDateProvider(fixed: TestSupport.date(2054, 8, 10))
         let service = CalendarEventService(context: context, dateProvider: provider)
         let events = try service.events(
-            from: TestSupport.date(2026, 8, 1),
-            to: TestSupport.date(2026, 8, 31)
+            from: TestSupport.date(2054, 8, 1),
+            to: TestSupport.date(2054, 8, 31)
         )
 
-        let paydays = events.filter { $0.kind == .paydayFuture || $0.kind == .paydayDue }
+        // Carried forward from 0.1.x; the v0.2.0 taxonomy renamed the payday
+        // marker kinds into one `.payday` kind carrying an explicit status.
+        let paydays = events.filter { $0.kind == .payday }
         XCTAssertEqual(paydays.count, 1)
-        XCTAssertEqual(paydays.first?.date, TestSupport.date(2026, 8, 20))
-        XCTAssertEqual(paydays.first?.kind, .paydayFuture)
+        XCTAssertEqual(paydays.first?.date, TestSupport.date(2054, 8, 20))
+        XCTAssertEqual(paydays.first?.status, .planned)
 
-        XCTAssertTrue(events.contains { $0.kind == .milestone })   // Card B baseline payoff Aug 20
-        XCTAssertTrue(events.contains { $0.kind == .entry && $0.date == TestSupport.date(2026, 8, 21) })
+        XCTAssertTrue(events.contains { $0.kind == .entry && $0.date == TestSupport.date(2054, 8, 21) })
+
+        // Milestones render too; the fixture's first card payoff lands a
+        // couple of months in, so it needs its own window.
+        let openingQuarter = try service.events(
+            from: TestSupport.date(2054, 8, 1),
+            to: TestSupport.date(2054, 10, 31)
+        )
+        XCTAssertTrue(openingQuarter.contains { $0.kind == .milestone })
 
         // Completing the payday flips the marker.
-        let plan = try XCTUnwrap(try PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(try PlanRepository.legacyBaseline(context: context))
         let items = try TestSupport.planItems(context, plan: plan)
         let checkIn = PaydayCheckIn(paydayPlanItemID: items[0].id)
         checkIn.status = .completed
         context.insert(checkIn)
         try context.save()
         let after = try service.events(
-            from: TestSupport.date(2026, 8, 1),
-            to: TestSupport.date(2026, 8, 31)
+            from: TestSupport.date(2054, 8, 1),
+            to: TestSupport.date(2054, 8, 31)
         )
-        XCTAssertTrue(after.contains { $0.kind == .paydayCompleted })
+        XCTAssertTrue(after.contains { $0.kind == .payday && $0.status == .completed })
     }
 
     func testDebtFreeDetection() throws {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
         try TestSupport.seed(context)
-        let provider = FixedDateProvider(fixed: TestSupport.date(2027, 7, 1))
+        let provider = FixedDateProvider(fixed: TestSupport.date(2055, 7, 1))
         let service = MilestoneService(context: context, dateProvider: provider)
         XCTAssertFalse(try service.isDebtFree())
 
         for debt in try context.fetch(FetchDescriptor<DebtAccount>()) {
             context.insert(BalanceSnapshot(
                 debtAccountID: debt.id, debtPlanID: debt.planID,
-                effectiveDate: TestSupport.date(2027, 6, 24),
+                effectiveDate: TestSupport.date(2055, 6, 24),
                 amount: .zero, sourceType: .currentOnlineBalance
             ))
         }
@@ -142,8 +151,8 @@ final class SupportingServiceTests: XCTestCase {
         let service = AccountBalanceService(context: context, dateProvider: provider)
         let c1 = try service.checking1State(plan: plan, planItems: items)
         // Before the first payday: $900 actual, $900 ceiling, no allowance yet.
-        XCTAssertEqual(c1.actualBalance, TestSupport.money("900.00"))
-        XCTAssertEqual(c1.noSpendCeiling, TestSupport.money("900.00"))
+        XCTAssertEqual(c1.actualBalance, TestSupport.money("1500.00"))
+        XCTAssertEqual(c1.noSpendCeiling, TestSupport.money("1500.00"))
         XCTAssertFalse(c1.allowanceActive)
         XCTAssertEqual(c1.allowanceAvailable, .zero)
     }

@@ -8,6 +8,9 @@ struct PaydayPlaybookApp: App {
     @StateObject private var router = AppRouter()
     @StateObject private var appLock = AppLockService()
     @Environment(\.scenePhase) private var scenePhase
+    /// Distinguishes the launch pass (which also covers migration) from
+    /// later foreground passes, so diagnostics can tell them apart.
+    @State private var didReconcileThisLaunch = false
 
     private let container: ModelContainer
     private let notificationDelegate = NotificationDelegate()
@@ -18,7 +21,10 @@ struct PaydayPlaybookApp: App {
             PaydayPlanItem.self, PlannedCardBalance.self,
             PaydayCheckIn.self, CheckInCardPayment.self,
             LedgerEntry.self, BalanceSnapshot.self, ForecastSnapshot.self,
-            NotificationPreference.self, Milestone.self, AppSettings.self
+            NotificationPreference.self, Milestone.self, AppSettings.self,
+            CashAccount.self, RecurringObligation.self, UserGoalProfile.self,
+            OnboardingProgress.self, IncomeSchedule.self, IncomeChange.self,
+            PlannedObligationReserve.self
         ])
         var configuration = ModelConfiguration(schema: schema)
         #if DEBUG
@@ -48,6 +54,16 @@ struct PaydayPlaybookApp: App {
         } catch {
             fatalError("Could not create SwiftData container: \(error)")
         }
+        // Schema 1→2 logical upgrade, before any UI reads the store. A
+        // failure rolls back and the untouched store retries next launch
+        // (MVP_LAYOUT §7); the app still opens on the existing data.
+        do {
+            try MigrationService.migrateIfNeeded(context: container.mainContext)
+        } catch {
+            #if DEBUG
+            print("Migration deferred: \(error.localizedDescription)")
+            #endif
+        }
         // The delegate must exist before launch finishes so a notification tap
         // that starts the app still deep-links (the route is buffered until the
         // UI registers its handler).
@@ -72,9 +88,50 @@ struct PaydayPlaybookApp: App {
                     case .background:
                         appLock.lockIfEnabled()
                     case .active:
-                        Task { await appEnvironment.notificationScheduler.refreshAuthorizationStatus() }
+                        // Launch and foreground both reconcile: the rolling
+                        // window advances, and anything that changed while
+                        // the app was away (dates passing, a completed
+                        // payday, permission revoked in iOS Settings, an
+                        // archive done on another screen) is picked up here.
+                        //
+                        // The first pass of a session is also the pass that
+                        // follows migration — `init` upgrades the store
+                        // before any view reads it — so a schema change can
+                        // never leave a stale schedule behind (V3-07).
+                        Task {
+                            let trigger: NotificationScheduler.ReconcileTrigger =
+                                didReconcileThisLaunch ? .foreground : .launch
+                            didReconcileThisLaunch = true
+                            await appEnvironment.notificationScheduler.refreshAuthorizationStatus()
+                            await appEnvironment.notificationScheduler.rescheduleAll(
+                                context: container.mainContext,
+                                dateProvider: appEnvironment.dateProvider,
+                                trigger: trigger
+                            )
+                        }
                     default:
                         break
+                    }
+                }
+                // A time-zone move or a DST transition changes when a local
+                // wall-clock reminder actually fires; rebuild the schedule
+                // so the intended local times survive the change.
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)) { _ in
+                    Task {
+                        await appEnvironment.notificationScheduler.rescheduleAll(
+                            context: container.mainContext,
+                            dateProvider: appEnvironment.dateProvider,
+                            trigger: .timeZoneChange
+                        )
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                    Task {
+                        await appEnvironment.notificationScheduler.rescheduleAll(
+                            context: container.mainContext,
+                            dateProvider: appEnvironment.dateProvider,
+                            trigger: .timeZoneChange
+                        )
                     }
                 }
         }
