@@ -1,19 +1,31 @@
 import Foundation
 
-/// Calculation-version-2 avalanche plan generator (rules R-01…R-16).
+/// Avalanche plan generator for calculation versions 2 and 3.
+///
+/// Calc v2 is rules R-01…R-16. Calc v3 adds the scenario and extra-payment
+/// rules R-17…R-24 to the *same* projection — there is deliberately no second
+/// payoff algorithm. With no scenario and no extra payments, a v3 run produces
+/// byte-identical output to a v2 run apart from the version stamp
+/// (`CalcV3ReductionTests`).
 ///
 /// Pure functions only: no SwiftUI, no SwiftData, no clock access — identical
 /// inputs always produce identical outputs. All money is `Decimal`.
 ///
 /// Rounding contract: balances and interest carry full precision internally
-/// (the same mechanics as the frozen calc-v1 `DebtCalculationEngine`, so the
-/// legacy baseline reproduces exactly under equivalent inputs). Emitted
+/// (the same mechanics as the frozen calc-v1 `DebtCalculationEngine`, so a
+/// baseline-equivalent input reproduces the legacy schedule exactly). Emitted
 /// row values are rounded to cents with cascading penny allocation so every
 /// `PaycheckPlan` reconciles to the cent by construction:
 ///
 ///     income + windfall == keepInSpending + transferToReserves
-///     debtBudget + shortfall.gap == minimumsTotal + extraTotal + unassignedCash
+///     debtBudget + shortfall.minimumsGap == minimumsTotal + extraTotal + unassignedCash
 ///     Σ payments == minimumsTotal + extraTotal
+///     shortfall.gap == floorGap + obligationGap + minimumsGap
+///
+/// The two calc-v3 additions are placed so those identities need no amendment:
+/// retained scenario cash joins `keepInSpending` (like a floor top-up), and an
+/// extra payment arrives as a deposit inside `windfall` rather than being
+/// bolted onto the debt budget.
 enum AvalanchePlanEngine {
 
     /// R-01 horizon cap (assumption A-05): generation stops after this many
@@ -48,7 +60,8 @@ enum AvalanchePlanEngine {
         let normalized = normalize(input)
         let outcome = runProjection(normalized, extraEnabled: true, actuals: nil)
         let comparison = minimumOnlyComparison(normalized, against: outcome, actuals: nil)
-        return assemble(kind: .plan, input: normalized, outcome: outcome, comparison: comparison)
+        return assemble(kind: .plan, input: normalized, outcome: outcome, comparison: comparison,
+                        savedCadence: input.income.cadence)
     }
 
     /// Projects forward from authoritative actual state. The original plan is
@@ -63,7 +76,8 @@ enum AvalanchePlanEngine {
         let outcome = runProjection(normalized, extraEnabled: true, actuals: actuals)
         let comparison = minimumOnlyComparison(normalized, against: outcome, actuals: actuals)
         return assemble(kind: .reforecast, input: normalized, outcome: outcome,
-                        comparison: comparison, actuals: actuals)
+                        comparison: comparison, actuals: actuals,
+                        savedCadence: input.income.cadence)
     }
 
     /// R-04 obligation smoothing: per-paycheck reserve, rounded to cents.
@@ -100,7 +114,26 @@ enum AvalanchePlanEngine {
                 throw PlanningValidationError.invalidDueDay("debt \(debt.name)")
             }
         }
-        switch input.income.cadence {
+        try validateCadence(input.income.cadence)
+        if let scenario = input.scenario {
+            try nonNegative(scenario.minimumProtectedCash ?? 0, "minimum protected cash")
+            try nonNegative(scenario.preferredFloor ?? 0, "preferred floor")
+            try nonNegative(scenario.preferredAllowance ?? 0, "preferred allowance")
+            try nonNegative(scenario.plannedSavingsPerPaycheck ?? 0, "planned savings")
+            try nonNegative(scenario.additionalReserve ?? 0, "additional reserve")
+            try nonNegative(scenario.extraPaymentCeiling ?? 0, "extra-payment ceiling")
+            if let override = scenario.incomeOverride {
+                try nonNegative(override.amount, "income override amount")
+                try validateCadence(override.cadence)
+            }
+        }
+        for extra in input.extraPayments {
+            try nonNegative(extra.amount, "extra payment")
+        }
+    }
+
+    private static func validateCadence(_ cadence: PlanningPayCadence) throws {
+        switch cadence {
         case .weekly, .biweekly:
             break
         case .monthly(let day):
@@ -144,7 +177,73 @@ enum AvalanchePlanEngine {
             }
             return copy
         }
+        normalized.extraPayments = input.extraPayments
+            .map { extra in
+                var copy = extra
+                copy.amount = extra.amount.rounded2
+                copy.effectiveDate = DateMath.startOfDay(extra.effectiveDate)
+                return copy
+            }
+            // Deterministic order for equal dates: identifier, never array
+            // position, so a caller's collection order cannot leak into output.
+            .sorted { lhs, rhs in
+                if lhs.effectiveDate != rhs.effectiveDate { return lhs.effectiveDate < rhs.effectiveDate }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+        if let scenario = input.scenario {
+            normalized.scenario = normalizeScenario(scenario)
+            applyScenarioConstraints(normalized.scenario!, to: &normalized)
+        }
         return normalized
+    }
+
+    private static func normalizeScenario(_ scenario: ScenarioInput) -> ScenarioInput {
+        var copy = scenario
+        copy.minimumProtectedCash = scenario.minimumProtectedCash?.rounded2
+        copy.preferredFloor = scenario.preferredFloor?.rounded2
+        copy.preferredAllowance = scenario.preferredAllowance?.rounded2
+        copy.plannedSavingsPerPaycheck = scenario.plannedSavingsPerPaycheck?.rounded2
+        copy.additionalReserve = scenario.additionalReserve?.rounded2
+        copy.extraPaymentCeiling = scenario.extraPaymentCeiling?.rounded2
+        copy.effectiveDate = DateMath.startOfDay(scenario.effectiveDate)
+        if let override = scenario.incomeOverride {
+            copy.incomeOverride = IncomeOverrideInput(
+                amount: override.amount.rounded2,
+                cadence: override.cadence,
+                effectiveDate: DateMath.startOfDay(override.effectiveDate)
+            )
+        }
+        return copy
+    }
+
+    /// Folds R-17 constraints and the R-18 override into the concrete income
+    /// and spending the projection runs on. Doing it here — rather than in a
+    /// caller — is what guarantees exactly one interpretation of each scenario
+    /// kind. The caller's own `PlanningInput` value is untouched: normalization
+    /// works on a copy, so saved data can never be mutated (R-18).
+    private static func applyScenarioConstraints(_ scenario: ScenarioInput, to input: inout PlanningInput) {
+        if let floor = scenario.resolvedProtectedFloor {
+            input.spending.protectedFloor = floor
+        }
+        if let allowance = scenario.resolvedAllowance {
+            input.spending.allowancePerPaycheck = allowance
+        }
+        guard let override = scenario.incomeOverride else { return }
+        if override.cadence == input.income.cadence {
+            // Same cadence: the override is a take-home step that supersedes
+            // every saved change from its effective date forward.
+            var amounts = input.income.amounts.filter { $0.effectiveDate < override.effectiveDate }
+            amounts.append(PlanningIncomeChange(effectiveDate: override.effectiveDate,
+                                                amount: override.amount))
+            input.income.amounts = amounts
+        } else {
+            // A different pay frequency has no meaning against the old anchor,
+            // so the timeline is rebased on the override's effective date.
+            input.income.cadence = override.cadence
+            input.income.firstPayday = override.effectiveDate
+            input.income.amounts = [PlanningIncomeChange(effectiveDate: override.effectiveDate,
+                                                         amount: override.amount)]
+        }
     }
 
     // MARK: - Working state
@@ -179,6 +278,9 @@ enum AvalanchePlanEngine {
         var shortfallSequences: [Int] = []
         var startingPrincipal: Decimal = 0
         var firstTargetDebtID: UUID?
+        /// Extra payments that actually reached a payday inside the projection
+        /// (R-20); anything missing landed after payoff or the horizon.
+        var placedExtraPaymentIDs: Set<UUID> = []
     }
 
     // MARK: - Projection core
@@ -229,6 +331,74 @@ enum AvalanchePlanEngine {
     private static func estimatedCardMinimum(postInterestBalance: Decimal, days: Int) -> Decimal {
         let scaledFloor = minimumFloorPer14Days * Decimal(days) / Decimal(14)
         return max(scaledFloor, postInterestBalance * minimumRate)
+    }
+
+    /// Truncates a non-negative amount to whole cents.
+    ///
+    /// Cash the plan *holds back* must never exceed the cash that was actually
+    /// there, or the emitted row would owe a fraction of a cent it does not
+    /// have and the R-16 identities would miss. Rounding up is safe for money
+    /// being spent and unsafe for money being retained, so retention truncates.
+    private static func flooredToCents(_ value: Decimal) -> Decimal {
+        var input = value
+        var result = Decimal()
+        NSDecimalRound(&result, &input, 2, .down)
+        return result
+    }
+
+    // MARK: - Extra-payment scheduling (R-20)
+
+    /// One modeled extra payment arriving on a specific payday.
+    private struct InjectedExtraPayment {
+        let paymentID: UUID
+        let amount: Decimal
+        let targetDebtID: UUID?
+    }
+
+    /// Maps each extra payment's occurrences onto the payday that receives
+    /// them, using the same "first payday on or after the date" rule the
+    /// engine already applies to windfalls. Occurrences that fall past the
+    /// projection window are dropped and reported by the caller.
+    private static func injectionSchedule(
+        _ extras: [ExtraPaymentInput],
+        paydays: [Date],
+        startIndex: Int,
+        lastIndex: Int
+    ) -> [Int: [InjectedExtraPayment]] {
+        guard !extras.isEmpty, startIndex <= lastIndex, lastIndex < paydays.count else { return [:] }
+        var schedule: [Int: [InjectedExtraPayment]] = [:]
+        let windowEnd = DateMath.addingDays(1, to: paydays[lastIndex])
+
+        for extra in extras where extra.amount > 0 {
+            let occurrences: [Date]
+            switch extra.kind {
+            case .oneTime:
+                occurrences = [extra.effectiveDate]
+            case .recurringPerPaycheck:
+                occurrences = paydays[startIndex...lastIndex].filter { $0 >= extra.effectiveDate }
+            case .recurringMonthly:
+                let day = DateMath.calendar.component(.day, from: extra.effectiveDate)
+                occurrences = PayScheduleGenerator.dueDates(
+                    day: day, from: extra.effectiveDate, to: windowEnd)
+            }
+            for occurrence in occurrences {
+                // Money dated before the first projected payday is already in
+                // hand and is allocated on that payday.
+                guard let index = (startIndex...lastIndex).first(where: { paydays[$0] >= occurrence })
+                    ?? (occurrence <= paydays[startIndex] ? startIndex : nil) else { continue }
+                schedule[index, default: []].append(InjectedExtraPayment(
+                    paymentID: extra.id,
+                    amount: extra.amount,
+                    targetDebtID: extra.targetDebtID
+                ))
+            }
+        }
+        // Stable per-payday order: identifier, so a caller's collection order
+        // can never leak into the emitted plan.
+        for index in schedule.keys {
+            schedule[index]?.sort { $0.paymentID.uuidString < $1.paymentID.uuidString }
+        }
+        return schedule
     }
 
     // swiftlint:disable:next function_body_length cyclomatic_complexity
@@ -361,6 +531,17 @@ enum AvalanchePlanEngine {
             cutoff.map { windfall.date > $0 } ?? true
         }
 
+        // R-20: extra payments are placed onto paydays up front so the loop
+        // stays a single pass and the schedule is independent of how far the
+        // projection actually runs.
+        let lastProjectedIndex = min(startIndex + horizonCap, allPaydays.count - 1) - 1
+        let injections = injectionSchedule(
+            input.extraPayments, paydays: allPaydays,
+            startIndex: startIndex, lastIndex: lastProjectedIndex
+        )
+        let scenarioRetentionTarget = input.scenario?.retainedPerPaycheck ?? 0
+        let scenarioExtraCeiling = input.scenario?.resolvedExtraPaymentCeiling
+
         var checkIndex = startIndex
         while checkIndex < min(startIndex + horizonCap, allPaydays.count - 1) {
             guard outcome.debts.contains(where: { $0.isActive }) else { break }
@@ -393,11 +574,25 @@ enum AvalanchePlanEngine {
 
             // 2. Income, windfalls, allowance, floor top-up, obligations.
             let income = incomeAmount(on: payday, amounts: input.income.amounts)
-            var windfall = Decimal.zero
+            var userWindfall = Decimal.zero
             while let first = pendingWindfalls.first, first.date <= payday {
-                windfall += first.amount
+                userWindfall += first.amount
                 pendingWindfalls.removeFirst()
             }
+            // R-20: a modeled extra payment is money arriving in the single
+            // spending pool on this payday. Routing it through the deposit —
+            // rather than bolting it onto the debt budget — is what keeps
+            // `income + windfall == keep + transfer` true (R-16 identity 1).
+            var extraPaymentInflow = Decimal.zero
+            var directedByDebtID: [UUID: Decimal] = [:]
+            for injection in injections[checkIndex] ?? [] {
+                extraPaymentInflow += injection.amount
+                if let target = injection.targetDebtID {
+                    directedByDebtID[target, default: 0] += injection.amount
+                }
+                outcome.placedExtraPaymentIDs.insert(injection.paymentID)
+            }
+            let windfall = userWindfall + extraPaymentInflow
             var allowance = input.spending.allowancePerPaycheck
             let floorTopUp = max(input.spending.protectedFloor - spendingCeiling, 0)
             let obligationReserves = input.obligations.map { obligation in
@@ -495,24 +690,75 @@ enum AvalanchePlanEngine {
                 }
             }
 
+            // 4b. Scenario cash retention (R-17): planned savings and the More
+            //     Cushion reserve are funded from the surplus that remains
+            //     after minimums, never from a shortfall — a savings target
+            //     must not manufacture a gap. Truncated to whole cents so the
+            //     retained amount can never exceed the cash that was there.
+            var scenarioRetained = Decimal.zero
+            if shortfall == nil && scenarioRetentionTarget > 0 {
+                scenarioRetained = flooredToCents(min(scenarioRetentionTarget, max(available - required, 0)))
+            }
+
             // 5. Extra principal to the highest effective-APR eligible debt,
             //    rolling within the same paycheck on payoff (R-05/R-07/R-08).
-            var extraExact = shortfall == nil ? max(available - required, 0) : 0
+            var extraExact = shortfall == nil ? max(available - required - scenarioRetained, 0) : 0
             if !extraEnabled { extraExact = 0 }
+            // More Cushion's ceiling caps extra principal per paycheck; money
+            // held back becomes retained cash, never unassigned (R-17).
+            var ceilingHeldBack = Decimal.zero
+            if let ceiling = scenarioExtraCeiling, extraExact > ceiling {
+                ceilingHeldBack = flooredToCents(extraExact - ceiling)
+                extraExact -= ceilingHeldBack
+                scenarioRetained += ceilingHeldBack
+                warn(.extraPaymentCeilingHeldBackCash,
+                     "Your extra-payment cap keeps money in checking that would otherwise go to debt, so payoff takes longer.")
+            }
             var extraByIndex: [Int: Decimal] = [:]
             var targetDebtID: UUID?
+            /// The debt the avalanche step chose, distinct from a debt the
+            /// user named for an extra payment.
+            var avalancheTargetID: UUID?
             var rolloverNames: [String] = []
+            var directedPlacements: [(debtID: UUID, name: String, amount: Decimal)] = []
+            var directedIndices: Set<Int> = []
             if extraExact > 0 {
+                var remaining = extraExact
+                // 5a. R-20: money the user aimed at a named debt goes there
+                //     first, still subject to R-07 eligibility. Whatever that
+                //     debt cannot absorb falls through to the avalanche order
+                //     below rather than sitting idle.
+                for debtID in directedByDebtID.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
+                    guard remaining > 0 else { break }
+                    guard let index = outcome.debts.firstIndex(where: { $0.input.id == debtID }),
+                          outcome.debts[index].isActive,
+                          outcome.debts[index].extraEligible else { continue }
+                    let requested = min(directedByDebtID[debtID] ?? 0, remaining)
+                    let attack = min(requested, outcome.debts[index].balance)
+                    guard attack > 0 else { continue }
+                    outcome.debts[index].balance -= attack
+                    remaining -= attack
+                    extraByIndex[index, default: 0] += attack
+                    directedIndices.insert(index)
+                    directedPlacements.append((debtID, outcome.debts[index].input.name, attack))
+                    if targetDebtID == nil { targetDebtID = outcome.debts[index].input.id }
+                    if outcome.debts[index].balance.rounded2 <= 0,
+                       outcome.debts[index].payoffDate == nil,
+                       !outcome.debts[index].startedPaid {
+                        outcome.debts[index].payoffDate = payday
+                    }
+                }
+                // 5b. Everything else avalanches.
                 let eligible = prioritySorted(
                     outcome.debts.indices.filter { outcome.debts[$0].isActive && outcome.debts[$0].extraEligible },
                     debts: outcome.debts, on: payday
                 )
-                var remaining = extraExact
                 for index in eligible {
                     guard remaining > 0 else { break }
                     guard outcome.debts[index].isActive else { continue }
-                    if targetDebtID == nil {
-                        targetDebtID = outcome.debts[index].input.id
+                    if avalancheTargetID == nil {
+                        avalancheTargetID = outcome.debts[index].input.id
+                        if targetDebtID == nil { targetDebtID = outcome.debts[index].input.id }
                     } else {
                         rolloverNames.append(outcome.debts[index].input.name)
                     }
@@ -533,6 +779,35 @@ enum AvalanchePlanEngine {
                 }
             }
             if outcome.firstTargetDebtID == nil { outcome.firstTargetDebtID = targetDebtID }
+            // A named target that cannot take extra principal is a warning, not
+            // a silent redirect (R-21).
+            for debtID in directedByDebtID.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
+                guard let index = outcome.debts.firstIndex(where: { $0.input.id == debtID }) else { continue }
+                let debt = outcome.debts[index]
+                switch debt.input.prepayment {
+                case .ineligible:
+                    warn(.extraPaymentTargetIneligible,
+                         "\(debt.input.name) does not accept extra principal; the extra payment goes to the highest-APR debt that does.",
+                         debtID: debtID)
+                case .unknown:
+                    warn(.extraPaymentTargetUnknownBehavior,
+                         "Confirm whether \(debt.input.name) allows extra principal without penalty. Until then the extra payment goes to the highest-APR debt that does.",
+                         debtID: debtID)
+                case .eligible:
+                    // "Partially placed" means the debt took less than was
+                    // aimed at it — usually because its balance ran out, or
+                    // because the paycheck could not fund the whole amount.
+                    let requested = directedByDebtID[debtID] ?? 0
+                    let placed = directedPlacements
+                        .filter { $0.debtID == debtID }
+                        .reduce(Decimal.zero) { $0 + $1.amount }
+                    if placed.rounded2 < requested.rounded2 {
+                        warn(.extraPaymentPartiallyPlaced,
+                             "\(debt.input.name) could not take the whole extra payment; the remainder went to the next debt in the payoff order.",
+                             debtID: debtID)
+                    }
+                }
+            }
 
             // 6. Emission with cascading penny allocation so the row
             //    reconciles exactly:
@@ -540,7 +815,11 @@ enum AvalanchePlanEngine {
             //    debtBudget == minimumsTotal + extraTotal + unassignedCash.
             let allowanceEmit = allowance.rounded2
             let floorTopUpEmit = fundedFloorTopUp.rounded2
-            let keepEmit = allowanceEmit + floorTopUpEmit
+            // Retained scenario cash stays in spending, exactly like the floor
+            // top-up: identity 1 is untouched and the debt budget shrinks by
+            // precisely the retained amount.
+            let scenarioRetainedEmit = scenarioRetained
+            let keepEmit = allowanceEmit + floorTopUpEmit + scenarioRetainedEmit
             let transferEmit = income + windfall - keepEmit
             let debtBudgetEmit = max(transferEmit - obligationTotal, 0)
             let minimumsTotalEmit = minimumsExact.rounded2
@@ -598,12 +877,14 @@ enum AvalanchePlanEngine {
                 let isLast = offset == extraOrder.count - 1
                 let rounded = isLast ? extraRemainder : min((extraByIndex[index] ?? 0).rounded2, extraRemainder)
                 extraRemainder -= rounded
-                var reasons: [ReasonCode] = [.avalancheHighestEffectiveAPR]
+                var reasons: [ReasonCode] = directedIndices.contains(index)
+                    ? [.extraPaymentDirectedTarget] : [.avalancheHighestEffectiveAPR]
                 if debt.input.id != targetDebtID { reasons.append(.rolloverAfterPayoff) }
                 if let promo = debt.input.promo {
                     reasons.append(payday < promo.expirationDate ? .promoRateActive : .promoRateExpired)
                 }
-                if windfall > 0 { reasons.append(.windfallApplied) }
+                if userWindfall > 0 { reasons.append(.windfallApplied) }
+                if extraPaymentInflow > 0 { reasons.append(.extraPaymentApplied) }
                 if let position = payments.firstIndex(where: { $0.debtID == debt.input.id }) {
                     payments[position].extra += rounded
                     payments[position].reasons.append(contentsOf: reasons)
@@ -641,10 +922,22 @@ enum AvalanchePlanEngine {
             if minimumsTotalEmit > 0 {
                 movements.append("Pay \(MoneyFormat.string(minimumsTotalEmit)) in minimums across \(minimumPlans.count) debt\(minimumPlans.count == 1 ? "" : "s").")
             }
-            if let targetDebtID,
-               let target = outcome.debts.first(where: { $0.input.id == targetDebtID }) {
+            if extraPaymentInflow > 0 {
+                movements.append("Includes the \(MoneyFormat.string(extraPaymentInflow)) extra payment planned for this date.")
+            }
+            for placement in directedPlacements {
+                movements.append("Apply \(MoneyFormat.string(placement.amount)) to \(placement.name), the debt you chose.")
+            }
+            if let avalancheTargetID,
+               let target = outcome.debts.first(where: { $0.input.id == avalancheTargetID }) {
                 let apr = target.input.effectiveAPR(on: payday) * 100
-                movements.append("Send \(MoneyFormat.string(extraTotalEmit)) extra to \(target.input.name) — highest effective APR (\(apr.rounded2)%).")
+                let avalancheExtra = directedPlacements.reduce(extraTotalEmit) { $0 - $1.amount.rounded2 }
+                movements.append("Send \(MoneyFormat.string(avalancheExtra)) extra to \(target.input.name) — highest effective APR (\(apr.rounded2)%).")
+            }
+            if scenarioRetainedEmit > 0 {
+                let ceilingNote = ceilingHeldBack > 0
+                    ? " (\(MoneyFormat.string(ceilingHeldBack)) of it held back by your extra-payment ceiling)" : ""
+                movements.append("Keep \(MoneyFormat.string(scenarioRetainedEmit)) as planned savings and cushion\(ceilingNote).")
             }
             for name in rolloverNames {
                 movements.append("Freed-up payment capacity rolled to \(name) in the same paycheck.")
@@ -660,8 +953,10 @@ enum AvalanchePlanEngine {
                 accrualDays: accrualDays,
                 income: income,
                 windfall: windfall,
+                extraPaymentInflow: extraPaymentInflow,
                 allowanceReserved: allowanceEmit,
                 floorTopUp: floorTopUpEmit,
+                scenarioCashRetained: scenarioRetainedEmit,
                 keepInSpending: keepEmit,
                 transferToReserves: transferEmit,
                 obligationReserves: obligationReserves,
@@ -736,6 +1031,13 @@ enum AvalanchePlanEngine {
                  "The debts are not paid off within \(horizonCap) paychecks as configured.")
         }
 
+        // R-20: an extra payment dated after the last projected payday never
+        // reaches a debt. Say so rather than quietly discarding it.
+        if input.extraPayments.contains(where: { $0.amount > 0 && !outcome.placedExtraPaymentIDs.contains($0.id) }) {
+            warn(.extraPaymentAfterPayoff,
+                 "At least one extra payment is dated after the debts are projected to be paid off, so it changes nothing in this estimate.")
+        }
+
         // Obligation due-date calendar events across the plan span.
         if let firstPaycheck = outcome.paychecks.first, let lastPaycheck = outcome.paychecks.last {
             let end = DateMath.addingDays(1, to: lastPaycheck.date)
@@ -807,6 +1109,69 @@ enum AvalanchePlanEngine {
         return (comparison, notes)
     }
 
+    // MARK: - Calc-v3 assumptions (R-18…R-21)
+
+    /// Names every modeling choice the scenario and extra-payment rules add, so
+    /// the card can show them rather than implying certainty.
+    ///
+    /// `savedCadence` is the cadence *before* normalization folded the override
+    /// in — by the time `input` reaches here the two already agree, so the
+    /// rebase can only be detected against the original.
+    private static func scenarioAssumptions(
+        for input: PlanningInput,
+        savedCadence: PlanningPayCadence
+    ) -> [PlanningNote] {
+        var notes: [PlanningNote] = []
+
+        if let override = input.scenario?.incomeOverride {
+            notes.append(PlanningNote(
+                code: .incomeOverrideApplied,
+                message: "This estimate uses the take-home you entered from \(DateMath.mediumString(override.effectiveDate)) onward. Your saved income is unchanged."
+            ))
+            if override.cadence != savedCadence {
+                notes.append(PlanningNote(
+                    code: .incomeOverrideRebasesTimeline,
+                    message: "Changing pay frequency restarts the payday timeline on \(DateMath.mediumString(override.effectiveDate)); paydays before that date are not part of this estimate."
+                ))
+            }
+        }
+        if let scenario = input.scenario, scenario.retainedPerPaycheck > 0 {
+            notes.append(PlanningNote(
+                code: .scenarioCashRetainedPerPaycheck,
+                message: "\(MoneyFormat.string(scenario.retainedPerPaycheck)) per paycheck is kept as savings and cushion before any extra principal."
+            ))
+        }
+        guard input.extraPayments.contains(where: { $0.amount > 0 }) else { return notes }
+
+        notes.append(PlanningNote(
+            code: .extraPaymentsAreNewMoney,
+            message: "Extra payments are modeled as money arriving on their date and flowing through the normal payday order."
+        ))
+        // R-21: never imply a lender-side principal-only designation on
+        // revolving credit, and only claim it for installment debt whose
+        // eligibility is actually known.
+        let targetedIDs = Set(input.extraPayments.compactMap(\.targetDebtID))
+        let touchesRevolving = input.debts.contains {
+            $0.debtType == .creditCard && $0.balance.rounded2 > 0
+                && (targetedIDs.isEmpty || targetedIDs.contains($0.id))
+        }
+        if touchesRevolving {
+            notes.append(PlanningNote(
+                code: .revolvingNoPrincipalOnly,
+                message: "On a credit card, an extra payment reduces the balance after interest and posted charges. Card issuers have no principal-only instruction to give."
+            ))
+        }
+        for debt in input.debts where targetedIDs.contains(debt.id)
+            && debt.debtType != .creditCard && debt.prepayment == .eligible {
+            notes.append(PlanningNote(
+                code: .installmentPrincipalOnlyEligible,
+                message: "\(debt.name) is marked as accepting extra principal without penalty; apply the extra as a principal-only payment if your lender offers it.",
+                debtID: debt.id
+            ))
+        }
+        return notes
+    }
+
     // MARK: - Result assembly
 
     private static func assemble(
@@ -814,7 +1179,8 @@ enum AvalanchePlanEngine {
         input: PlanningInput,
         outcome: Outcome,
         comparison: (comparison: MinimumOnlyComparison?, notes: [PlanningNote]),
-        actuals: ActualState? = nil
+        actuals: ActualState? = nil,
+        savedCadence: PlanningPayCadence
     ) -> PlanningResult {
         // Payoff order: projected payoff sequence; unfinished debts follow in
         // priority order at plan start.
@@ -904,6 +1270,7 @@ enum AvalanchePlanEngine {
                 message: "Utilization is informational; it never changes how payments are allocated."
             ))
         }
+        assumptions.append(contentsOf: scenarioAssumptions(for: input, savedCadence: savedCadence))
 
         var recommendationReasons: [ReasonCode] = [.avalancheHighestEffectiveAPR]
         var explanations = [
@@ -927,7 +1294,9 @@ enum AvalanchePlanEngine {
         }
 
         return PlanningResult(
-            calculationVersion: .v2Avalanche,
+            // Calc v3 is stamped only when the caller asked for it. A v1 input
+            // must never reach this allocator, so it is never stamped here.
+            calculationVersion: input.calculationVersion == .v3Scenario ? .v3Scenario : .v2Avalanche,
             kind: kind,
             generatedAsOf: actuals.map { DateMath.startOfDay($0.asOf) } ?? input.asOf,
             totalStartingPrincipal: input.debts.reduce(Decimal.zero) { $0 + $1.balance }.rounded2,
