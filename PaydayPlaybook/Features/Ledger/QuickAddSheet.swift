@@ -69,6 +69,7 @@ struct AddPaymentView: View {
     @State private var effectiveDate = Date()
     @State private var note = ""
     @State private var errorMessage: String?
+    @State private var showExtraPayment = false
 
     var body: some View {
         Form {
@@ -98,8 +99,26 @@ struct AddPaymentView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("payment.save")
+
+                // V3-04: the second contracted entry point. Offered beside
+                // recording a payment, not in place of it — it answers "what
+                // would this do?" without recording anything.
+                Button {
+                    showExtraPayment = true
+                } label: {
+                    Label("What if I pay extra?", systemImage: "arrow.up.forward.circle")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("payment.whatIfExtra")
+                .accessibilityHint("Shows what an extra payment would do. Nothing is recorded.")
             }
             .listRowBackground(Color.clear)
+        }
+        .sheet(isPresented: $showExtraPayment) {
+            ExtraPaymentSheet(
+                initialDebtID: debts.first(where: { $0.planID == selectedPlanID })?.id
+            )
         }
         .navigationTitle("Card payment")
         .onAppear {
