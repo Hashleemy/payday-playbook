@@ -514,8 +514,13 @@ On `feature/v0.3-accounts-setup`:
 - `10bea22` — consolidated Bills & Debts setup page (V3-08)
 - `f6c62c4` — payoff scenario and extra-payment surfaces
   (V3-04/V3-05/V3-06/V3-15)
-- (+ one follow-up commit adding this report and the UI-suite result, as Agents
-  1 and 3 did with their hashes.)
+- `c2dda92` — UI coverage for all three surfaces, the archive-sheet
+  consolidation the suite exposed, and this report
+- (+ one follow-up commit recording these hashes, as Agents 1 and 3 did.)
+
+**Validation at `c2dda92`:** unit suite **422/422 green**; UI suite **32/32
+green**, run alone on a dedicated simulator; Debug build succeeds. Derived data
+was kept outside `~/Documents` throughout.
 
 The branch is **local only** — no v0.3 branch has been pushed to `origin` by any
 agent, and this one follows that convention rather than publishing itself.
