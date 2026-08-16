@@ -54,7 +54,10 @@ Integration commits between and after the merges:
 | `8c87c90` | One `ScenarioKind` vocabulary and one scenario-definitions mapping (§5.2) |
 | `bf4b784` | Calc 3 stamped on new plans without stranding v0.2.0 plans (§4) |
 | `9615c35` | Three cross-feature gaps closed, one superseded screen retired (§5.4–5.6) |
-| *(final)* | Version bump to 0.3.0/build 4, changelog, `TESTING.md`, this report |
+| `a402413` | Version bump to 0.3.0 / build 4, changelog, `TESTING.md`, `README.md`, versioning amendment, this report |
+
+**Integrated release head: `a402413`** (plus one follow-up commit recording this hash and
+the device-rehearsal ordering in §8, as Agents 1, 3, 4 and 6 each did).
 
 ### 2.1 Conflicts
 
@@ -375,9 +378,16 @@ across every branch and both tags plus a coordinated force-push, which invalidat
 open branch — so the sequencing Agent 2 recommends is right: finish this release, then
 decide history separately.
 
-Two local artifacts are worth handling regardless, neither tracked:
-`.claude/worktrees/pp-0.1.0-device` is a 0.1.0 checkout that still holds the resource on
-disk, and the stray `agent5-pre-rebase-backup` tag should be deleted.
+Two local artifacts need handling, neither tracked, and the order matters:
+
+- `.claude/worktrees/pp-0.1.0-device` is a 0.1.0 checkout that still holds the withdrawn
+  resource on disk. Agent 2 recommended deleting it. **Do not delete it yet** — device
+  checklist item 13, the upgrade rehearsal, builds 0.1.x to the phone *from this worktree*,
+  and it is the only proof outside fixtures that an existing user loses nothing. Delete it
+  once the rehearsal has passed. (Flagging the conflict because two reports otherwise give
+  opposite advice.)
+- The stray `agent5-pre-rebase-backup` tag should be deleted. It is one of the two tags
+  whose tip still carries the resource, so it is also part of the §8 decision.
 
 ---
 
