@@ -1,9 +1,9 @@
 import XCTest
 
 /// Accessibility and navigation coverage for the v0.2 dashboard, plan screen,
-/// and debt views (V2-13, V2-14, V2-18). These run against the seeded
-/// Original Plan v1 fixture, which the `--uitest-skip-onboarding` path lands
-/// schema-2-complete.
+/// and debt views (V2-13, V2-14, V2-18). These run against the invented
+/// `DebugBaselineFixture` plan, which the `--uitest-skip-onboarding` path
+/// lands schema-complete.
 final class DashboardPlanUITests: XCTestCase {
 
     override func setUpWithError() throws {
@@ -41,7 +41,7 @@ final class DashboardPlanUITests: XCTestCase {
     }
 
     private func launch(
-        today: String = "2026-08-20",
+        today: String = "2054-08-20",
         contentSize: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()

@@ -139,7 +139,7 @@ final class DebtTypeTests: XCTestCase {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
         try TestSupport.seed(context)
-        let plan = try XCTUnwrap(PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(PlanRepository.legacyBaseline(context: context))
         let itemsBefore = try TestSupport.planItems(context, plan: plan)
             .map { ($0.date, $0.plannedCardBudget, $0.plannedTargetDebtID) }
 

@@ -36,6 +36,16 @@ final class CashAccount {
     /// Set only by migration: "checking1" / "checking2". Stable key that maps
     /// legacy `MoneyAccount`/`CashAccountKind` references onto this account.
     var legacyKindRaw: String?
+    /// Cash held back from the payday budget on this account (schema 3).
+    /// Per-account, so a multi-account setup can protect a reserve balance
+    /// independently of the spending floor. Migration copies the profile's
+    /// single `protectedFloor` onto the spending-role account and leaves
+    /// every other account at zero.
+    var protectedAmount: Decimal = Decimal.zero
+    /// When `currentBalance` was last known to be true (schema 3). Nil means
+    /// never stated — the balance is an estimate carried forward, and the UI
+    /// says so rather than implying a freshness it cannot support.
+    var balanceAsOf: Date?
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
@@ -58,6 +68,8 @@ final class CashAccount {
         sortOrder: Int = 0,
         isArchived: Bool = false,
         legacyKind: CashAccountKind? = nil,
+        protectedAmount: Decimal = .zero,
+        balanceAsOf: Date? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -69,6 +81,8 @@ final class CashAccount {
         self.sortOrder = sortOrder
         self.isArchived = isArchived
         self.legacyKindRaw = legacyKind?.rawValue
+        self.protectedAmount = protectedAmount
+        self.balanceAsOf = balanceAsOf
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

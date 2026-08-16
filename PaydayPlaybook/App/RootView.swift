@@ -54,13 +54,15 @@ struct RootView: View {
     }
 
     #if DEBUG
+    /// Puts a UI test straight into the app with a plan already in place.
+    /// The plan is `DebugBaselineFixture`'s invented one — a UI test needs
+    /// *a* plan to drive, not anyone's real one.
     private func completeOnboardingForUITest() throws {
-        let summary = try PlanSeeder.seedIfNeeded(context: modelContext)
+        try DebugBaselineFixture.insertIfNeeded(context: modelContext)
         if let row = try modelContext.fetch(FetchDescriptor<AppSettings>()).first {
             row.onboardingComplete = true
             try modelContext.save()
         }
-        _ = summary
     }
     #endif
 }

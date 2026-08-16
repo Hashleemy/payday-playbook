@@ -24,16 +24,16 @@ final class PlanPresentationTests: XCTestCase {
         XCTAssertEqual(data.calculationVersion, 2)
         XCTAssertTrue(data.generatedFromProfile)
         XCTAssertEqual(data.cadenceText, PayCadence.biweekly.displayName)
-        XCTAssertEqual(data.firstPaydayText, DateMath.mediumString(TestSupport.date(2026, 8, 20)))
-        XCTAssertTrue(data.takeHomeText.contains("2,094"))
-        XCTAssertEqual(data.protectedFloor, TestSupport.money("1000.00"))
+        XCTAssertEqual(data.firstPaydayText, DateMath.mediumString(TestSupport.date(2054, 8, 20)))
+        XCTAssertTrue(data.takeHomeText.contains("2,400"))
+        XCTAssertEqual(data.protectedFloor, TestSupport.money("1500.00"))
         XCTAssertEqual(data.allowanceCap, TestSupport.money("300.00"))
 
         // Obligations show their smoothed per-paycheck reserve (R-04).
         let rent = try XCTUnwrap(data.obligationLines.first { $0.name == "Rent" })
-        XCTAssertEqual(rent.perPaycheck, TestSupport.money("335.08"))
+        XCTAssertEqual(rent.perPaycheck, TestSupport.money("323.08"))
         let transit = try XCTUnwrap(data.obligationLines.first { $0.name == "Transit pass" })
-        XCTAssertEqual(transit.perPaycheck, TestSupport.money("51.23"))
+        XCTAssertEqual(transit.perPaycheck, TestSupport.money("69.23"))
 
         // Accounts by name and role.
         XCTAssertEqual(Set(data.accountLines.map(\.name)), ["Everyday Checking", "Bills & Debt"])
@@ -70,7 +70,7 @@ final class PlanPresentationTests: XCTestCase {
 
         let card = try XCTUnwrap(data.debtRows.first { $0.planID == "A" })
         // 1049 / 2000 = 0.5245
-        XCTAssertEqual(try XCTUnwrap(card.utilization), TestSupport.money("0.5245"))
+        XCTAssertEqual(try XCTUnwrap(card.utilization), TestSupport.money("0.5500"))
 
         let cardWithoutLimit = try XCTUnwrap(data.debtRows.first { $0.planID == "B" })
         XCTAssertNil(cardWithoutLimit.utilization, "No limit entered means no utilization claimed.")
@@ -101,7 +101,7 @@ final class PlanPresentationTests: XCTestCase {
         // the comparison and the screen must say why.
         let specs: [DashboardFixtures.DebtSpec] = [
             .init(planID: "A", name: "Blue Card", type: .creditCard,
-                  balance: TestSupport.money("1049.00"), apr: TestSupport.money("0.2999"),
+                  balance: TestSupport.money("1100.00"), apr: TestSupport.money("0.2600"),
                   minimum: nil, dueDay: 12, creditLimit: TestSupport.money("2000.00"),
                   originalPrincipal: nil),
             .init(planID: "C", name: "Car Note", type: .autoLoan,
@@ -152,7 +152,7 @@ final class PlanPresentationTests: XCTestCase {
         fixture.context.insert(BalanceSnapshot(
             debtAccountID: debt.id,
             debtPlanID: debt.planID,
-            effectiveDate: TestSupport.date(2026, 8, 9),
+            effectiveDate: TestSupport.date(2054, 8, 9),
             amount: TestSupport.money("10.00"),
             sourceType: .currentOnlineBalance,
             isAuthoritative: true
@@ -175,7 +175,7 @@ final class PlanPresentationTests: XCTestCase {
         let first = try XCTUnwrap(items.first)
 
         let checkIn = PaydayCheckIn(paydayPlanItemID: first.id, status: .completed)
-        checkIn.actualIncome = TestSupport.money("2094.00")
+        checkIn.actualIncome = TestSupport.money("2400.00")
         checkIn.actualC1Kept = TestSupport.money("380.00")
         checkIn.actualC2Transfer = TestSupport.money("1714.00")
         checkIn.actualC1Balance = TestSupport.money("1280.00")
@@ -186,7 +186,7 @@ final class PlanPresentationTests: XCTestCase {
         XCTAssertEqual(data.actualRows.count, 1)
         let actual = try XCTUnwrap(data.actualRows.first)
         XCTAssertTrue(actual.isActualRecord)
-        XCTAssertEqual(actual.income, TestSupport.money("2094.00"))
+        XCTAssertEqual(actual.income, TestSupport.money("2400.00"))
         XCTAssertEqual(actual.keepInSpending, TestSupport.money("380.00"))
         XCTAssertEqual(actual.endingCash, TestSupport.money("1280.00"))
 
@@ -239,10 +239,10 @@ final class PlanPresentationTests: XCTestCase {
         // Existing history that must survive untouched.
         let first = try XCTUnwrap(try TestSupport.planItems(fixture.context, plan: originalPlan).first)
         let checkIn = PaydayCheckIn(paydayPlanItemID: first.id, status: .completed)
-        checkIn.actualIncome = TestSupport.money("2094.00")
+        checkIn.actualIncome = TestSupport.money("2400.00")
         fixture.context.insert(checkIn)
         fixture.context.insert(LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 20),
+            effectiveDate: TestSupport.date(2054, 8, 20),
             type: .cardPayment,
             amount: TestSupport.money("500.00"),
             debtAccountID: fixture.debts[0].id,
@@ -313,22 +313,33 @@ final class PlanPresentationTests: XCTestCase {
             environment: DashboardFixtures.environment()
         )
 
+        // Expectations read from the store's own rows: the property is that
+        // the presentation layer reproduces what was saved, so comparing
+        // against the saved rows tests it directly.
+        let storedItems = try PlanRepository.planItems(context: legacy.context, plan: legacy.plan)
+
         XCTAssertEqual(data.calculationVersion, 1)
         XCTAssertEqual(data.planName, PlanContract.planName)
-        XCTAssertEqual(data.baselineRows.count, PlanContract.paydayCount)
-        XCTAssertEqual(data.payoffDate, PlanContract.baselinePayoffDate)
-        XCTAssertEqual(data.totalEstimatedInterest, PlanContract.baselineModeledInterest)
+        XCTAssertEqual(data.baselineRows.count, storedItems.count)
+        XCTAssertGreaterThan(storedItems.count, 0)
+        XCTAssertEqual(data.payoffDate, legacy.plan.baselinePayoffDate)
+        XCTAssertEqual(data.totalEstimatedInterest, legacy.plan.baselineModeledInterest)
 
-        // The first and last stored paydays read exactly as seeded.
+        // The first and last stored paydays read exactly as stored.
         let first = try XCTUnwrap(data.baselineRows.first)
-        XCTAssertEqual(first.income, PlanContract.firstIncome)
-        XCTAssertEqual(first.keepInSpending, TestSupport.money("400.00"))
-        XCTAssertEqual(first.debtBudget, PlanContract.firstCheckCardBudget)
-        XCTAssertEqual(first.obligationReserveTotal, PlanContract.totalFixedReserve)
+        let storedFirst = try XCTUnwrap(storedItems.first)
+        XCTAssertEqual(first.income, storedFirst.plannedIncome)
+        XCTAssertEqual(first.keepInSpending, storedFirst.plannedC1Keep)
+        XCTAssertEqual(first.debtBudget, storedFirst.plannedCardBudget)
+        XCTAssertEqual(
+            first.obligationReserveTotal,
+            storedFirst.plannedCarReserve + storedFirst.plannedTrainReserve
+        )
         let last = try XCTUnwrap(data.baselineRows.last)
-        XCTAssertEqual(last.sequence, PlanContract.paydayCount)
+        let storedLast = try XCTUnwrap(storedItems.last)
+        XCTAssertEqual(last.sequence, storedLast.sequenceNumber)
         XCTAssertEqual(last.debtAfter, .zero)
-        XCTAssertEqual(last.endingCash, PlanContract.baselineNoSpendCeiling)
+        XCTAssertEqual(last.endingCash, storedLast.plannedC1NoSpendCeiling)
 
         // No calc-v2-only claims are made about a calc-v1 plan.
         XCTAssertNil(data.interestSaved)

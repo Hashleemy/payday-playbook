@@ -85,7 +85,7 @@ enum InsightsBuilder {
     static func build(context: ModelContext, environment: AppEnvironment) -> [InsightCardData] {
         var cards: [InsightCardData] = []
         let plans = (try? context.fetch(FetchDescriptor<PlanVersion>())) ?? []
-        let baseline = (try? PlanSeeder.existingBaseline(context: context)) ?? nil
+        let baseline = (try? PlanRepository.legacyBaseline(context: context)) ?? nil
         guard let plan = plans.first(where: \.isActive) ?? baseline else { return cards }
 
         let balanceService = environment.balanceService(context: context)

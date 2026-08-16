@@ -12,43 +12,47 @@ enum PlanningFixtures {
     }
 
     static let carObligationID = UUID(uuidString: "00000000-0000-0000-0001-000000000001")!
-    static let trainObligationID = UUID(uuidString: "00000000-0000-0000-0001-000000000002")!
+    static let transitObligationID = UUID(uuidString: "00000000-0000-0000-0001-000000000002")!
 
-    /// Lem-equivalent onboarding inputs: the calc-v2 engine must reproduce
-    /// the documented Original Plan v1 baseline from these raw values.
-    /// The $100 first-check buffer is not an input — it falls out of the
-    /// floor top-up ($900 starting balance → $1,000 protected floor).
-    static func lemInput() -> PlanningInput {
+    /// Onboarding inputs equivalent to `DebugBaselineFixture`, so a calc-v2
+    /// plan generated from them is directly comparable to the calc-v1
+    /// projection of the same numbers.
+    ///
+    /// These values are invented. The suite previously used one real person's
+    /// finances here, which meant a parity test could not be read or changed
+    /// without handling their actual balances; the parity property being
+    /// checked never depended on whose numbers they were.
+    static func baselineInput() -> PlanningInput {
         let seeds: [(String, String, String, Int)] = [
-            ("B", "1049.00", "0.2999", 1),
-            ("D", "4987.00", "0.2899", 2),
-            ("A", "3787.65", "0.2724", 3),
-            ("F", "3495.00", "0.2649", 4),
-            ("C", "11650.40", "0.2449", 5),
-            ("E", "4712.56", "0.2199", 6)
+            ("A", "5700.00", "0.2600", 1),
+            ("B", "5850.00", "0.2300", 2),
+            ("C", "6500.00", "0.2000", 3),
+            ("D", "5700.00", "0.1700", 4),
+            ("E", "6150.00", "0.1400", 5),
+            ("F", "6500.00", "0.1100", 6)
         ]
         return PlanningInput(
-            asOf: TestSupport.date(2026, 8, 9),
+            asOf: TestSupport.date(2054, 8, 10),
             income: IncomeInput(
                 cadence: .biweekly,
-                firstPayday: TestSupport.date(2026, 8, 20),
+                firstPayday: TestSupport.date(2054, 8, 20),
                 amounts: [
-                    PlanningIncomeChange(effectiveDate: TestSupport.date(2026, 8, 20),
-                                 amount: TestSupport.money("2094.00")),
-                    PlanningIncomeChange(effectiveDate: TestSupport.date(2026, 12, 10),
-                                 amount: TestSupport.money("2190.00"))
+                    PlanningIncomeChange(effectiveDate: TestSupport.date(2054, 8, 20),
+                                 amount: TestSupport.money("2400.00")),
+                    PlanningIncomeChange(effectiveDate: TestSupport.date(2054, 12, 10),
+                                 amount: TestSupport.money("2500.00"))
                 ]
             ),
             spending: SpendingInput(
-                startingBalance: TestSupport.money("900.00"),
-                protectedFloor: TestSupport.money("1000.00"),
+                startingBalance: TestSupport.money("1500.00"),
+                protectedFloor: TestSupport.money("1500.00"),
                 allowancePerPaycheck: TestSupport.money("300.00")
             ),
             obligations: [
                 ObligationInput(id: carObligationID, name: "Car",
-                                amount: TestSupport.money("726.00"), cadence: .monthly, dueDay: nil),
-                ObligationInput(id: trainObligationID, name: "Train pass",
-                                amount: TestSupport.money("111.00"), cadence: .monthly, dueDay: nil)
+                                amount: TestSupport.money("700.00"), cadence: .monthly, dueDay: nil),
+                ObligationInput(id: transitObligationID, name: "Transit pass",
+                                amount: TestSupport.money("150.00"), cadence: .monthly, dueDay: nil)
             ],
             debts: seeds.map { letter, balance, apr, order in
                 DebtInput(
@@ -68,6 +72,30 @@ enum PlanningFixtures {
         )
     }
 
+    /// The calc-v1 projection of the same invented inputs, for parity checks.
+    static func baselineLegacyProjection() -> DebtCalculationEngine.ProjectionResult {
+        let input = baselineInput()
+        let reserves = DebugBaselineFixture.carReservePerCheck
+            + DebugBaselineFixture.transitReservePerCheck
+        let dates = (0..<40).map {
+            DateMath.addingDays(PlanContract.payFrequencyDays * $0, to: DebugBaselineFixture.firstPayday)
+        }
+        let paydays = dates.enumerated().map { offset, date -> DebtCalculationEngine.EnginePayday in
+            let sequence = offset + 1
+            let income = sequence >= DebugBaselineFixture.raiseAtSequence
+                ? DebugBaselineFixture.raisedIncome
+                : DebugBaselineFixture.firstIncome
+            let budget = (income - DebugBaselineFixture.allowancePerCheck - reserves).rounded2
+            return DebtCalculationEngine.EnginePayday(
+                sequence: sequence, date: date, cardBudget: budget
+            )
+        }
+        let debts = input.debts.map {
+            DebtCalculationEngine.EngineDebt(planID: $0.name, apr: $0.apr, balance: $0.balance)
+        }
+        return DebtCalculationEngine.project(debts: debts, paydays: paydays)
+    }
+
     /// A small generic input for behavior tests: biweekly $2,000 take-home,
     /// $500 floor already met, $200 allowance, no obligations by default.
     static func simpleInput(
@@ -79,10 +107,10 @@ enum PlanningFixtures {
         obligations: [ObligationInput] = [],
         windfalls: [Windfall] = [],
         cadence: PlanningPayCadence = .biweekly,
-        firstPayday: Date = TestSupport.date(2026, 8, 20)
+        firstPayday: Date = TestSupport.date(2054, 8, 20)
     ) -> PlanningInput {
         PlanningInput(
-            asOf: TestSupport.date(2026, 8, 9),
+            asOf: TestSupport.date(2054, 8, 9),
             income: IncomeInput(
                 cadence: cadence,
                 firstPayday: firstPayday,

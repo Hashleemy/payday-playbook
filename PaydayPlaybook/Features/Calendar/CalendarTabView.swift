@@ -500,9 +500,14 @@ struct CalendarTabView: View {
         reload()
     }
 
+    /// Jumps to the projected debt-free date, preferring the live forecast and
+    /// falling back to the store's own baseline. If neither exists there is
+    /// nowhere meaningful to jump to, so the view stays where it is rather
+    /// than navigating to a date belonging to some other plan.
     private func jumpToDebtFree() {
         let forecast = try? appEnvironment.reforecastService(context: modelContext).latestForecast()
-        let target = forecast?.projectedPayoffDate ?? PlanContract.baselinePayoffDate
+        let baseline = (try? PlanRepository.currentPlan(context: modelContext))??.baselinePayoffDate
+        guard let target = forecast?.projectedPayoffDate ?? baseline else { return }
         jump(to: target)
     }
 

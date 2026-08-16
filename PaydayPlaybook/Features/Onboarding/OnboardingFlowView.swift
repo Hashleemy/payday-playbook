@@ -56,10 +56,7 @@ struct OnboardingFlowView: View {
     private var stepContent: some View {
         switch step {
         case .none, .welcome:
-            WelcomeStepView(
-                onContinue: { advance(from: .welcome) },
-                onLoadTemplate: loadTemplate
-            )
+            WelcomeStepView(onContinue: { advance(from: .welcome) })
         case .goals:
             GoalStepView(
                 onContinue: { advance(from: .goals) },
@@ -95,6 +92,15 @@ struct OnboardingFlowView: View {
                 onBack: { step = .notifications },
                 onFinish: finish
             )
+        case .billsAndDebts:
+            // Declared in the schema but not yet in `OnboardingStep.flowOrder`,
+            // so nothing can route here until the combined step is built
+            // (V3-01, onboarding owner). Falling back to the existing debts
+            // step keeps the flow traversable if it ever is reached.
+            DebtsStepView(
+                onContinue: { advance(from: .debts) },
+                onBack: { step = .accounts }
+            )
         }
     }
 
@@ -128,46 +134,6 @@ struct OnboardingFlowView: View {
             stepError = error.localizedDescription
         }
         step = completed.next
-    }
-
-    // MARK: - Template path (§4.1 secondary action)
-
-    private func loadTemplate() {
-        do {
-            try PlanSeeder.seedIfNeeded(context: modelContext)
-            let service = OnboardingProgressService(
-                context: modelContext, dateProvider: appEnvironment.dateProvider
-            )
-            try service.markStepCompleted(.review)
-            try completeWithoutGenerating()
-        } catch {
-            stepError = error.localizedDescription
-        }
-    }
-
-    /// Marks setup finished for the template path, where `PlanSeeder` has
-    /// already written the plan graph.
-    private func completeWithoutGenerating() throws {
-        let settings = try modelContext.fetch(FetchDescriptor<AppSettings>()).first
-            ?? {
-                let fresh = AppSettings(
-                    seedSchemaVersion: PlanContract.currentSchemaVersion,
-                    createdAt: appEnvironment.dateProvider.now
-                )
-                modelContext.insert(fresh)
-                return fresh
-            }()
-        settings.onboardingComplete = true
-
-        let progress = try OnboardingProgressService(
-            context: modelContext, dateProvider: appEnvironment.dateProvider
-        ).progress()
-        if progress.completedAt == nil {
-            progress.lastCompletedStep = .finished
-            progress.completedAt = appEnvironment.dateProvider.now
-        }
-        try modelContext.save()
-        scheduleReminders()
     }
 
     // MARK: - Finish
@@ -323,6 +289,7 @@ extension OnboardingStep {
         case .obligations: return "Essential bills"
         case .notifications: return "Dates & reminders"
         case .review, .finished: return "Review"
+        case .billsAndDebts: return "Bills & debts"
         }
     }
 }

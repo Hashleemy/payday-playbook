@@ -12,7 +12,7 @@ final class ExportServiceTests: XCTestCase {
         let debts = try context.fetch(FetchDescriptor<DebtAccount>())
         let cardB = try XCTUnwrap(debts.first { $0.planID == "B" })
         context.insert(LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 20),
+            effectiveDate: TestSupport.date(2054, 8, 20),
             type: .cardPayment,
             amount: TestSupport.money("1061.07"),
             sourceAccount: .checking2,
@@ -24,7 +24,7 @@ final class ExportServiceTests: XCTestCase {
         context.insert(BalanceSnapshot(
             debtAccountID: cardB.id,
             debtPlanID: "B",
-            effectiveDate: TestSupport.date(2026, 8, 20),
+            effectiveDate: TestSupport.date(2054, 8, 20),
             amount: .zero,
             sourceType: .currentOnlineBalance
         ))
@@ -52,12 +52,12 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<PlannedCardBalance>()), 23 * 6)
         XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<LedgerEntry>()), 1)
         XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<BalanceSnapshot>()), 1)
-        XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<Milestone>()), 12)
+        XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<Milestone>()), 14)
 
         // Decimals survive the round trip exactly.
         let plan = try XCTUnwrap(fresh.fetch(FetchDescriptor<PlanVersion>()).first)
-        XCTAssertEqual(plan.baselineModeledInterest, TestSupport.money("3461.16"))
-        XCTAssertEqual(plan.carReservePerCheck, TestSupport.money("335.08"))
+        XCTAssertEqual(plan.baselineModeledInterest, TestSupport.money("2617.18"))
+        XCTAssertEqual(plan.carReservePerCheck, TestSupport.money("323.08"))
         let entry = try XCTUnwrap(fresh.fetch(FetchDescriptor<LedgerEntry>()).first)
         XCTAssertEqual(entry.amount, TestSupport.money("1061.07"))
         XCTAssertEqual(entry.type, .cardPayment)
@@ -65,7 +65,7 @@ final class ExportServiceTests: XCTestCase {
         let debts = try fresh.fetch(FetchDescriptor<DebtAccount>())
         XCTAssertEqual(
             debts.reduce(Decimal.zero) { $0 + $1.startingBalance },
-            TestSupport.money("29681.61")
+            TestSupport.money("36400.00")
         )
     }
 
@@ -90,7 +90,7 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertEqual(lines.first, "date,type,amount,source,destination,card,note,isCorrection,auditNote")
         XCTAssertEqual(lines.count, 2)
         let row = lines[1]
-        XCTAssertTrue(row.contains("2026-08-20"))
+        XCTAssertTrue(row.contains("2054-08-20"))
         XCTAssertTrue(row.contains("cardPayment"))
         XCTAssertTrue(row.contains("1061.07"))
         // Comma- and quote-bearing notes are escaped per RFC 4180.
@@ -106,7 +106,7 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertTrue(try ExportService.checkInsCSV(context: context)
             .hasPrefix("payday,date,status,actualIncome,outsideFunds,c1Kept,c1Balance,allowanceSpent,c2Transfer,carReserve,trainReserve,unallocated,completedAt,exception"))
         let debtsCSV = try ExportService.debtsCSV(context: context)
-        XCTAssertTrue(debtsCSV.contains("B,Card B,1049.00,0.2999"))
+        XCTAssertTrue(debtsCSV.contains("B,Card B,5850.00,0.23"))
     }
 
     func testDeleteAllClearsEveryModel() throws {

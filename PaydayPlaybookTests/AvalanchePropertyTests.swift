@@ -75,14 +75,14 @@ final class AvalanchePropertyTests: XCTestCase {
             ))
         }
         return PlanningInput(
-            asOf: TestSupport.date(2026, 8, 9),
+            asOf: TestSupport.date(2054, 8, 9),
             income: IncomeInput(
                 cadence: cadence,
                 firstPayday: TestSupport.date(2026, 8, Int.random(in: 10...28, using: &rng)),
                 amounts: [
-                    PlanningIncomeChange(effectiveDate: TestSupport.date(2026, 8, 1),
+                    PlanningIncomeChange(effectiveDate: TestSupport.date(2054, 8, 1),
                                  amount: cents(60000...350_000, &rng)),
-                    PlanningIncomeChange(effectiveDate: TestSupport.date(2027, 1, 1),
+                    PlanningIncomeChange(effectiveDate: TestSupport.date(2055, 1, 1),
                                  amount: cents(60000...350_000, &rng))
                 ],
                 windfalls: windfalls
@@ -195,7 +195,7 @@ final class AvalanchePropertyTests: XCTestCase {
     // Codable round-trip: the DTOs are the storage/UI contract and must
     // survive encoding without loss.
     func testPlanningResultCodableRoundTrip() throws {
-        let result = try AvalanchePlanEngine.generatePlan(PlanningFixtures.lemInput())
+        let result = try AvalanchePlanEngine.generatePlan(PlanningFixtures.baselineInput())
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let decoder = JSONDecoder()
@@ -204,7 +204,7 @@ final class AvalanchePropertyTests: XCTestCase {
         let decoded = try decoder.decode(PlanningResult.self, from: data)
         XCTAssertEqual(decoded, result)
 
-        let input = PlanningFixtures.lemInput()
+        let input = PlanningFixtures.baselineInput()
         let inputData = try encoder.encode(input)
         let decodedInput = try decoder.decode(PlanningInput.self, from: inputData)
         XCTAssertEqual(decodedInput, input)

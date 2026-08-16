@@ -39,7 +39,7 @@ struct ProgressTabView: View {
     /// baseline. Progress renders generated plans the same as Original Plan v1.
     private var schedulePlan: PlanVersion? {
         let plans = (try? modelContext.fetch(FetchDescriptor<PlanVersion>())) ?? []
-        let baseline = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil
+        let baseline = (try? PlanRepository.legacyBaseline(context: modelContext)) ?? nil
         let active = plans.first(where: \.isActive)
         if let active {
             let activeID = active.id
@@ -51,11 +51,10 @@ struct ProgressTabView: View {
         return baseline ?? active
     }
 
-    /// Total principal when the tracked debts started — from the debts
-    /// themselves, so it is right for every install, not just Master Lem's.
+    /// Total principal when the tracked debts started, summed from the debt
+    /// rows themselves so it is right for every install.
     private var startingDebtTotal: Decimal {
-        let total = perCardBalances.reduce(Decimal.zero) { $0 + $1.debt.startingBalance }
-        return total > 0 ? total.rounded2 : PlanContract.startingDebtTotal
+        perCardBalances.reduce(Decimal.zero) { $0 + $1.debt.startingBalance }.rounded2
     }
 
     struct Stats {
@@ -247,7 +246,7 @@ struct ProgressTabView: View {
     }
 
     /// Computed from the plan's own ceiling path — never a fixed sentence,
-    /// which would be wrong for any plan but Master Lem's.
+    /// which would be wrong for any plan but the one it was written for.
     private var c1ChartSummary: String {
         let ceilings = c1Series.filter { $0.track == "No-spend ceiling" }
         guard let first = ceilings.first, let last = ceilings.last, let plan = schedulePlan else {
@@ -313,11 +312,9 @@ struct ProgressTabView: View {
         }
     }
 
-    /// Debts in this install's own avalanche order — generated plans included,
-    /// not only Original Plan v1's B→D→A→F→C→E.
+    /// Debts in this install's own avalanche order.
     private var timelineOrder: [String] {
-        let stored = perCardBalances.map(\.debt.planID)
-        return stored.isEmpty ? PlanContract.avalancheOrder : stored
+        perCardBalances.map(\.debt.planID)
     }
 
     private func debtLabel(_ planID: String) -> String {
@@ -327,14 +324,14 @@ struct ProgressTabView: View {
         return debt.displayName
     }
 
-    /// This install's own baseline payoff milestone, falling back to the
-    /// Original Plan v1 contract dates for migrated stores.
+    /// This install's own baseline payoff milestone. There is no fallback
+    /// table: a date this store does not hold is shown as unknown rather
+    /// than filled in from somewhere else.
     private func baselinePayoffText(_ planID: String) -> String {
-        if let milestone = milestones.first(where: { $0.type == .cardPaidOff && $0.relatedDebtPlanID == planID }),
-           let date = milestone.baselineDate {
-            return DateMath.mediumString(date)
-        }
-        return PlanContract.baselinePayoffDates[planID].map(DateMath.mediumString) ?? "—"
+        guard let milestone = milestones.first(where: {
+            $0.type == .cardPaidOff && $0.relatedDebtPlanID == planID
+        }), let date = milestone.baselineDate else { return "—" }
+        return DateMath.mediumString(date)
     }
 
     private var payoffTimelineAccessibility: String {
@@ -510,7 +507,9 @@ struct ProgressTabView: View {
     private func buildActualSeries() -> [DebtPoint] {
         var points: [DebtPoint] = [
             DebtPoint(
-                date: DateMath.addingDays(-1, to: schedulePlan?.firstPayday ?? PlanContract.firstPayday),
+                date: DateMath.addingDays(
+                    -1, to: schedulePlan?.firstPayday ?? appEnvironment.dateProvider.now
+                ),
                 amount: startingDebtTotal,
                 track: "Actual"
             )
