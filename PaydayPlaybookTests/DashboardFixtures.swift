@@ -24,7 +24,9 @@ enum DashboardFixtures {
         let reserves: CashAccount
     }
 
-    /// A generated calc-v2 plan built from a mixed-type debt portfolio:
+    /// A plan generated through the real service — so it carries whatever
+    /// calculation version the release stamps — built from a mixed-type
+    /// debt portfolio:
     /// a credit card with a limit, a card without one, an auto loan, a
     /// student loan, a medical debt (0% APR, minimums only), and an "other".
     static func generatedPlan(

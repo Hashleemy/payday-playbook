@@ -137,7 +137,10 @@ final class PlanGenerationServiceTests: XCTestCase {
         let service = OnboardingProgressService(context: context, dateProvider: TestSupport.fixedToday)
         let plan = try service.finish(planName: "Plan v1", input: generated.input, result: generated.rows)
 
-        XCTAssertEqual(plan.calculationVersion, 2)
+        // A plan generated now carries the release's stamp. The literal is
+        // pinned once, in ReleaseIntegrationTests; here the point is that
+        // generation stamps the current version rather than any fixed one.
+        XCTAssertEqual(plan.calculationVersion, PlanContract.currentCalculationVersion)
         XCTAssertTrue(plan.generatedFromProfile)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<PaydayPlanItem>()), 23)
 

@@ -143,12 +143,13 @@ struct GeneratedPlanService {
         }
     }
 
-    /// Regenerates the baseline engine result for a calc-v2 plan from its
-    /// stored snapshot. Deterministic: identical input → identical result, so
-    /// this is a faithful read of the immutable baseline, not a recalculation
-    /// of it. Returns nil for calc-v1 plans (their stored rows are the truth).
+    /// Regenerates the baseline engine result for a modern-engine plan from
+    /// its stored snapshot. Deterministic: identical input → identical result,
+    /// so this is a faithful read of the immutable baseline, not a
+    /// recalculation of it. Returns nil for calc-v1 plans (their stored rows
+    /// are the truth).
     func baselineResult(for plan: PlanVersion) throws -> PlanningResult? {
-        guard plan.calculationVersion >= PlanContract.currentCalculationVersion else { return nil }
+        guard plan.calculationVersion >= PlanContract.minimumModernCalculationVersion else { return nil }
         let stored = try Self.storedInput(for: plan)
         return try AvalanchePlanEngine.generatePlan(try Self.engineInput(from: stored))
     }
@@ -159,7 +160,7 @@ struct GeneratedPlanService {
     /// and runs the engine's reforecast. The result has `kind == .reforecast`
     /// and is never persisted over the plan (R-15).
     func reforecastResult(for plan: PlanVersion) throws -> PlanningResult? {
-        guard plan.calculationVersion >= PlanContract.currentCalculationVersion else { return nil }
+        guard plan.calculationVersion >= PlanContract.minimumModernCalculationVersion else { return nil }
         let stored = try Self.storedInput(for: plan)
         let today = DateMath.startOfDay(dateProvider.now)
 
