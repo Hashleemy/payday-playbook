@@ -74,7 +74,9 @@ struct AccountDetailView: View {
         } message: {
             Text("Its activity and balance history stay exactly as they are. It just stops being offered for new movements, and you can restore it any time.")
         }
-        .task { reload() }
+        // Same reason as the workspace: returning from the full activity list
+        // should re-read, and a flag change is invisible to a count observer.
+        .onAppear { reload() }
     }
 
     // MARK: - Content
@@ -119,33 +121,10 @@ struct AccountDetailView: View {
             .padding()
         }
         .refreshable { reload() }
+        // The same sheet the workspace shows, so a refusal reads identically
+        // wherever the user hit it.
         .sheet(isPresented: $showArchiveBlocked) {
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(card.archiveBlockers) { blocker in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(blocker.title)
-                                    .font(.subheadline.weight(.medium))
-                                Text(blocker.detail)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityElement(children: .combine)
-                        }
-                    }
-                    .padding()
-                }
-                .navigationTitle("Can't archive yet")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("OK") { showArchiveBlocked = false }
-                    }
-                }
-            }
+            ArchiveBlockedSheet(card: card)
         }
     }
 

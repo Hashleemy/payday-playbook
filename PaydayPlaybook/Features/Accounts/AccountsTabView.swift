@@ -72,7 +72,10 @@ struct AccountsTabView: View {
                 ArchiveBlockedSheet(card: card)
             }
         }
-        .task { reload() }
+        // `onAppear` rather than `task`, so returning from a pushed screen
+        // refreshes too. Restoring an archived account flips a flag without
+        // changing the row count, so the count observer below cannot see it.
+        .onAppear { reload() }
         .onChange(of: accounts.count) { _, _ in reload() }
     }
 
@@ -477,7 +480,10 @@ private struct AccountsReorderList: View {
 
 // MARK: - Blocked archive
 
-private struct ArchiveBlockedSheet: View {
+/// Shared by the workspace and the account detail screen. One sheet rather
+/// than two: the same refusal explained in two different sets of words is a
+/// worse experience than either wording alone.
+struct ArchiveBlockedSheet: View {
     @Environment(\.dismiss) private var dismiss
     let card: AccountsWorkspaceState.AccountCard
 
