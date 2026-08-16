@@ -176,7 +176,7 @@ struct OriginalPlanTimelineView: View {
         .onAppear {
             // Deliberately the template, not the current plan: this screen is
             // the Original Plan v1 reference itself.
-            guard let plan = (try? PlanSeeder.existingBaseline(context: modelContext)) ?? nil else { return }
+            guard let plan = (try? PlanRepository.legacyBaseline(context: modelContext)) ?? nil else { return }
             let planID = plan.id
             items = ((try? modelContext.fetch(
                 FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planID })
@@ -254,7 +254,7 @@ struct PayScheduleView: View {
             errorMessage = "Enter a paycheck amount greater than zero."
             return
         }
-        guard let plan = (try? PlanSeeder.currentPlan(context: modelContext)) ?? nil else { return }
+        guard let plan = (try? PlanRepository.currentPlan(context: modelContext)) ?? nil else { return }
         modelContext.insert(IncomeRule(
             planVersionID: plan.id,
             effectiveDate: DateMath.startOfDay(newDate),
@@ -335,10 +335,15 @@ struct AllowanceReservesView: View {
             return
         }
         guard activePlan != nil else { return }
-        let income = (try? ReforecastService.currentIncome(
+        // No stand-in income: previewing an impact against a number the user
+        // never entered would state someone else's paycheck as theirs.
+        guard let income = (try? ReforecastService.currentIncome(
             context: modelContext,
             on: appEnvironment.dateProvider.now
-        )) ?? PlanContract.raisedIncome
+        )), income > 0 else {
+            impact = "Add your income in Settings to preview the impact."
+            return
+        }
         let budget = income - allowance - car - train
         impact = "Future card budget per check becomes about \(MoneyFormat.string(max(budget, .zero))) at the current paycheck level. Saving creates a new plan version and reforecasts."
     }
@@ -732,7 +737,7 @@ struct PlanVerificationView: View {
         var output: [String] = []
         do {
             // The §3 baseline checklist verifies the template specifically.
-            guard let plan = try PlanSeeder.existingBaseline(context: modelContext) else {
+            guard let plan = try PlanRepository.legacyBaseline(context: modelContext) else {
                 lines = ["No baseline plan found."]
                 return
             }
@@ -755,7 +760,24 @@ struct PlanVerificationView: View {
             output.append("Modeled interest: \(MoneyFormat.string(plan.baselineModeledInterest))")
             output.append("Final no-spend ceiling: \(MoneyFormat.string(items.last?.plannedC1NoSpendCeiling ?? 0))")
 
-            let engineResult = DebtCalculationEngine.baselineProjection()
+            // Re-project the plan from its own stored rows and compare. This
+            // used to run a projection assembled from hard-coded constants,
+            // which only ever checked one particular plan; driving it from
+            // the store checks whichever plan this install actually holds.
+            let order = plan.avalancheOrder
+            let byPlanID = Dictionary(debts.map { ($0.planID, $0) }, uniquingKeysWith: { first, _ in first })
+            let engineDebts = order.compactMap { planID -> DebtCalculationEngine.EngineDebt? in
+                guard let debt = byPlanID[planID] else { return nil }
+                return DebtCalculationEngine.EngineDebt(
+                    planID: debt.planID, apr: debt.apr, balance: debt.startingBalance
+                )
+            }
+            let enginePaydays = items.map {
+                DebtCalculationEngine.EnginePayday(
+                    sequence: $0.sequenceNumber, date: $0.date, cardBudget: $0.plannedCardBudget
+                )
+            }
+            let engineResult = DebtCalculationEngine.project(debts: engineDebts, paydays: enginePaydays)
             output.append("— Engine check —")
             output.append("Engine payoff: \((engineResult.payoffDate).map(DateMath.mediumString) ?? "—") after \(engineResult.paychecksUsed) checks")
             output.append("Engine interest: \(MoneyFormat.string(engineResult.totalInterest))")

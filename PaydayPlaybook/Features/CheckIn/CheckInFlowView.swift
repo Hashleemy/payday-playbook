@@ -130,7 +130,7 @@ struct CheckInFlowView: View {
             }
             Section {
                 LabeledContent("Protected floor") {
-                    MoneyText(amount: PlanContract.protectedBuffer)
+                    MoneyText(amount: protectedFloor)
                 }
                 LabeledContent("No-spend ceiling after this check") {
                     MoneyText(amount: planItem.plannedC1NoSpendCeiling, color: .blue)
@@ -171,6 +171,22 @@ struct CheckInFlowView: View {
 
     private var remainingForCards: Decimal {
         ((c2Transfer ?? 0) - (carReserve ?? 0) - (trainReserve ?? 0)).rounded2
+    }
+
+    /// The user's own protected floor, preferring their current profile
+    /// setting and falling back to the value frozen into the plan that owns
+    /// this payday. Previously a fixed constant, which displayed one user's
+    /// floor to everyone.
+    private var protectedFloor: Decimal {
+        if let profile = try? modelContext.fetch(FetchDescriptor<UserGoalProfile>()).first,
+           profile.protectedFloor > 0 {
+            return profile.protectedFloor
+        }
+        let planVersionID = planItem.planVersionID
+        let plan = (try? modelContext.fetch(
+            FetchDescriptor<PlanVersion>(predicate: #Predicate { $0.id == planVersionID })
+        ).first) ?? nil
+        return plan?.protectedBuffer ?? .zero
     }
 
     private var cardsStep: some View {
@@ -463,7 +479,7 @@ struct CheckInFlowView: View {
         c1Kept = planItem.plannedC1Keep
         // Expected C1 after keeping the planned amount; the user confirms or
         // corrects it on step 2.
-        if let plan = (try? PlanSeeder.currentPlan(context: modelContext)) ?? nil {
+        if let plan = (try? PlanRepository.currentPlan(context: modelContext)) ?? nil {
             let planVersionID = plan.id
             let items = ((try? modelContext.fetch(
                 FetchDescriptor<PaydayPlanItem>(predicate: #Predicate { $0.planVersionID == planVersionID })
@@ -575,7 +591,7 @@ struct CheckInFlowView: View {
         checkIn.note = incomeNote.isEmpty ? nil : incomeNote
         persistPaymentRows(checkIn: checkIn)
 
-        guard let plan = (try? PlanSeeder.currentPlan(context: modelContext)) ?? nil else {
+        guard let plan = (try? PlanRepository.currentPlan(context: modelContext)) ?? nil else {
             completionError = "The plan could not be loaded."
             return
         }

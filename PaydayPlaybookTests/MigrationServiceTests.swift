@@ -14,7 +14,7 @@ final class MigrationServiceTests: XCTestCase {
     ) throws -> (ModelContainer, ModelContext) {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
-        try PlanSeeder.seedIfNeeded(context: context, applySchemaUpgrade: false)
+        try TestSupport.seed(context, applySchemaUpgrade: false)
         let settings = try XCTUnwrap(context.fetch(FetchDescriptor<AppSettings>()).first)
         settings.onboardingComplete = onboardingComplete
 
@@ -22,15 +22,15 @@ final class MigrationServiceTests: XCTestCase {
             let debts = try context.fetch(FetchDescriptor<DebtAccount>())
             let cardB = try XCTUnwrap(debts.first { $0.planID == "B" })
             context.insert(LedgerEntry(
-                effectiveDate: TestSupport.date(2026, 8, 20),
+                effectiveDate: TestSupport.date(2054, 8, 20),
                 type: .c2Transfer,
-                amount: TestSupport.money("1694.00"),
+                amount: TestSupport.money("1705.00"),
                 sourceAccount: .checking1,
                 destinationAccount: .checking2,
                 note: "First transfer"
             ))
             context.insert(LedgerEntry(
-                effectiveDate: TestSupport.date(2026, 8, 20),
+                effectiveDate: TestSupport.date(2054, 8, 20),
                 type: .cardPayment,
                 amount: TestSupport.money("1061.07"),
                 sourceAccount: .checking2,
@@ -40,19 +40,19 @@ final class MigrationServiceTests: XCTestCase {
             ))
             context.insert(BalanceSnapshot(
                 cashAccount: .checking1,
-                effectiveDate: TestSupport.date(2026, 8, 20),
+                effectiveDate: TestSupport.date(2054, 8, 20),
                 amount: TestSupport.money("1250.00"),
                 sourceType: .userEntry
             ))
-            let plan = try XCTUnwrap(PlanSeeder.existingBaseline(context: context))
+            let plan = try XCTUnwrap(PlanRepository.legacyBaseline(context: context))
             let firstItem = try XCTUnwrap(TestSupport.planItems(context, plan: plan).first)
             let checkIn = PaydayCheckIn(paydayPlanItemID: firstItem.id, status: .completed)
-            checkIn.actualIncome = TestSupport.money("2094.00")
-            checkIn.completedAt = TestSupport.date(2026, 8, 20)
+            checkIn.actualIncome = TestSupport.money("2400.00")
+            checkIn.completedAt = TestSupport.date(2054, 8, 20)
             context.insert(checkIn)
         }
         try context.save()
-        XCTAssertEqual(try MigrationService.detectInstallState(context: context), .legacyNeedsMigration)
+        XCTAssertEqual(try MigrationService.detectInstallState(context: context), .needsMigration(from: 1))
         return (container, context)
     }
 
@@ -82,7 +82,7 @@ final class MigrationServiceTests: XCTestCase {
 
         let summary = try MigrationService.migrateIfNeeded(context: context, dateProvider: TestSupport.fixedToday)
         XCTAssertFalse(summary.didMigrate)
-        // Zero Lem data on a fresh install (V2-16).
+        // A fresh install receives no plan data at all (V2-16).
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<PlanVersion>()), 0)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<CashAccount>()), 0)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<RecurringObligation>()), 0)
@@ -99,7 +99,7 @@ final class MigrationServiceTests: XCTestCase {
         XCTAssertEqual(try MigrationService.detectInstallState(context: context), .upToDate)
 
         let settings = try XCTUnwrap(context.fetch(FetchDescriptor<AppSettings>()).first)
-        XCTAssertEqual(settings.seedSchemaVersion, 2)
+        XCTAssertEqual(settings.seedSchemaVersion, PlanContract.currentSchemaVersion)
         XCTAssertNotNil(settings.migratedAt)
         XCTAssertNotNil(settings.migrationAuditNote)
         XCTAssertTrue(settings.onboardingComplete)
@@ -109,7 +109,7 @@ final class MigrationServiceTests: XCTestCase {
 
     func testMigrationPreservesEveryBaselineValue() throws {
         let (_, context) = try makeLegacyStore()
-        let plan = try XCTUnwrap(PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(PlanRepository.legacyBaseline(context: context))
         let before = try TestSupport.planItems(context, plan: plan).map(ItemValues.init)
         let debtsBefore = try context.fetch(FetchDescriptor<DebtAccount>())
             .sorted { $0.priority < $1.priority }
@@ -133,11 +133,11 @@ final class MigrationServiceTests: XCTestCase {
         // Plan identity untouched: calc v1 forever, name, headline values.
         XCTAssertEqual(plan.calculationVersion, 1)
         XCTAssertEqual(plan.name, "Original Plan v1")
-        XCTAssertEqual(plan.baselineModeledInterest, TestSupport.money("3461.16"))
-        XCTAssertEqual(plan.baselinePayoffDate, TestSupport.date(2027, 6, 24))
-        XCTAssertEqual(plan.baselineNoSpendCeiling, TestSupport.money("7900.00"))
-        XCTAssertEqual(plan.carReservePerCheck, TestSupport.money("335.08"))
-        XCTAssertEqual(plan.trainReservePerCheck, TestSupport.money("51.23"))
+        XCTAssertEqual(plan.baselineModeledInterest, TestSupport.money("2617.18"))
+        XCTAssertEqual(plan.baselinePayoffDate, TestSupport.date(2055, 6, 24))
+        XCTAssertEqual(plan.baselineNoSpendCeiling, TestSupport.money("8400.00"))
+        XCTAssertEqual(plan.carReservePerCheck, TestSupport.money("323.08"))
+        XCTAssertEqual(plan.trainReservePerCheck, TestSupport.money("69.23"))
         XCTAssertNil(plan.inputSnapshotData)
         XCTAssertFalse(plan.generatedFromProfile)
         XCTAssertEqual(plan.payCadence, .biweekly)
@@ -177,7 +177,7 @@ final class MigrationServiceTests: XCTestCase {
         XCTAssertEqual(c1.legacyKind, .checking1)
         // Migrating on Aug 10, before any fixture activity takes effect, the
         // balance derives from the plan's starting $900 — nothing invented.
-        XCTAssertEqual(c1.currentBalance, TestSupport.money("900.00"))
+        XCTAssertEqual(c1.currentBalance, TestSupport.money("1500.00"))
 
         let c2 = accounts[1]
         XCTAssertEqual(c2.name, "Checking 2")
@@ -197,14 +197,14 @@ final class MigrationServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.cashAccountID, c1.id)
 
         // Plan points at its income account.
-        let plan = try XCTUnwrap(PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(PlanRepository.legacyBaseline(context: context))
         XCTAssertEqual(plan.incomeAccountID, c1.id)
     }
 
     func testCheckingBalancesReflectActivityOnOrBeforeToday() throws {
         let (_, context) = try makeLegacyStore()
         // Migrate "later", after the first payday's activity took effect.
-        let later = FixedDateProvider(fixed: TestSupport.date(2026, 8, 21))
+        let later = FixedDateProvider(fixed: TestSupport.date(2054, 8, 21))
         try MigrationService.migrateIfNeeded(context: context, dateProvider: later)
 
         let accounts = try context.fetch(FetchDescriptor<CashAccount>())
@@ -215,7 +215,7 @@ final class MigrationServiceTests: XCTestCase {
         // reflected in the confirmed balance (0.1.x same-day rule).
         XCTAssertEqual(c1.currentBalance, TestSupport.money("1250.00"))
         // C2: $1,694 in, $1,061.07 card payment out.
-        XCTAssertEqual(c2.currentBalance, TestSupport.money("632.93"))
+        XCTAssertEqual(c2.currentBalance, TestSupport.money("643.93"))
     }
 
     // MARK: - Obligations (§7.3, R-04 reduction)
@@ -228,23 +228,23 @@ final class MigrationServiceTests: XCTestCase {
         XCTAssertEqual(obligations.count, 2)
         let car = try XCTUnwrap(obligations.first { $0.legacyKey == "car" })
         XCTAssertEqual(car.name, "Car")
-        XCTAssertEqual(car.amount, TestSupport.money("726.00"))
+        XCTAssertEqual(car.amount, TestSupport.money("700.01"))
         XCTAssertEqual(car.cadence, .monthly)
         let train = try XCTUnwrap(obligations.first { $0.legacyKey == "train" })
-        XCTAssertEqual(train.amount, TestSupport.money("111.00"))
+        XCTAssertEqual(train.amount, TestSupport.money("150.00"))
 
         // The R-04 reduction that §7.3 verifies before committing.
         XCTAssertEqual(
             ObligationMath.perPaycheckReserve(amount: car.amount, cadence: .monthly, paychecksPerYear: 26),
-            TestSupport.money("335.08")
+            TestSupport.money("323.08")
         )
         XCTAssertEqual(
             ObligationMath.perPaycheckReserve(amount: train.amount, cadence: .monthly, paychecksPerYear: 26),
-            TestSupport.money("51.23")
+            TestSupport.money("69.23")
         )
 
         // Reserve rows mirror the stored per-item values, copied verbatim.
-        let plan = try XCTUnwrap(PlanSeeder.existingBaseline(context: context))
+        let plan = try XCTUnwrap(PlanRepository.legacyBaseline(context: context))
         let items = try TestSupport.planItems(context, plan: plan)
         let reserves = try context.fetch(FetchDescriptor<PlannedObligationReserve>())
         XCTAssertEqual(reserves.count, items.count * 2)
@@ -286,7 +286,7 @@ final class MigrationServiceTests: XCTestCase {
         let profile = try XCTUnwrap(context.fetch(FetchDescriptor<UserGoalProfile>()).first)
         XCTAssertEqual(profile.posture, .steady)
         XCTAssertNil(profile.goalText)
-        XCTAssertEqual(profile.protectedFloor, TestSupport.money("1000.00"))
+        XCTAssertEqual(profile.protectedFloor, TestSupport.money("1500.00"))
         XCTAssertEqual(profile.allowanceCap, TestSupport.money("300.00"))
         XCTAssertNotNil(profile.onboardingCompletedAt)
 
@@ -345,7 +345,7 @@ final class MigrationServiceTests: XCTestCase {
 
         let settings = try XCTUnwrap(context.fetch(FetchDescriptor<AppSettings>()).first)
         XCTAssertTrue(settings.onboardingComplete)
-        XCTAssertEqual(settings.seedSchemaVersion, 2)
+        XCTAssertEqual(settings.seedSchemaVersion, PlanContract.currentSchemaVersion)
         let progress = try XCTUnwrap(context.fetch(FetchDescriptor<OnboardingProgress>()).first)
         XCTAssertNotNil(progress.completedAt)
     }
@@ -360,7 +360,7 @@ final class MigrationServiceTests: XCTestCase {
             name: "Plan v1",
             isOriginalBaseline: true,
             isActive: true,
-            firstPayday: TestSupport.date(2026, 9, 4),
+            firstPayday: TestSupport.date(2054, 9, 4),
             payFrequencyDays: 14,
             startingChecking1: TestSupport.money("500.00"),
             protectedBuffer: TestSupport.money("800.00"),
@@ -370,15 +370,15 @@ final class MigrationServiceTests: XCTestCase {
             trainReservePerCheck: .zero,
             calculationVersion: 2,
             avalancheOrderRaw: "UserLoan",
-            baselinePayoffDate: TestSupport.date(2027, 1, 1),
+            baselinePayoffDate: TestSupport.date(2055, 1, 1),
             baselineModeledInterest: TestSupport.money("42.00"),
-            baselineNoSpendCeiling: TestSupport.money("1300.00")
+            baselineNoSpendCeiling: TestSupport.money("8400.00")
         )
         plan.generatedFromProfile = true
         context.insert(plan)
         context.insert(PaydayPlanItem(
             planVersionID: plan.id, sequenceNumber: 1,
-            date: TestSupport.date(2026, 9, 4),
+            date: TestSupport.date(2054, 9, 4),
             plannedIncome: TestSupport.money("1500.00"),
             plannedC1Keep: .zero, plannedBufferAdd: .zero, plannedAllowance: .zero,
             plannedC2Transfer: .zero, plannedCarReserve: .zero, plannedTrainReserve: .zero,
@@ -397,7 +397,7 @@ final class MigrationServiceTests: XCTestCase {
         context.insert(debt)
         context.insert(Milestone(
             type: .debtFree, title: "Debt-free",
-            baselineDate: TestSupport.date(2027, 1, 1)
+            baselineDate: TestSupport.date(2055, 1, 1)
         ))
         return (plan, debt)
     }
@@ -418,11 +418,11 @@ final class MigrationServiceTests: XCTestCase {
         try context.save()
 
         // The generated plan is not the template.
-        XCTAssertNil(try PlanSeeder.existingBaseline(context: context))
+        XCTAssertNil(try PlanRepository.legacyBaseline(context: context))
 
         // Template load: seeds Original Plan v1 next to the user's graph.
-        let summary = try PlanSeeder.seedIfNeeded(context: context)
-        XCTAssertFalse(summary.wasAlreadySeeded)
+        let inserted = try TestSupport.seed(context)
+        XCTAssertEqual(inserted.name, PlanContract.planName)
 
         // The user's plan graph survives untouched.
         let userPlanID = userPlan.id
@@ -445,62 +445,84 @@ final class MigrationServiceTests: XCTestCase {
         XCTAssertEqual(defaults.map(\.name), ["Main"])
     }
 
-    /// Repairing an interrupted template seed removes only template rows;
-    /// debts and milestones created outside the template graph survive.
-    func testSeedRepairRemovesOnlyTemplateRows() throws {
+    /// A partially-written legacy plan graph is refused, not repaired.
+    ///
+    /// 0.1.x could rebuild a crashed partial seed by re-reading the bundled
+    /// template. That template is gone (V3-12), so there is nothing to rebuild
+    /// from — and inventing a plan graph for a store whose real one is
+    /// incomplete would be worse than declining. Migration aborts and the
+    /// user's own rows are left exactly as they were.
+    func testPartialLegacyGraphIsRefusedAndUserRowsSurvive() throws {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
         let (_, userDebt) = try insertGeneratedGraph(context: context)
-        // An interrupted template seed: the plan row exists, its graph doesn't.
+        // An interrupted 0.1.x seed: the plan row exists, its graph does not.
         context.insert(PlanVersion(
             name: PlanContract.planName,
             isOriginalBaseline: true,
             isActive: false,
-            firstPayday: TestSupport.date(2026, 8, 20),
+            firstPayday: TestSupport.date(2054, 8, 20),
             payFrequencyDays: 14,
-            startingChecking1: TestSupport.money("900.00"),
-            protectedBuffer: TestSupport.money("1000.00"),
+            startingChecking1: TestSupport.money("1500.00"),
+            protectedBuffer: TestSupport.money("1500.00"),
             allowanceCap: TestSupport.money("300.00"),
-            firstCheckBufferAdd: TestSupport.money("100.00"),
-            carReservePerCheck: TestSupport.money("335.08"),
-            trainReservePerCheck: TestSupport.money("51.23"),
+            firstCheckBufferAdd: .zero,
+            carReservePerCheck: TestSupport.money("323.08"),
+            trainReservePerCheck: TestSupport.money("69.23"),
             calculationVersion: 1,
-            avalancheOrderRaw: "B,D,A,F,C,E",
-            baselinePayoffDate: TestSupport.date(2027, 6, 24),
-            baselineModeledInterest: TestSupport.money("3461.16"),
-            baselineNoSpendCeiling: TestSupport.money("7900.00")
+            avalancheOrderRaw: "A,B,C,D,E,F",
+            baselinePayoffDate: TestSupport.date(2055, 6, 24),
+            baselineModeledInterest: TestSupport.money("2617.18"),
+            baselineNoSpendCeiling: TestSupport.money("8400.00")
         ))
-        try context.save()
-
-        try PlanSeeder.seedIfNeeded(context: context)
-
-        // The template was reseeded whole; the user's rows are intact.
-        let template = try XCTUnwrap(PlanSeeder.existingBaseline(context: context))
-        XCTAssertTrue(try PlanSeeder.isComplete(template, context: context))
-        XCTAssertFalse(userDebt.isDeleted)
-        XCTAssertEqual(userDebt.debtType, .autoLoan)
-        XCTAssertEqual(try context.fetchCount(FetchDescriptor<DebtAccount>()), 7)
-        // The user's debt-free milestone (different baseline date) survives.
-        let userMilestones = try context.fetch(FetchDescriptor<Milestone>())
-            .filter { $0.type == .debtFree && $0.baselineDate == TestSupport.date(2027, 1, 1) }
-        XCTAssertEqual(userMilestones.count, 1)
-    }
-
-    // MARK: - Clean abort (§7 preamble)
-
-    func testFailedMigrationLeavesStoreUntouched() throws {
-        let (_, context) = try makeLegacyStore()
-        // Induce the §7.3 consistency failure: a stored reserve the R-04
-        // smoothing cannot reproduce.
-        let plan = try XCTUnwrap(PlanSeeder.existingBaseline(context: context))
-        plan.carReservePerCheck = TestSupport.money("335.09")
+        let settings = try context.fetch(FetchDescriptor<AppSettings>()).first
+            ?? {
+                let fresh = AppSettings(seedSchemaVersion: 1)
+                context.insert(fresh)
+                return fresh
+            }()
+        settings.seedSchemaVersion = 1
         try context.save()
 
         XCTAssertThrowsError(
             try MigrationService.migrateIfNeeded(context: context, dateProvider: TestSupport.fixedToday)
         ) { error in
-            guard case MigrationService.MigrationError.obligationMathMismatch = error else {
-                return XCTFail("Expected obligationMathMismatch, got \(error)")
+            guard case MigrationService.MigrationError.baselineIncomplete = error else {
+                return XCTFail("Expected baselineIncomplete, got \(error)")
+            }
+        }
+
+        // No second baseline was fabricated, and the user's rows are intact.
+        let baselines = try context.fetch(FetchDescriptor<PlanVersion>())
+            .filter { $0.name == PlanContract.planName }
+        XCTAssertEqual(baselines.count, 1, "migration must not invent a replacement plan")
+        XCTAssertFalse(userDebt.isDeleted)
+        XCTAssertEqual(userDebt.debtType, .autoLoan)
+    }
+
+    // MARK: - Clean abort (§7 preamble)
+
+    /// Migration must roll back completely when the store it is handed is not
+    /// internally consistent.
+    ///
+    /// The trigger is a broken plan graph — a gap in the payday sequence —
+    /// rather than an unreproducible reserve. Since obligation amounts are now
+    /// *derived* from the stored reserve by inverse R-04, the smoothing check
+    /// cannot disagree with itself on the monthly/biweekly pair migration
+    /// uses; see `testInverseSmoothingAlwaysRoundTripsForMonthlyReserves`.
+    func testFailedMigrationLeavesStoreUntouched() throws {
+        let (_, context) = try makeLegacyStore()
+        let plan = try XCTUnwrap(PlanRepository.legacyBaseline(context: context))
+        let items = try PlanRepository.planItems(context: context, plan: plan)
+        // Punch a hole in the middle of the payday sequence.
+        context.delete(items[3])
+        try context.save()
+
+        XCTAssertThrowsError(
+            try MigrationService.migrateIfNeeded(context: context, dateProvider: TestSupport.fixedToday)
+        ) { error in
+            guard case MigrationService.MigrationError.baselineIncomplete = error else {
+                return XCTFail("Expected baselineIncomplete, got \(error)")
             }
         }
 
@@ -511,6 +533,41 @@ final class MigrationServiceTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<UserGoalProfile>()), 0)
         let settings = try XCTUnwrap(context.fetch(FetchDescriptor<AppSettings>()).first)
         XCTAssertEqual(settings.seedSchemaVersion, 1)
-        XCTAssertEqual(try MigrationService.detectInstallState(context: context), .legacyNeedsMigration)
+        XCTAssertEqual(try MigrationService.detectInstallState(context: context), .needsMigration(from: 1))
+    }
+
+    /// Why the obligation-mismatch abort cannot fire on the migration path.
+    ///
+    /// Migration recovers a monthly bill from a stored per-paycheck reserve by
+    /// inverse R-04 and then requires the forward rule to reproduce that
+    /// reserve exactly. For monthly obligations against 26 paychecks a year
+    /// the round-trip always closes, so the recovered amount is always safe to
+    /// write. The guard stays in the code because other cadences do not share
+    /// that property — a weekly obligation can fail it — and because a silent
+    /// wrong amount is far worse than a refused migration.
+    func testInverseSmoothingAlwaysRoundTripsForMonthlyReserves() {
+        var checked = 0
+        for cents in stride(from: 1, through: 200_000, by: 7) {
+            let reserve = Decimal(cents) / 100
+            XCTAssertTrue(
+                ObligationMath.roundTripReproduces(
+                    reserve: reserve, cadence: .monthly, paychecksPerYear: 26
+                ),
+                "monthly/biweekly round-trip must close for every reserve"
+            )
+            checked += 1
+        }
+        XCTAssertGreaterThan(checked, 25_000)
+    }
+
+    /// The same guard is genuinely reachable on other cadences, which is why
+    /// it is not dead code.
+    func testInverseSmoothingCanFailOnOtherCadences() {
+        XCTAssertFalse(
+            ObligationMath.roundTripReproduces(
+                reserve: TestSupport.money("0.01"), cadence: .weekly, paychecksPerYear: 26
+            ),
+            "a weekly obligation can round-trip to a different reserve"
+        )
     }
 }

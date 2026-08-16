@@ -160,7 +160,7 @@ duplicate rows on double-finish · migration idempotent across launches and
 forced re-runs · induced failure aborts with a clean, untouched store · v1
 backup imports through migration · v2 round-trip · future-schema files fail
 with a clear message and no partial write · CSV columns append-only ·
-DTO money-exactness (0.2999, 0.10) and deterministic snapshots · R-08
+DTO money-exactness (float-trap APRs and cents) and deterministic snapshots · R-08
 ordering (ties, 0% APR) · exactly-one-default-income under add/edit/archive.
 
 ### Adversarial review outcome

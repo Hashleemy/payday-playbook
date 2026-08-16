@@ -36,6 +36,28 @@ final class UserGoalProfile {
     var allowanceCap: Decimal = Decimal.zero
     /// Set when onboarding finished (or by migration for upgraded installs).
     var onboardingCompletedAt: Date?
+
+    // MARK: - Schema-3 scenario inputs (V3-05)
+    //
+    // All optional with zero/nil defaults. An upgraded install reads exactly
+    // as it did before until the user states one of these; nothing here is
+    // inferred from existing data.
+
+    /// Cash the plan must never spend down past, across all accounts. Distinct
+    /// from `protectedFloor`, which is the single spending account's floor.
+    var minimumProtectedCash: Decimal = Decimal.zero
+    /// Savings the user intends to set aside each paycheck before debt attack.
+    var plannedSavingsPerPaycheck: Decimal = Decimal.zero
+    /// One-off cushion held back on top of the floor.
+    var additionalCushionReserve: Decimal = Decimal.zero
+    /// Upper bound the user accepts on a single extra payment. Zero means
+    /// unset, not "no extra payments allowed".
+    var extraPaymentCeiling: Decimal = Decimal.zero
+    /// When the user explicitly confirmed a zero allowance. Without this, a
+    /// zero allowance is indistinguishable from never having been asked, and
+    /// the plan must not treat silence as consent to spend nothing.
+    var zeroAllowanceConfirmedAt: Date?
+
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
@@ -52,6 +74,11 @@ final class UserGoalProfile {
         protectedFloor: Decimal = .zero,
         allowanceCap: Decimal = .zero,
         onboardingCompletedAt: Date? = nil,
+        minimumProtectedCash: Decimal = .zero,
+        plannedSavingsPerPaycheck: Decimal = .zero,
+        additionalCushionReserve: Decimal = .zero,
+        extraPaymentCeiling: Decimal = .zero,
+        zeroAllowanceConfirmedAt: Date? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -62,6 +89,11 @@ final class UserGoalProfile {
         self.protectedFloor = protectedFloor
         self.allowanceCap = allowanceCap
         self.onboardingCompletedAt = onboardingCompletedAt
+        self.minimumProtectedCash = minimumProtectedCash
+        self.plannedSavingsPerPaycheck = plannedSavingsPerPaycheck
+        self.additionalCushionReserve = additionalCushionReserve
+        self.extraPaymentCeiling = extraPaymentCeiling
+        self.zeroAllowanceConfirmedAt = zeroAllowanceConfirmedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

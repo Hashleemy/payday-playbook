@@ -34,14 +34,14 @@ final class ExportCompatibilityTests: XCTestCase {
     private func makeV1BackupData() throws -> Data {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
-        try PlanSeeder.seedIfNeeded(context: context, applySchemaUpgrade: false)
+        try TestSupport.seed(context, applySchemaUpgrade: false)
         if let settings = try context.fetch(FetchDescriptor<AppSettings>()).first {
             settings.onboardingComplete = true
         }
         context.insert(LedgerEntry(
-            effectiveDate: TestSupport.date(2026, 8, 20),
+            effectiveDate: TestSupport.date(2054, 8, 20),
             type: .c2Transfer,
-            amount: TestSupport.money("1694.00"),
+            amount: TestSupport.money("1705.00"),
             sourceAccount: .checking1,
             destinationAccount: .checking2
         ))
@@ -75,14 +75,14 @@ final class ExportCompatibilityTests: XCTestCase {
         let plan = try XCTUnwrap(context.fetch(FetchDescriptor<PlanVersion>()).first)
         XCTAssertEqual(plan.name, "Original Plan v1")
         XCTAssertEqual(plan.calculationVersion, 1)
-        XCTAssertEqual(plan.baselineModeledInterest, TestSupport.money("3461.16"))
+        XCTAssertEqual(plan.baselineModeledInterest, TestSupport.money("2617.18"))
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<PaydayPlanItem>()), 23)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<DebtAccount>()), 6)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<PlannedCardBalance>()), 23 * 6)
 
         // …and the store landed at schema 2 via the same logical migration.
         let settings = try XCTUnwrap(context.fetch(FetchDescriptor<AppSettings>()).first)
-        XCTAssertEqual(settings.seedSchemaVersion, 2)
+        XCTAssertEqual(settings.seedSchemaVersion, PlanContract.currentSchemaVersion)
         XCTAssertTrue(settings.onboardingComplete)
         let accounts = try context.fetch(FetchDescriptor<CashAccount>())
         XCTAssertEqual(accounts.count, 2)
@@ -123,7 +123,7 @@ final class ExportCompatibilityTests: XCTestCase {
 
         let profile = try XCTUnwrap(fresh.fetch(FetchDescriptor<UserGoalProfile>()).first)
         XCTAssertEqual(profile.id, profileID)
-        XCTAssertEqual(profile.protectedFloor, TestSupport.money("1000.00"))
+        XCTAssertEqual(profile.protectedFloor, TestSupport.money("1500.00"))
         XCTAssertEqual(profile.allowanceCap, TestSupport.money("300.00"))
 
         let c1 = try XCTUnwrap(fresh.fetch(FetchDescriptor<CashAccount>()).first { $0.legacyKind == .checking1 })
@@ -132,7 +132,7 @@ final class ExportCompatibilityTests: XCTestCase {
 
         // Restoring a v2 file must not re-run migration side effects twice.
         let settings = try XCTUnwrap(fresh.fetch(FetchDescriptor<AppSettings>()).first)
-        XCTAssertEqual(settings.seedSchemaVersion, 2)
+        XCTAssertEqual(settings.seedSchemaVersion, PlanContract.currentSchemaVersion)
     }
 
     // MARK: - Fail-safe incompatibility (mission rule 7)
@@ -209,7 +209,7 @@ final class ExportCompatibilityTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<CashAccount>()), 2)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<RecurringObligation>()), 2)
         let settings = try XCTUnwrap(context.fetch(FetchDescriptor<AppSettings>()).first)
-        XCTAssertEqual(settings.seedSchemaVersion, 2)
+        XCTAssertEqual(settings.seedSchemaVersion, PlanContract.currentSchemaVersion)
     }
 
     // MARK: - Append-only CSV (V2-18)

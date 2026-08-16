@@ -9,7 +9,7 @@ import SwiftData
 enum DashboardFixtures {
 
     /// "Today" for these fixtures: after setup, before the first payday.
-    static var today: FixedDateProvider { FixedDateProvider(fixed: TestSupport.date(2026, 8, 10)) }
+    static var today: FixedDateProvider { FixedDateProvider(fixed: TestSupport.date(2054, 8, 10)) }
 
     static func environment() -> AppEnvironment {
         AppEnvironment(dateProvider: today)
@@ -30,8 +30,8 @@ enum DashboardFixtures {
     static func generatedPlan(
         debtSpecs: [DebtSpec] = DebtSpec.mixedPortfolio,
         allowanceCap: Decimal = TestSupport.money("300.00"),
-        protectedFloor: Decimal = TestSupport.money("1000.00"),
-        takeHome: Decimal = TestSupport.money("2094.00")
+        protectedFloor: Decimal = TestSupport.money("1500.00"),
+        takeHome: Decimal = TestSupport.money("2400.00")
     ) throws -> Generated {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
@@ -40,7 +40,7 @@ enum DashboardFixtures {
         let accounts = CashAccountRepository(context: context)
         let spending = try accounts.create(
             name: "Everyday Checking",
-            currentBalance: TestSupport.money("900.00"),
+            currentBalance: TestSupport.money("1500.00"),
             roles: [.income, .spending],
             now: now
         )
@@ -63,7 +63,7 @@ enum DashboardFixtures {
 
         let schedule = IncomeSchedule(
             cadence: .biweekly,
-            anchorPayday: TestSupport.date(2026, 8, 20),
+            anchorPayday: TestSupport.date(2054, 8, 20),
             destinationAccountID: spending.id,
             baseTakeHome: takeHome,
             createdAt: now,
@@ -73,7 +73,7 @@ enum DashboardFixtures {
 
         let rent = RecurringObligation(
             name: "Rent",
-            amount: TestSupport.money("726.00"),
+            amount: TestSupport.money("700.00"),
             cadence: .monthly,
             dueDay: 1,
             accountID: reserves.id,
@@ -83,7 +83,7 @@ enum DashboardFixtures {
         context.insert(rent)
         let transit = RecurringObligation(
             name: "Transit pass",
-            amount: TestSupport.money("111.00"),
+            amount: TestSupport.money("150.00"),
             cadence: .monthly,
             dueDay: 5,
             accountID: reserves.id,
@@ -144,11 +144,11 @@ enum DashboardFixtures {
         /// a card with a limit, a card without, and a 0% minimums-only debt.
         static let mixedPortfolio: [DebtSpec] = [
             DebtSpec(planID: "A", name: "Blue Card", type: .creditCard,
-                     balance: TestSupport.money("1049.00"), apr: TestSupport.money("0.2999"),
+                     balance: TestSupport.money("1100.00"), apr: TestSupport.money("0.2600"),
                      minimum: nil, dueDay: 12, creditLimit: TestSupport.money("2000.00"),
                      originalPrincipal: nil),
             DebtSpec(planID: "B", name: "Store Card", type: .creditCard,
-                     balance: TestSupport.money("800.00"), apr: TestSupport.money("0.2599"),
+                     balance: TestSupport.money("800.00"), apr: TestSupport.money("0.2200"),
                      minimum: nil, dueDay: 20, creditLimit: nil, originalPrincipal: nil),
             DebtSpec(planID: "C", name: "Car Note", type: .autoLoan,
                      balance: TestSupport.money("8500.00"), apr: TestSupport.money("0.0649"),
@@ -159,7 +159,7 @@ enum DashboardFixtures {
                      minimum: TestSupport.money("145.00"), dueDay: 21, creditLimit: nil,
                      originalPrincipal: TestSupport.money("9000.00")),
             DebtSpec(planID: "E", name: "Clinic Bill", type: .medicalDebt,
-                     balance: TestSupport.money("1200.00"), apr: .zero,
+                     balance: TestSupport.money("1700.00"), apr: .zero,
                      minimum: TestSupport.money("50.00"), dueDay: nil, creditLimit: nil,
                      originalPrincipal: nil, extraEligible: false),
             DebtSpec(planID: "F", name: "Family Loan", type: .other,
@@ -172,11 +172,11 @@ enum DashboardFixtures {
         /// comparison the engine withholds for incomplete installment input.
         static let cardsOnly: [DebtSpec] = [
             DebtSpec(planID: "A", name: "Blue Card", type: .creditCard,
-                     balance: TestSupport.money("1049.00"), apr: TestSupport.money("0.2999"),
+                     balance: TestSupport.money("1100.00"), apr: TestSupport.money("0.2600"),
                      minimum: TestSupport.money("35.00"), dueDay: 12,
                      creditLimit: TestSupport.money("2000.00"), originalPrincipal: nil),
             DebtSpec(planID: "B", name: "Store Card", type: .creditCard,
-                     balance: TestSupport.money("2400.00"), apr: TestSupport.money("0.2599"),
+                     balance: TestSupport.money("2400.00"), apr: TestSupport.money("0.2200"),
                      minimum: TestSupport.money("60.00"), dueDay: 20,
                      creditLimit: TestSupport.money("3000.00"), originalPrincipal: nil)
         ]
@@ -187,7 +187,7 @@ enum DashboardFixtures {
     static func legacyMigrated() throws -> (container: ModelContainer, context: ModelContext, plan: PlanVersion) {
         let container = try TestSupport.makeContainer()
         let context = ModelContext(container)
-        let plan = try PlanSeeder.seedIfNeeded(context: context, applySchemaUpgrade: false).planVersion
+        let plan = try TestSupport.seed(context, applySchemaUpgrade: false)
         let settings = try context.fetch(FetchDescriptor<AppSettings>()).first
         settings?.seedSchemaVersion = 1
         try context.save()

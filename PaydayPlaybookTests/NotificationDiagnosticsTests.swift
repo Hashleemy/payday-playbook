@@ -13,7 +13,7 @@ final class NotificationDiagnosticsTests: XCTestCase {
         _ identifier: String,
         title: String = "Payday check-in",
         body: String = "Your payday check-in is ready",
-        fire: Date? = TestSupport.date(2026, 9, 1)
+        fire: Date? = TestSupport.date(2054, 9, 1)
     ) -> PendingNotificationSummary {
         PendingNotificationSummary(identifier: identifier, title: title, body: body, fireDate: fire)
     }
@@ -26,13 +26,13 @@ final class NotificationDiagnosticsTests: XCTestCase {
     func testLegacyIdentifierLeftBesideItsReplacementIsReported() {
         let debtID = UUID().uuidString
         let pending = [
-            summary("due-soon-B-20260901", title: "A debt payment is due soon"),
-            summary("debt-due-soon-\(debtID)-20260901", title: "A debt payment is due soon")
+            summary("due-soon-B-20540901", title: "A debt payment is due soon"),
+            summary("debt-due-soon-\(debtID)-20540901", title: "A debt payment is due soon")
         ]
 
         let findings = NotificationDiagnostics.findings(for: pending)
 
-        XCTAssertTrue(findings.contains(.legacyScheme(identifier: "due-soon-B-20260901")))
+        XCTAssertTrue(findings.contains(.legacyScheme(identifier: "due-soon-B-20540901")))
         XCTAssertTrue(
             findings.contains { if case .duplicateContent = $0 { return true } else { return false } },
             "Same words at the same moment under two identifiers is a duplicate the user will experience."
@@ -59,15 +59,15 @@ final class NotificationDiagnosticsTests: XCTestCase {
         let pending = [
             summary(
                 NotificationFamily.paydayMorning.identifier(entity: itemID),
-                title: "Payday", fire: TestSupport.date(2026, 9, 1)
+                title: "Payday", fire: TestSupport.date(2054, 9, 1)
             ),
             summary(
                 NotificationFamily.paydayEvening.identifier(entity: itemID),
-                title: "Check-in", fire: TestSupport.date(2026, 9, 2)
+                title: "Check-in", fire: TestSupport.date(2054, 9, 2)
             ),
             summary(
-                NotificationFamily.debtDueSoon.identifier(entity: debtID, occurrence: "20260905"),
-                title: "A debt payment is due soon", fire: TestSupport.date(2026, 9, 5)
+                NotificationFamily.debtDueSoon.identifier(entity: debtID, occurrence: "20540905"),
+                title: "A debt payment is due soon", fire: TestSupport.date(2054, 9, 5)
             )
         ]
 
@@ -81,12 +81,12 @@ final class NotificationDiagnosticsTests: XCTestCase {
         let debtID = UUID().uuidString
         let pending = [
             summary(
-                NotificationFamily.debtDueSoon.identifier(entity: debtID, occurrence: "20260905"),
-                fire: TestSupport.date(2026, 9, 5)
+                NotificationFamily.debtDueSoon.identifier(entity: debtID, occurrence: "20540905"),
+                fire: TestSupport.date(2054, 9, 5)
             ),
             summary(
-                NotificationFamily.debtDueSoon.identifier(entity: debtID, occurrence: "20261005"),
-                fire: TestSupport.date(2026, 10, 5)
+                NotificationFamily.debtDueSoon.identifier(entity: debtID, occurrence: "20541005"),
+                fire: TestSupport.date(2054, 10, 5)
             )
         ]
 

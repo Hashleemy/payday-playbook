@@ -24,7 +24,7 @@ final class ReviewRegressionTests: XCTestCase {
         context.insert(checkIn)
 
         let draft = ReconciliationService.DraftAmounts(
-            actualIncome: TestSupport.money("2094.00"),
+            actualIncome: TestSupport.money("2400.00"),
             actualC1Kept: TestSupport.money("400.00"),
             actualC2Transfer: nil,
             cardPayments: ["B": TestSupport.money("1061.07")]
@@ -46,10 +46,10 @@ final class ReviewRegressionTests: XCTestCase {
     // A skipped C1 balance confirmation is flagged for an explanation.
     func testMissingC1BalanceIsFlagged() {
         let draft = ReconciliationService.DraftAmounts(
-            actualIncome: TestSupport.money("2094.00"),
+            actualIncome: TestSupport.money("2400.00"),
             actualC1Kept: TestSupport.money("400.00"),
             actualC1Balance: nil,
-            actualC2Transfer: TestSupport.money("1694.00")
+            actualC2Transfer: TestSupport.money("1705.00")
         )
         let issues = ReconciliationService.validate(draft)
         XCTAssertTrue(issues.contains { $0 == .missingC1Balance })
@@ -64,27 +64,27 @@ final class ReviewRegressionTests: XCTestCase {
         context.insert(checkIn)
 
         let draft = ReconciliationService.DraftAmounts(
-            actualIncome: TestSupport.money("2094.00"),
+            actualIncome: TestSupport.money("2400.00"),
             outsideFundsUsed: TestSupport.money("500.00"),
             actualC1Kept: TestSupport.money("400.00"),
-            actualC1Balance: TestSupport.money("1300.00"),
-            actualC2Transfer: TestSupport.money("2194.00"),
-            actualCarReserve: TestSupport.money("335.08"),
-            actualTrainReserve: TestSupport.money("51.23"),
+            actualC1Balance: TestSupport.money("1800.00"),
+            actualC2Transfer: TestSupport.money("2500.00"),
+            actualCarReserve: TestSupport.money("323.08"),
+            actualTrainReserve: TestSupport.money("69.23"),
             cardPayments: ["B": TestSupport.money("1061.07"), "D": TestSupport.money("246.62")]
         )
         let result = try ReconciliationService.completeCheckIn(
             context: context, checkIn: checkIn, planItem: first, plan: plan,
             draft: draft, debtsByPlanID: debts,
-            now: TestSupport.date(2026, 8, 20)
+            now: TestSupport.date(2054, 8, 20)
         )
         XCTAssertEqual(result.checkIn.status, .completed)
 
-        let provider = FixedDateProvider(fixed: TestSupport.date(2026, 8, 21))
+        let provider = FixedDateProvider(fixed: TestSupport.date(2054, 8, 21))
         let c2 = try AccountBalanceService(context: context, dateProvider: provider).checking2State()
-        // 2,194 in (already including the $500) − 1,307.69 paid out.
-        XCTAssertEqual(c2.totalBalance, TestSupport.money("886.31"))
-        XCTAssertEqual(c2.availableForDebt, TestSupport.money("500.00"))
+        // 2,500 in (already including the $500) − 1,307.69 paid out.
+        XCTAssertEqual(c2.totalBalance, TestSupport.money("1192.31"))
+        XCTAssertEqual(c2.availableForDebt, TestSupport.money("800.00"))
 
         // The windfall is still on the ledger for the audit trail.
         let windfalls = try context.fetch(FetchDescriptor<LedgerEntry>())
@@ -102,22 +102,22 @@ final class ReviewRegressionTests: XCTestCase {
         context.insert(checkIn)
 
         let draft = ReconciliationService.DraftAmounts(
-            actualIncome: TestSupport.money("2094.00"),
+            actualIncome: TestSupport.money("2400.00"),
             actualC1Kept: TestSupport.money("400.00"),
             actualC1Balance: TestSupport.money("1150.00"),
             actualAllowanceSpent: TestSupport.money("150.00"),
-            actualC2Transfer: TestSupport.money("1694.00"),
-            actualCarReserve: TestSupport.money("335.08"),
-            actualTrainReserve: TestSupport.money("51.23"),
+            actualC2Transfer: TestSupport.money("2000.00"),
+            actualCarReserve: TestSupport.money("323.08"),
+            actualTrainReserve: TestSupport.money("69.23"),
             cardPayments: ["B": TestSupport.money("1061.07"), "D": TestSupport.money("246.62")]
         )
         try ReconciliationService.completeCheckIn(
             context: context, checkIn: checkIn, planItem: first, plan: plan,
             draft: draft, debtsByPlanID: debts,
-            now: TestSupport.date(2026, 8, 20)
+            now: TestSupport.date(2054, 8, 20)
         )
 
-        let provider = FixedDateProvider(fixed: TestSupport.date(2026, 8, 20))
+        let provider = FixedDateProvider(fixed: TestSupport.date(2054, 8, 20))
         let service = AccountBalanceService(context: context, dateProvider: provider)
         let c1 = try service.checking1State(plan: plan, planItems: items)
         // The confirmed balance is authoritative; the reported prior-period
@@ -130,11 +130,11 @@ final class ReviewRegressionTests: XCTestCase {
     // Cards already at zero before a projection get no phantom payoff date.
     func testAlreadyPaidCardsGetNoNewPayoffDate() {
         let debts = [
-            DebtCalculationEngine.EngineDebt(planID: "B", apr: TestSupport.money("0.2999"), balance: .zero),
-            DebtCalculationEngine.EngineDebt(planID: "D", apr: TestSupport.money("0.2899"), balance: TestSupport.money("1000.00"))
+            DebtCalculationEngine.EngineDebt(planID: "B", apr: TestSupport.money("0.2600"), balance: .zero),
+            DebtCalculationEngine.EngineDebt(planID: "D", apr: TestSupport.money("0.2300"), balance: TestSupport.money("1500.00"))
         ]
         let paydays = [
-            DebtCalculationEngine.EnginePayday(sequence: 1, date: TestSupport.date(2026, 9, 3), cardBudget: TestSupport.money("1407.69"))
+            DebtCalculationEngine.EnginePayday(sequence: 1, date: TestSupport.date(2054, 9, 3), cardBudget: TestSupport.money("1707.69"))
         ]
         let result = DebtCalculationEngine.project(debts: debts, paydays: paydays)
         XCTAssertNil(result.perCardPayoffDates["B"])
@@ -145,18 +145,18 @@ final class ReviewRegressionTests: XCTestCase {
     func testOverdueOpenPaydayStaysInForecast() throws {
         let (context, _, _, _) = try makeSeededContext()
         // Aug 21: payday #1 has passed and was never completed.
-        let provider = FixedDateProvider(fixed: TestSupport.date(2026, 8, 21))
+        let provider = FixedDateProvider(fixed: TestSupport.date(2054, 8, 21))
         let forecast = try XCTUnwrap(
             try ReforecastService(context: context, dateProvider: provider).reforecast(trigger: .manual)
         )
         // All 23 checks, including the overdue one, still project to baseline.
-        XCTAssertEqual(forecast.projectedPayoffDate, TestSupport.date(2027, 6, 24))
+        XCTAssertEqual(forecast.projectedPayoffDate, TestSupport.date(2055, 6, 24))
         XCTAssertEqual(forecast.remainingPaychecks, 23)
     }
 
     // A locale-consistent money round trip: what the field writes, it re-reads.
     func testMoneyEditingRoundTrip() {
-        let values = ["2094.00", "335.08", "0.99", "12345.67"].map(TestSupport.money)
+        let values = ["2400.00", "323.08", "0.99", "12345.67"].map(TestSupport.money)
         for value in values {
             let text = MoneyFormat.editingString(value)
             XCTAssertEqual(MoneyFormat.parse(text), value, "round trip failed for \(value)")

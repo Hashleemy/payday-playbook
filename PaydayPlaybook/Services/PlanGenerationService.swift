@@ -132,7 +132,7 @@ enum PlanGenerationService {
                 windfalls: []
             ),
             spending: SpendingInput(
-                // The one-time first-check buffer is a Lem-template artifact;
+                // The one-time first-check buffer is a legacy-plan artifact;
                 // generated plans always carry 0 (the floor top-up emerges
                 // from balance vs. floor on its own).
                 startingBalance: snapshot.spendingStartingBalance + snapshot.firstCheckBufferAdd,

@@ -7,7 +7,7 @@ import Foundation
 ///
 /// Rounding contract: balances and interest carry full precision internally
 /// (the same mechanics as the frozen calc-v1 `DebtCalculationEngine`, so the
-/// legacy baseline reproduces exactly under Lem-equivalent inputs). Emitted
+/// legacy baseline reproduces exactly under equivalent inputs). Emitted
 /// row values are rounded to cents with cascading penny allocation so every
 /// `PaycheckPlan` reconciles to the cent by construction:
 ///
