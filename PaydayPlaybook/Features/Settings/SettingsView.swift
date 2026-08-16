@@ -454,8 +454,13 @@ struct NotificationSettingsView: View {
                 Section {
                     Button {
                         Task {
-                            _ = await notificationScheduler.requestAuthorization()
-                            await reschedule()
+                            // Permission change is a reconcile trigger
+                            // (V3-07): a grant produces a schedule now, not
+                            // at the next foreground.
+                            _ = await notificationScheduler.requestAuthorizationAndReconcile(
+                                context: modelContext,
+                                dateProvider: appEnvironment.dateProvider
+                            )
                         }
                     } label: {
                         Label("Enable notifications", systemImage: "bell.badge")
@@ -487,7 +492,8 @@ struct NotificationSettingsView: View {
         try? modelContext.save()
         await notificationScheduler.rescheduleAll(
             context: modelContext,
-            dateProvider: appEnvironment.dateProvider
+            dateProvider: appEnvironment.dateProvider,
+            trigger: .appSettingsChange
         )
     }
 }

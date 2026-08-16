@@ -19,7 +19,13 @@ final class AppRouter: ObservableObject {
     @Published var selectedTab: AppTab = .today
     /// Plan item to open a check-in for, triggered by deep link or Today.
     @Published var pendingCheckInItemID: UUID?
-    /// Debt plan letter to open, triggered by deep link.
+    /// Debt to open by entity, triggered by deep link. Preferred over the
+    /// plan letter: letters are reusable slots, so a reminder delivered
+    /// before a delete-and-re-add could otherwise open the wrong debt.
+    @Published var pendingDebtID: UUID?
+    /// Debt plan letter to open. Still populated for reminders scheduled by
+    /// 0.1.x/0.2.x, which carried only the letter, and for links that never
+    /// had a `UUID` (a plan item's avalanche target).
     @Published var pendingDebtPlanID: String?
     /// Obligation to highlight, triggered by a bill-due deep link.
     @Published var pendingObligationID: UUID?
@@ -41,7 +47,13 @@ final class AppRouter: ObservableObject {
             }
         case .debt:
             selectedTab = .debts
-            pendingDebtPlanID = reference
+            // v0.3.0 reminders carry the debt's UUID; anything else is a
+            // pre-upgrade plan letter and still resolves the old way.
+            if let reference, let id = UUID(uuidString: reference) {
+                pendingDebtID = id
+            } else {
+                pendingDebtPlanID = reference
+            }
         case .obligation:
             // The calendar is where a bill's due date lives, alongside the
             // rest of that day's play; it selects the obligation's next

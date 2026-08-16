@@ -104,11 +104,24 @@ struct CalendarEventService {
 
     /// Typed navigation target for an event (V2-11: deep links must survive
     /// plan edits — they carry entity identity, never row positions).
+    ///
+    /// Debt links carry the debt's `UUID` alongside its plan letter. The
+    /// letter alone is not identity: `SetupRepositories.nextPlanID()` hands
+    /// out the lowest free slot, so deleting "D1" and adding another debt
+    /// reuses the letter, and a link rendered before the delete would open a
+    /// debt the user never tapped. The letter is kept because plan items
+    /// address their avalanche target by it, and 0.1.x/0.2.x notifications
+    /// still in Notification Center carry only the letter (V3-07).
     enum DeepLink: Hashable {
         case checkIn(itemID: UUID)
-        case debt(planID: String)
+        case debt(debtID: UUID?, planID: String)
+        case obligation(obligationID: UUID)
         case entry(entryID: UUID)
         case milestone(milestoneID: UUID)
+
+        /// Link to a debt known only by its plan letter — a plan item's
+        /// avalanche target, or a balance snapshot's subject.
+        static func debt(planID: String) -> DeepLink { .debt(debtID: nil, planID: planID) }
     }
 
     enum Filter: String, CaseIterable, Identifiable {
@@ -349,14 +362,17 @@ struct CalendarEventService {
             }
 
             if item.plannedCardBudget > 0 {
-                let targetName = debtsByPlanID[item.plannedTargetDebtID]?.first?.displayName
+                let target = debtsByPlanID[item.plannedTargetDebtID]?.first
+                let targetName = target?.displayName
                     ?? (item.plannedTargetDebtID.isEmpty ? "debts" : "Card \(item.plannedTargetDebtID)")
                 events.append(Event(
                     id: "debtpay-\(item.sequenceNumber)",
                     date: day, kind: .debtPayment, status: laterTruth,
                     title: "Debt payments",
                     detail: "Minimums + extra \(MoneyFormat.string(item.plannedCardBudget)) · Avalanche target: \(targetName)",
-                    link: item.plannedTargetDebtID.isEmpty ? .checkIn(itemID: item.id) : .debt(planID: item.plannedTargetDebtID)
+                    link: item.plannedTargetDebtID.isEmpty
+                        ? .checkIn(itemID: item.id)
+                        : .debt(debtID: target?.id, planID: item.plannedTargetDebtID)
                 ))
             }
         }
@@ -389,7 +405,7 @@ struct CalendarEventService {
                     status: .planned,
                     title: "\(debt.displayName) due",
                     detail: minimum + clampedNote,
-                    link: .debt(planID: debt.planID)
+                    link: .debt(debtID: debt.id, planID: debt.planID)
                 ))
             }
         }
@@ -407,7 +423,11 @@ struct CalendarEventService {
                     status: .planned,
                     title: "\(obligation.name) due",
                     detail: "\(MoneyFormat.string(obligation.amount)) · \(obligation.cadence.displayName)",
-                    link: nil
+                    // A bill-due marker used to be the one linked-looking row
+                    // in the calendar that did nothing when tapped, while the
+                    // matching reminder deep-linked fine. Both now address the
+                    // bill by entity (V3-07).
+                    link: .obligation(obligationID: obligation.id)
                 ))
             }
         }
@@ -506,7 +526,11 @@ struct CalendarEventService {
     /// checked against the store.
     enum LinkResolution: Equatable {
         case openCheckIn(item: UUID)
-        case openDebt(planID: String)
+        /// Resolved to a live debt. `debtID` is present whenever the store
+        /// could identify one, so the caller navigates by entity rather than
+        /// by the letter it was handed.
+        case openDebt(debtID: UUID?, planID: String)
+        case openObligation(obligationID: UUID)
         case openEntry(entryID: UUID)
         case openMilestone(milestoneID: UUID)
         /// The target is archived or gone; the message is user-facing copy.
@@ -525,13 +549,42 @@ struct CalendarEventService {
             return exists
                 ? .openCheckIn(item: itemID)
                 : .unavailable(message: "This payday belongs to an older plan version and can't be opened.")
-        case .debt(let planID):
+        case .debt(let debtID, let planID):
+            // Identity first: a link that knows the entity resolves against
+            // the entity, so a reused plan letter cannot redirect the tap to
+            // a different debt. The letter is only a fallback for links that
+            // never had a UUID to carry.
+            if let debtID {
+                let byID = try context.fetch(
+                    FetchDescriptor<DebtAccount>(predicate: #Predicate { $0.id == debtID })
+                )
+                if let debt = byID.first {
+                    guard !debt.isArchived else {
+                        return .unavailable(message: "This debt is archived. You can find it under Debts once unarchived.")
+                    }
+                    return .openDebt(debtID: debt.id, planID: debt.planID)
+                }
+                return .unavailable(message: "This debt no longer exists.")
+            }
             let matches = try context.fetch(
                 FetchDescriptor<DebtAccount>(predicate: #Predicate { $0.planID == planID })
             )
-            if matches.contains(where: { !$0.isArchived }) { return .openDebt(planID: planID) }
+            if let live = matches.first(where: { !$0.isArchived }) {
+                return .openDebt(debtID: live.id, planID: planID)
+            }
             if matches.isEmpty { return .unavailable(message: "This debt no longer exists.") }
             return .unavailable(message: "This debt is archived. You can find it under Debts once unarchived.")
+        case .obligation(let obligationID):
+            let matches = try context.fetch(
+                FetchDescriptor<RecurringObligation>(predicate: #Predicate { $0.id == obligationID })
+            )
+            guard let obligation = matches.first else {
+                return .unavailable(message: "This bill no longer exists.")
+            }
+            guard !obligation.isArchived else {
+                return .unavailable(message: "This bill is archived. You can find it under Bills once unarchived.")
+            }
+            return .openObligation(obligationID: obligation.id)
         case .entry(let entryID):
             let exists = try context.fetchCount(
                 FetchDescriptor<LedgerEntry>(predicate: #Predicate { $0.id == entryID })

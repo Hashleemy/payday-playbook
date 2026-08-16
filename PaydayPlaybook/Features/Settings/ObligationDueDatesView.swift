@@ -11,7 +11,7 @@ import SwiftData
 struct ObligationDueDatesView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RecurringObligation.name) private var obligations: [RecurringObligation]
-    @State private var editing: RecurringObligation?
+    @State private var editing: DueRuleEditorTarget?
 
     private var activeObligations: [RecurringObligation] {
         obligations.filter { !$0.isArchived }
@@ -25,7 +25,7 @@ struct ObligationDueDatesView: View {
             }
             ForEach(activeObligations) { obligation in
                 Button {
-                    editing = obligation
+                    editing = DueRuleEditorTarget(obligation)
                 } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -58,120 +58,9 @@ struct ObligationDueDatesView: View {
             }
         }
         .navigationTitle("Obligation due dates")
-        .sheet(item: $editing) { obligation in
-            ObligationDueDateEditView(obligation: obligation)
-        }
-    }
-}
-
-struct ObligationDueDateEditView: View {
-    let obligation: RecurringObligation
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var appEnvironment: AppEnvironment
-    @EnvironmentObject private var notificationScheduler: NotificationScheduler
-
-    @State private var dueDayText = ""
-    @State private var shiftRule: DueDateShiftRule = .exactDay
-    @State private var isSaving = false
-    @State private var errorMessage: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section(obligation.name) {
-                    HStack {
-                        Text("Due day of month")
-                        Spacer()
-                        TextField("1–31 or blank", text: $dueDayText)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 110)
-                    }
-                    if !dueDayText.isEmpty {
-                        Picker("Weekend due dates", selection: $shiftRule) {
-                            ForEach(DueDateShiftRule.allCases) { rule in
-                                Text(rule.displayName).tag(rule)
-                            }
-                        }
-                    }
-                    Text("Changes apply to future dates only. Reserving per paycheck is unchanged — the due day is when the bill itself is due.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                if let errorMessage {
-                    Section {
-                        Label(errorMessage, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
-                    }
-                }
-                Section {
-                    Button {
-                        save()
-                    } label: {
-                        Text(isSaving ? "Saving…" : "Save")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isSaving)
-                }
-                .listRowBackground(Color.clear)
-            }
-            .navigationTitle("Edit due date")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-            .onAppear {
-                dueDayText = obligation.dueDay.map(String.init) ?? ""
-                shiftRule = obligation.dueDateShiftRule
-            }
-        }
-    }
-
-    private func save() {
-        // Validate before mutating: the obligation is a live SwiftData
-        // object, so an early return after assignment would persist an edit
-        // the user never confirmed.
-        var newDueDay: Int?
-        if !dueDayText.isEmpty {
-            guard let day = Int(dueDayText), DueDateRule.validDays.contains(day) else {
-                errorMessage = "Enter a due day between 1 and 31, or leave it blank."
-                return
-            }
-            newDueDay = day
-        }
-        let previousDueDay = obligation.dueDay
-        obligation.dueDay = newDueDay
-        if newDueDay != previousDueDay {
-            obligation.appendDueDateAudit(DueDateRule.auditNote(
-                field: "due day",
-                from: previousDueDay,
-                to: newDueDay,
-                on: appEnvironment.dateProvider.now
-            ))
-            obligation.dueDayEffectiveFrom = DateMath.startOfDay(appEnvironment.dateProvider.now)
-        }
-        obligation.dueDateShiftRule = shiftRule
-        obligation.updatedAt = Date()
-        do {
-            try modelContext.save()
-            // V2-11: the reschedule completes before dismissal so stable
-            // identifiers replace the old reminders — no stale fires, no
-            // duplicates.
-            isSaving = true
-            Task {
-                await notificationScheduler.rescheduleAll(
-                    context: modelContext,
-                    dateProvider: appEnvironment.dateProvider
-                )
-                isSaving = false
-                dismiss()
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        // The shared editor: the same form, validation, audit trail, and
+        // reconcile the consolidated setup page and the debt detail screen
+        // use (V3-07).
+        .dueRuleEditor($editing)
     }
 }

@@ -199,7 +199,13 @@ struct RemindersStepView: View {
     private func requestPermission() {
         requesting = true
         Task {
-            let granted = await notificationScheduler.requestAuthorization()
+            // Reconcile on the permission change itself (V3-07), so a
+            // grant here schedules the dates this step just showed rather
+            // than waiting for the end of onboarding.
+            let granted = await notificationScheduler.requestAuthorizationAndReconcile(
+                context: modelContext,
+                dateProvider: appEnvironment.dateProvider
+            )
             requesting = false
             decision = granted ? .granted : .denied
         }
