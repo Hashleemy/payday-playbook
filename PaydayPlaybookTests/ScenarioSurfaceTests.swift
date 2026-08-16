@@ -110,7 +110,7 @@ final class ScenarioSurfaceTests: XCTestCase {
             protectedFloor: TestSupport.money("1000.00"),
             allowanceCap: TestSupport.money("250.00")
         )
-        let definitions = ScenarioWorkspaceLoader.definitions(
+        let definitions = ScenarioDefinitionBuilder.definitions(
             profile: profile, effectiveDate: TestSupport.fixedToday.now
         )
 
@@ -120,12 +120,16 @@ final class ScenarioSurfaceTests: XCTestCase {
             XCTAssertNil(definition.additionalReserve)
             XCTAssertNil(definition.extraPaymentCeiling)
         }
-        XCTAssertEqual(definitions.first?.preferredFloor, TestSupport.money("1000.00"))
-        XCTAssertEqual(definitions.first?.preferredAllowance, TestSupport.money("250.00"))
+        // Nil here is not "unstated" — §6 reads a nil floor or allowance as
+        // "keep the ones already in the plan snapshot", which the input builder
+        // fills from this same profile. Naming them again would give one number
+        // two sources that could drift apart.
+        XCTAssertNil(definitions.first?.preferredFloor)
+        XCTAssertNil(definitions.first?.preferredAllowance)
     }
 
     func testNoProfileMeansEveryConstraintIsNil() {
-        let definitions = ScenarioWorkspaceLoader.definitions(
+        let definitions = ScenarioDefinitionBuilder.definitions(
             profile: nil, effectiveDate: TestSupport.fixedToday.now
         )
         XCTAssertEqual(definitions.count, 3)

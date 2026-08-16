@@ -68,19 +68,3 @@ enum ScenarioDefinitionBuilder {
         value.rounded2 > 0 ? value : nil
     }
 }
-
-extension ScenarioKind {
-    /// Display name used everywhere the three cards are named, including the
-    /// PDF report, so a printout and the screen agree word for word.
-    var displayName: String {
-        switch self {
-        case .fastestSafe: return "Fastest Safe"
-        case .balanced: return "Balanced"
-        case .moreCushion: return "More Cushion"
-        }
-    }
-
-    /// Balanced is presented as the recommendation and never auto-applied
-    /// (MVP_LAYOUT §8.6).
-    var isRecommended: Bool { self == .balanced }
-}
