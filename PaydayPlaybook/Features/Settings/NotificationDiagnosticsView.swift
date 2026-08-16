@@ -264,7 +264,7 @@ struct NotificationDiagnosticsView: View {
 
     private func reconcile() async {
         isWorking = true
-        await scheduler.rescheduleAll(context: modelContext, dateProvider: appEnvironment.dateProvider)
+        await scheduler.rescheduleAll(context: modelContext, dateProvider: appEnvironment.dateProvider, trigger: .manualDiagnostics)
         isWorking = false
         await refresh()
     }

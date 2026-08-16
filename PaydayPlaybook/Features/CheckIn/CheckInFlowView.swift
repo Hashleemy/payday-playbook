@@ -621,7 +621,8 @@ struct CheckInFlowView: View {
             Task {
                 await notificationScheduler.rescheduleAll(
                     context: modelContext,
-                    dateProvider: appEnvironment.dateProvider
+                    dateProvider: appEnvironment.dateProvider,
+                    trigger: .checkInCompleted
                 )
             }
             isCompleted = true
