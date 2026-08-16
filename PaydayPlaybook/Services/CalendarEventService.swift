@@ -120,7 +120,9 @@ struct CalendarEventService {
         case milestone(milestoneID: UUID)
 
         /// Link to a debt known only by its plan letter — a plan item's
-        /// avalanche target, or a balance snapshot's subject.
+        /// avalanche target, or a reminder delivered by 0.1.x/0.2.x. Anything
+        /// that holds the debt's identity must pass it: the letter alone
+        /// cannot distinguish a debt from its successor in the same slot.
         static func debt(planID: String) -> DeepLink { .debt(debtID: nil, planID: planID) }
     }
 
@@ -488,7 +490,12 @@ struct CalendarEventService {
                 date: day, kind: .entry, status: .actual,
                 title: "Balance update\(snapshot.debtPlanID.map { " · Card \($0)" } ?? "")",
                 detail: MoneyFormat.string(snapshot.amount),
-                link: snapshot.debtPlanID.map { .debt(planID: $0) }
+                // The loop already guards `debtAccountID != nil`, so this row's
+                // subject is known by identity. Linking by letter alone would
+                // re-open the reuse hazard the entity-keyed link exists to close.
+                link: snapshot.debtPlanID.map {
+                    .debt(debtID: snapshot.debtAccountID, planID: $0)
+                }
             ))
         }
     }
