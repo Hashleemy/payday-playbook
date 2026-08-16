@@ -21,7 +21,7 @@ final class PlanPresentationTests: XCTestCase {
         let fixture = try DashboardFixtures.generatedPlan()
         let data = load(fixture)
 
-        XCTAssertEqual(data.calculationVersion, 2)
+        XCTAssertEqual(data.calculationVersion, PlanContract.currentCalculationVersion)
         XCTAssertTrue(data.generatedFromProfile)
         XCTAssertEqual(data.cadenceText, PayCadence.biweekly.displayName)
         XCTAssertEqual(data.firstPaydayText, DateMath.mediumString(TestSupport.date(2054, 8, 20)))

@@ -17,11 +17,13 @@ struct ReforecastService {
         trigger: ForecastTrigger,
         varianceContext: String? = nil
     ) throws -> ForecastSnapshot? {
-        // Engine dispatch (V2-15): plans stamped calculation version 2 route
-        // through the calc-v2 engine; Original Plan v1 stays on the frozen
-        // calc-v1 path below, untouched.
+        // Engine dispatch (V2-15): plans stamped calculation version 2 or
+        // higher route through the modern engine; Original Plan v1 stays on
+        // the frozen calc-v1 path below, untouched. The threshold is the
+        // legacy boundary, not the current stamp — see PlanContract.
         let generatedPlan = try context.fetch(FetchDescriptor<PlanVersion>()).first(where: \.isActive)
-        if let generatedPlan, generatedPlan.calculationVersion >= PlanContract.currentCalculationVersion {
+        if let generatedPlan,
+           generatedPlan.calculationVersion >= PlanContract.minimumModernCalculationVersion {
             return try reforecastCalcV2(plan: generatedPlan, trigger: trigger, varianceContext: varianceContext)
         }
         guard let plan = try PlanRepository.legacyBaseline(context: context) else { return nil }

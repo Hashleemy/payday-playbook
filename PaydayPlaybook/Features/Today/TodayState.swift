@@ -134,7 +134,7 @@ struct TodayState {
 
             // Forecast + interest, dispatched on the plan's calculation stamp.
             state.forecast = try environment.reforecastService(context: context).latestForecast()
-            if plan.calculationVersion >= PlanContract.currentCalculationVersion {
+            if plan.calculationVersion >= PlanContract.minimumModernCalculationVersion {
                 loadCalcV2Forecast(into: &state, plan: plan, context: context, environment: environment)
             } else {
                 state.forecastPayoffDate = state.forecast?.projectedPayoffDate ?? plan.baselinePayoffDate

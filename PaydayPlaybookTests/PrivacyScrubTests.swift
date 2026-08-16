@@ -63,7 +63,8 @@ final class PrivacyScrubTests: XCTestCase {
         XCTAssertEqual(PlanContract.schemaVersion, 1)
         XCTAssertEqual(PlanContract.calculationVersion, 1)
         XCTAssertEqual(PlanContract.currentSchemaVersion, 3)
-        XCTAssertEqual(PlanContract.currentCalculationVersion, 2)
+        XCTAssertEqual(PlanContract.currentCalculationVersion, 3)
+        XCTAssertEqual(PlanContract.minimumModernCalculationVersion, 2)
 
         // The R-06 estimator, which is a published rule, not anyone's balance.
         XCTAssertEqual(PlanContract.minimumPaymentFloor, TestSupport.money("17.50"))

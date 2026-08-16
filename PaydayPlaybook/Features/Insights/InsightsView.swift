@@ -92,9 +92,9 @@ enum InsightsBuilder {
         let balances = (try? balanceService.debtBalances()) ?? []
         let forecast = try? environment.reforecastService(context: context).latestForecast()
 
-        // 1. Interest saved vs. minimums only (calc v2 only — the engine
+        // 1. Interest saved vs. minimums only (modern engine only — the engine
         //    withholds the comparison when inputs can't support it).
-        if plan.calculationVersion >= PlanContract.currentCalculationVersion {
+        if plan.calculationVersion >= PlanContract.minimumModernCalculationVersion {
             let service = GeneratedPlanService(context: context, dateProvider: environment.dateProvider)
             if let result = (try? service.baselineResult(for: plan)) ?? nil {
                 if let saved = result.minimumOnlyComparison?.interestSaved, saved > 0 {

@@ -183,7 +183,7 @@ enum PlanViewDataLoader {
 
         // MARK: Calc-version-specific analysis
 
-        if plan.calculationVersion >= PlanContract.currentCalculationVersion {
+        if plan.calculationVersion >= PlanContract.minimumModernCalculationVersion {
             loadCalcV2(into: &data, plan: plan, context: context, environment: environment, debts: debtsByPlanID)
         } else {
             data.assumptionLines = [
