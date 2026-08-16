@@ -358,6 +358,34 @@ final class CalendarRemindersHardeningTests: XCTestCase {
         )
     }
 
+    /// A balance-update row's subject is known by identity — the calendar only
+    /// emits the row when the snapshot carries a debt reference. Linking it by
+    /// plan letter alone would hand the tap to whichever debt later inherited
+    /// the slot, which is the same misrouting the entity-keyed link closes for
+    /// reminders. Found at integration: the producer discarded an ID it held.
+    func testABalanceUpdateRowLinksToItsDebtByIdentityNotItsLetter() throws {
+        let (context, provider) = try makeStore()
+        let service = calendar(context, provider)
+        let debt = try seededDebt(context)
+        context.insert(BalanceSnapshot(
+            debtAccountID: debt.id,
+            debtPlanID: debt.planID,
+            effectiveDate: TestSupport.date(2054, 9, 12),
+            amount: TestSupport.money("1234.56"),
+            sourceType: .userEntry
+        ))
+        try context.save()
+
+        let events = try service.events(
+            from: TestSupport.date(2054, 9, 1), to: TestSupport.date(2054, 9, 30)
+        )
+        let row = try XCTUnwrap(
+            events.first { $0.title.hasPrefix("Balance update") },
+            "the balance update must appear on the calendar"
+        )
+        XCTAssertEqual(row.link, .debt(debtID: debt.id, planID: debt.planID))
+    }
+
     // MARK: - Reconciliation: exactly one correct replacement
 
     func testDueDateEditRemovesOldRequestsAndLeavesExactlyOneReplacement() async throws {
