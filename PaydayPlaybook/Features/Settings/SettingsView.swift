@@ -35,7 +35,11 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("settings.reviewSetup")
                 NavigationLink("Accounts") { SettingsAccountsView() }
-                NavigationLink("Essential bills") { SettingsObligationsView() }
+                // V3-08: one destination for bills and debts, replacing the
+                // separate "Essential bills" entry. The Debts tab stays the
+                // place you track and pay them; this is where they are set up.
+                NavigationLink("Bills & debts") { SettingsBillsAndDebtsView() }
+                    .accessibilityIdentifier("settings.billsAndDebtsLink")
             }
             Section("Plan") {
                 NavigationLink("Plan versions") { PlanVersionsView() }

@@ -57,6 +57,16 @@ struct ReviewSetupView: View {
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("reviewSetup.gap.\(gap.kind.rawValue)")
                         }
+                        // Each row above opens the exact item's editor, which
+                        // is the shortest route to fixing one thing. This is
+                        // the route to the whole picture (§8.8).
+                        if group.destination == .debts || group.destination == .obligations {
+                            NavigationLink("See all bills & debts") {
+                                SettingsBillsAndDebtsView()
+                            }
+                            .font(.footnote)
+                            .accessibilityIdentifier("reviewSetup.billsAndDebts")
+                        }
                     }
                 }
             }
@@ -88,7 +98,7 @@ struct ReviewSetupView: View {
         case .accounts: return "Accounts"
         case .income: return "Income"
         case .debts: return "Debts"
-        case .obligations: return "Essential bills"
+        case .obligations: return "Bills"
         }
     }
 

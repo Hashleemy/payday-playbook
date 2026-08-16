@@ -25,7 +25,7 @@ final class OnboardingProgressTests: XCTestCase {
         let relaunched = makeService(container)
         XCTAssertEqual(try relaunched.resumeStep(), .accounts)
         try relaunched.markStepCompleted(.accounts)
-        XCTAssertEqual(try relaunched.resumeStep(), .debts)
+        XCTAssertEqual(try relaunched.resumeStep(), .income)
 
         // Only one progress row ever exists.
         let context = ModelContext(container)
@@ -41,7 +41,7 @@ final class OnboardingProgressTests: XCTestCase {
         try service.markStepCompleted(.income)
         // The user goes back and re-saves the goals step.
         try service.markStepCompleted(.goals)
-        XCTAssertEqual(try service.resumeStep(), .obligations)
+        XCTAssertEqual(try service.resumeStep(), .billsAndDebts)
     }
 
     // MARK: - Atomic, duplicate-proof finish

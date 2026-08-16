@@ -59,6 +59,12 @@ final class RecurringObligation {
     /// carried: "car" / "train". A stable key, not a user-facing name.
     /// Maps legacy fixed-reserve fields and ledger entry types to this row.
     var legacyKey: String?
+    /// Display order on the consolidated Bills & Debts page (V3-08). Defaults
+    /// to 0 for every pre-existing row, so an upgraded store keeps the exact
+    /// creation order it always listed in until the user drags something.
+    /// Presentation only — the plan reserves for bills by cadence and amount,
+    /// never by position.
+    var sortOrder: Int = 0
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
     /// V2-11: user-selected weekend handling for the due date. Nil means

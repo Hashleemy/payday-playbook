@@ -38,20 +38,64 @@ enum OnboardingStep: String, Codable, CaseIterable, Identifiable {
     /// explicit list means a new case is inert until someone puts it in the
     /// sequence on purpose — which is the onboarding owner's call, not the
     /// schema's.
+    ///
+    /// **v0.3.0 (V3-08).** `.debts` and `.obligations` left this list and
+    /// `.billsAndDebts` took their place, after `.income` so the reserve
+    /// preview smooths against the real pay cadence rather than a default.
+    /// The two retired cases stay *declared* because their raw values are
+    /// persisted in existing stores; `resumeEquivalent` below is what keeps
+    /// those stores landing on the right screen.
     static let flowOrder: [OnboardingStep] = [
-        .none, .welcome, .goals, .accounts, .debts,
-        .income, .obligations, .notifications, .review, .finished
+        .none, .welcome, .goals, .accounts,
+        .income, .billsAndDebts, .notifications, .review, .finished
     ]
 
+    /// Steps that were in a previous release's `flowOrder` and no longer are.
+    static let retiredSteps: [OnboardingStep] = [.debts, .obligations]
+
+    /// Position in the current sequence, resolved through `resumeEquivalent`
+    /// so a retired step compares as the amount of work it actually
+    /// represents. Without that, a stored `.debts` would sort *after*
+    /// `.finished` and `markStepCompleted`'s "position only advances" guard
+    /// would refuse every subsequent step.
     var sortIndex: Int {
-        OnboardingStep.flowOrder.firstIndex(of: self) ?? OnboardingStep.flowOrder.count
+        OnboardingStep.flowOrder.firstIndex(of: resumeEquivalent)
+            ?? OnboardingStep.flowOrder.count
     }
 
     /// The step to resume at when this is the last completed step.
     var next: OnboardingStep {
         let all = OnboardingStep.flowOrder
-        guard let index = all.firstIndex(of: self), index + 1 < all.count else { return .finished }
+        guard let index = all.firstIndex(of: resumeEquivalent),
+              index + 1 < all.count else { return .finished }
         return all[index + 1]
+    }
+
+    /// Where a persisted "last completed step" sits in the *current* sequence.
+    ///
+    /// A v0.2 store can hold `.debts` or `.obligations`, which are no longer
+    /// traversable. Without this mapping `sortIndex` would fall off the end of
+    /// the list and `next` would resume such a user at `.finished` — skipping
+    /// income and losing the rest of their setup. Each retired step maps to the
+    /// current step that represents the same amount of finished work:
+    ///
+    /// - `.debts` completed (old order: accounts → **debts** → income) means
+    ///   accounts and debts are done but income is not, so it maps to
+    ///   `.accounts` and the user resumes at `.income`.
+    /// - `.obligations` completed (old order: income → **obligations** →
+    ///   notifications) means everything up to and including bills and debts is
+    ///   done, so it maps to `.billsAndDebts` and the user resumes at
+    ///   `.notifications`.
+    ///
+    /// Debts entered under the old flow are simply still in the store; the
+    /// consolidated step re-reads them and shows them, so nothing is re-asked
+    /// and nothing is duplicated.
+    var resumeEquivalent: OnboardingStep {
+        switch self {
+        case .debts: return .accounts
+        case .obligations: return .billsAndDebts
+        default: return self
+        }
     }
 }
 
