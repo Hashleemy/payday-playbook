@@ -236,6 +236,7 @@ struct ApplyScenarioView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appEnvironment: AppEnvironment
+    @EnvironmentObject private var notificationScheduler: NotificationScheduler
 
     let result: ScenarioResult
     let definition: StoredScenarioDefinition
@@ -373,6 +374,23 @@ struct ApplyScenarioView: View {
                 context: modelContext, dateProvider: appEnvironment.dateProvider
             ).apply(result: result, definition: definition, baseInput: baseInput)
             didApply = true
+
+            // Applying a scenario activates a new plan version, which is the
+            // same event `PlanActivationView` handles — so it does the same two
+            // things, deliberately in step with it. The confirmation copy above
+            // promises the reminders are rebuilt, and reminders are derived from
+            // the active plan's paydays; without this the promise is false until
+            // the next foreground pass. The forecast is refreshed for the same
+            // reason: it would otherwise keep projecting the superseded plan.
+            try? appEnvironment.reforecastService(context: modelContext)
+                .reforecast(trigger: .planEdit, varianceContext: "Scenario applied as a new plan version.")
+            let context = modelContext
+            let dateProvider = appEnvironment.dateProvider
+            Task {
+                await notificationScheduler.rescheduleAll(
+                    context: context, dateProvider: dateProvider, trigger: .planActivation
+                )
+            }
         } catch {
             self.error = error.localizedDescription
         }

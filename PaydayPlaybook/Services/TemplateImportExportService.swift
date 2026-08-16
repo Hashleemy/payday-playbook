@@ -662,7 +662,13 @@ struct TemplateImportExportService: TemplatePorting {
             context.insert(NotificationPreference(
                 type: kind, enabled: reminder.enabled, hour: reminder.hour,
                 minute: reminder.minute, leadDays: reminder.leadDays,
-                detailedLockScreenContent: reminder.detailedLockScreenContent
+                // Never honoured from a file, whatever it says. Detailed
+                // lock-screen copy puts a name and an amount on a screen
+                // visible without unlocking the device; that is a decision for
+                // the person holding the phone, and a template arrives from
+                // someone else. Timing and lead days are ordinary
+                // configuration, so those do come across (V3-13).
+                detailedLockScreenContent: false
             ))
             outcome.remindersAdded += 1
         }
