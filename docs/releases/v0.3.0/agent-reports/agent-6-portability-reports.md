@@ -572,5 +572,14 @@ On `feature/v0.3-portability-reports`:
 
 - `970ba66` — merge of Agent 3's `46348b2` into Agent 2's `6029107` (one
   comment-only conflict, resolved).
-- (implementation commit hash recorded in the follow-up commit, as Agents 1 and
-  3 did.)
+- **`1548c00`** — feat(v0.3.0): versioned backups, structure-only templates, and
+  PDF reports (25 files).
+- (+ one follow-up commit recording these hashes here, as Agents 1 and 3 did.)
+
+Validation at `1548c00`: unit suite **442/442 green**; UI suite **22/22 green**
+on a dedicated simulator (`pp-a6-ui`) with `-parallel-testing-enabled NO`. The
+branch is local only — no v0.3 branch has been pushed to `origin` by any agent,
+and this one follows that convention and waits for the integration owner.
+
+Build note, confirming Agent 1's: `-derivedDataPath` must point **outside**
+`~/Documents` on this machine or CodeSign fails on file-provider xattrs.
