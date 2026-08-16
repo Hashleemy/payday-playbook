@@ -227,6 +227,37 @@ final class TemplatePortingTests: XCTestCase {
 
     // MARK: - Apply
 
+    /// A template arrives from someone else, and detailed lock-screen copy puts
+    /// a debt's name and an amount on a screen readable without unlocking the
+    /// phone. Whatever the file says, importing one must not switch that on
+    /// (V3-13). Reminder timing and lead days are ordinary configuration and do
+    /// carry across — the point is that one flag is the device owner's alone.
+    func testImportingATemplateNeverEnablesDetailedLockScreenCopy() throws {
+        let source = try makeContext()
+        try PortabilityFixtures.modernSetup(source)
+        for preference in try source.fetch(FetchDescriptor<NotificationPreference>()) {
+            preference.detailedLockScreenContent = true
+            preference.leadDays = 3
+        }
+        try source.save()
+        let data = try encoded(source, options: .structureOnly)
+
+        let target = try makeContext()
+        let preview = try service(target).preview(data: data)
+        let outcome = try service(target).apply(preview, mode: .add)
+
+        XCTAssertGreaterThan(outcome.remindersAdded, 0, "the reminders must really have been imported")
+        let imported = try target.fetch(FetchDescriptor<NotificationPreference>())
+        XCTAssertFalse(
+            imported.contains(where: \.detailedLockScreenContent),
+            "an imported template must never turn on detailed lock-screen copy"
+        )
+        XCTAssertTrue(
+            imported.contains { $0.leadDays == 3 },
+            "ordinary reminder configuration still crosses, so this is not just an empty import"
+        )
+    }
+
     func testApplyingAStructureTemplateCreatesPlaceholdersAndInventsNoAmount() throws {
         let source = try makeContext()
         try PortabilityFixtures.modernSetup(source)

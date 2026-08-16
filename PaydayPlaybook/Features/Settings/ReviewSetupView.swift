@@ -362,51 +362,6 @@ struct SettingsAccountsView: View {
     }
 }
 
-/// Essential bills list for Settings.
-struct SettingsObligationsView: View {
-    @Query private var obligations: [RecurringObligation]
-    @State private var editing: ObligationEditorTarget?
-
-    private var active: [RecurringObligation] {
-        obligations.filter { !$0.isArchived }
-            .sorted { ($0.createdAt, $0.name) < ($1.createdAt, $1.name) }
-    }
-
-    var body: some View {
-        List {
-            Section {
-                ForEach(active) { obligation in
-                    Button {
-                        editing = .existing(obligation)
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(obligation.name)
-                                Text(obligation.cadence.displayName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            MoneyText(amount: obligation.amount)
-                        }
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                Button {
-                    editing = .new(nil)
-                } label: {
-                    Label("Add a bill", systemImage: "plus.circle")
-                        .frame(minHeight: 44)
-                }
-            }
-        }
-        .navigationTitle("Essential bills")
-        .sheet(item: $editing) { ObligationEditorView(target: $0) }
-    }
-}
-
 // MARK: - Goal editor for existing users
 
 /// The goal step's questions, reachable after onboarding. Editing these
