@@ -176,9 +176,10 @@ enum AccountEditorTarget: Identifiable {
     }
 }
 
-/// Add/edit sheet shared by onboarding and Settings. `allowsDelete` is true
-/// during onboarding (nothing references the account yet) and false
-/// afterwards, where accounts are archived so history survives (§4.8).
+/// Add/edit sheet shared by onboarding, Settings, and the Accounts workspace.
+/// `allowsDelete` is true during onboarding (nothing references the account
+/// yet) and false afterwards, where accounts are archived so history survives
+/// (§4.8).
 struct AccountEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -186,9 +187,19 @@ struct AccountEditorView: View {
 
     let target: AccountEditorTarget
     var allowsDelete = false
+    /// The Accounts workspace (V3-02) manages per-account protected cash;
+    /// onboarding keeps asking for the single profile floor instead, so the
+    /// user is never asked the same question twice in one flow.
+    var showsProtectedAmount = false
+    /// False once an account has history to reconcile against. A balance
+    /// change is then a dated fact with a ledger consequence and belongs in
+    /// the balance-update sheet, not in a field that would silently move the
+    /// number out from under the recorded activity (V3-03).
+    var balanceEditable = true
 
     @State private var name = ""
     @State private var balance: Decimal?
+    @State private var protectedAmount: Decimal?
     @State private var roles: Set<AccountRole> = [.spending]
     @State private var error: String?
     @State private var loaded = false
@@ -209,14 +220,41 @@ struct AccountEditorView: View {
                             .accessibilityIdentifier("account.name")
                     }
 
-                    SetupMoneyField(
-                        title: "Balance today",
-                        value: $balance,
-                        requirement: .required,
-                        help: "What's in it right now. You can update it any time.",
-                        error: balanceError,
-                        fieldIdentifier: "account.balance"
-                    )
+                    if balanceEditable {
+                        SetupMoneyField(
+                            title: "Balance today",
+                            value: $balance,
+                            requirement: .required,
+                            help: "What's in it right now. You can update it any time.",
+                            error: balanceError,
+                            fieldIdentifier: "account.balance"
+                        )
+                    } else {
+                        SetupField(
+                            title: "Balance today",
+                            requirement: .optional,
+                            help: "Balances change through deposits, withdrawals, transfers, and dated balance updates, so the activity always explains the figure. Use \"Update balance\" on the account to record a new one."
+                        ) {
+                            HStack {
+                                MoneyText(amount: balance ?? .zero, font: .body.weight(.semibold))
+                                Spacer(minLength: 0)
+                            }
+                            .frame(minHeight: 44)
+                            .accessibilityLabel("Balance today")
+                            .accessibilityValue(MoneyFormat.string(balance ?? .zero))
+                        }
+                    }
+
+                    if showsProtectedAmount {
+                        SetupMoneyField(
+                            title: "Protected on this account",
+                            value: $protectedAmount,
+                            requirement: .optional,
+                            help: "Cash the plan leaves alone here. Everything above it counts as available.",
+                            error: protectedAmountError,
+                            fieldIdentifier: "account.protectedAmount"
+                        )
+                    }
 
                     SetupField(
                         title: "What this account is for",
@@ -287,6 +325,7 @@ struct AccountEditorView: View {
                 if let account = target.account {
                     name = account.name
                     balance = account.currentBalance
+                    protectedAmount = account.protectedAmount
                     roles = account.roles
                 }
             }
@@ -319,9 +358,19 @@ struct AccountEditorView: View {
         return balance < 0 ? "The balance can't be negative." : nil
     }
 
+    private var protectedAmountError: String? {
+        guard let protectedAmount else { return nil }
+        if protectedAmount < 0 { return "The protected amount can't be negative." }
+        if let balance, protectedAmount > balance {
+            return "That's more than the balance, so nothing here is available to the plan. That's allowed — just check it's what you meant."
+        }
+        return nil
+    }
+
     private var isValid: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && (balance ?? -1) >= 0
+            && (protectedAmount ?? 0) >= 0
             && !roles.isEmpty
     }
 
@@ -330,14 +379,26 @@ struct AccountEditorView: View {
         do {
             if let account = target.account {
                 try repository.update(
-                    account, name: name, currentBalance: balance ?? .zero,
-                    roles: roles, now: appEnvironment.dateProvider.now
+                    account, name: name,
+                    // A non-editable balance passes the value it loaded, so
+                    // `update` is a no-op on that column rather than writing a
+                    // stale figure back over one a sheet may have moved.
+                    currentBalance: balanceEditable ? (balance ?? .zero) : account.currentBalance,
+                    roles: roles,
+                    protectedAmount: showsProtectedAmount ? (protectedAmount ?? .zero) : nil,
+                    now: appEnvironment.dateProvider.now
                 )
             } else {
-                try repository.create(
+                let created = try repository.create(
                     name: name, currentBalance: balance ?? .zero,
                     roles: roles, now: appEnvironment.dateProvider.now
                 )
+                if showsProtectedAmount, let protectedAmount, protectedAmount > 0 {
+                    try repository.update(
+                        created, protectedAmount: protectedAmount,
+                        now: appEnvironment.dateProvider.now
+                    )
+                }
             }
             dismiss()
         } catch {

@@ -4,6 +4,9 @@ import SwiftUI
 enum AppTab: Hashable {
     case today
     case calendar
+    /// The v0.3.0 Checking Accounts workspace (V3-02). Placed between Calendar
+    /// and Debts so the tab order reads money-in → money-out.
+    case accounts
     case debts
     case progress
 }

@@ -131,6 +131,9 @@ struct MainTabView: View {
             CalendarTabView()
                 .tabItem { Label("Calendar", systemImage: "calendar") }
                 .tag(AppTab.calendar)
+            AccountsTabView()
+                .tabItem { Label("Accounts", systemImage: "building.columns") }
+                .tag(AppTab.accounts)
             DebtsView()
                 .tabItem { Label("Debts", systemImage: "creditcard.fill") }
                 .tag(AppTab.debts)

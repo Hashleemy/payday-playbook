@@ -67,39 +67,34 @@ struct OnboardingFlowView: View {
                 onContinue: { advance(from: .accounts) },
                 onBack: { step = .goals }
             )
-        case .debts:
-            DebtsStepView(
-                onContinue: { advance(from: .debts) },
-                onBack: { step = .accounts }
-            )
         case .income:
             IncomeStepView(
                 onContinue: { advance(from: .income) },
-                onBack: { step = .debts }
+                onBack: { step = .accounts }
             )
-        case .obligations:
-            ObligationsStepView(
-                onContinue: { advance(from: .obligations) },
+        case .billsAndDebts:
+            BillsAndDebtsStepView(
+                onContinue: { advance(from: .billsAndDebts) },
                 onBack: { step = .income }
             )
         case .notifications:
             RemindersStepView(
                 onContinue: { advance(from: .notifications) },
-                onBack: { step = .obligations }
+                onBack: { step = .billsAndDebts }
             )
         case .review, .finished:
             ReviewStepView(
                 onBack: { step = .notifications },
                 onFinish: finish
             )
-        case .billsAndDebts:
-            // Declared in the schema but not yet in `OnboardingStep.flowOrder`,
-            // so nothing can route here until the combined step is built
-            // (V3-01, onboarding owner). Falling back to the existing debts
-            // step keeps the flow traversable if it ever is reached.
-            DebtsStepView(
-                onContinue: { advance(from: .debts) },
-                onBack: { step = .accounts }
+        case .debts, .obligations:
+            // Retired in v0.3.0 (V3-08). `restoreProgress` maps a stored
+            // position through `resumeEquivalent`, so nothing routes here
+            // normally; showing the consolidated step keeps a store that
+            // somehow lands on one of these traversable rather than stuck.
+            BillsAndDebtsStepView(
+                onContinue: { advance(from: .billsAndDebts) },
+                onBack: { step = .income }
             )
         }
     }
@@ -111,6 +106,10 @@ struct OnboardingFlowView: View {
             let service = OnboardingProgressService(
                 context: modelContext, dateProvider: appEnvironment.dateProvider
             )
+            // `resumeStep` already resolves a v0.2 position through
+            // `resumeEquivalent`, so a store interrupted at the old debts or
+            // obligations step lands on the step that represents the same
+            // amount of finished work, not on a screen it already answered.
             let resume = try service.resumeStep()
             step = resume == .none ? .welcome : resume
             // "Picking up where you left off" only when there is genuinely
@@ -256,9 +255,10 @@ struct OnboardingScaffold<Content: View>: View {
 // MARK: - Step metadata
 
 extension OnboardingStep {
-    /// The steps the user actually sees, in order.
+    /// The steps the user actually sees, in order. One fewer than v0.2.0:
+    /// debts and bills are now one step (V3-08).
     static var userFacing: [OnboardingStep] {
-        [.welcome, .goals, .accounts, .debts, .income, .obligations, .notifications, .review]
+        [.welcome, .goals, .accounts, .income, .billsAndDebts, .notifications, .review]
     }
 
     var displayIndex: Int? {

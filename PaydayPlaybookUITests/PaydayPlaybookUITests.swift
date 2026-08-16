@@ -117,30 +117,43 @@ final class PaydayPlaybookUITests: XCTestCase {
         app.buttons["account.save"].tap()
         tapContinue("onboarding.accountsContinue", in: app)
 
-        // Steps 4 and 5 — type picker, then the card's own fields.
-        tapContinue("debts.add", in: app)
-        XCTAssertTrue(app.buttons["debtType.creditCard"].waitForExistence(timeout: 5))
-        app.buttons["debtType.creditCard"].tap()
+        // Step 4 — income now comes before bills and debts (V3-08), so the
+        // per-paycheck reserve preview smooths against the real cadence.
+        type("2000", into: "income.takeHome", in: app)
+        dismissKeyboard(app)
+        tapContinue("onboarding.incomeContinue", in: app)
+
+        // Step 5 — one consolidated page. The type choice comes first, then
+        // only the fields that kind of item actually needs.
+        tapContinue("billsAndDebts.add", in: app)
+        XCTAssertTrue(app.buttons["addChooser.debt"].waitForExistence(timeout: 5))
+        app.buttons["addChooser.debt"].tap()
+        XCTAssertTrue(app.buttons["addChooser.debtType.creditCard"].waitForExistence(timeout: 5))
+        app.buttons["addChooser.debtType.creditCard"].tap()
         type("Blue card", into: "debt.name", in: app)
         type("2000", into: "debt.balance", in: app)
         type("24.99", into: "debt.apr", in: app)
         dismissKeyboard(app)
         app.buttons["debt.save"].tap()
-        tapContinue("onboarding.debtsContinue", in: app)
 
-        // Step 6 — income.
-        type("2000", into: "income.takeHome", in: app)
+        // The same page adds a bill, through the same one button.
+        tapContinue("billsAndDebts.add", in: app)
+        XCTAssertTrue(app.buttons["addChooser.bill"].waitForExistence(timeout: 5))
+        app.buttons["addChooser.bill"].tap()
+        type("Rent", into: "obligation.name", in: app)
+        type("1400", into: "obligation.amount", in: app)
         dismissKeyboard(app)
-        tapContinue("onboarding.incomeContinue", in: app)
+        app.buttons["obligation.save"].tap()
 
-        // Step 7 — bills can be skipped.
-        tapContinue("onboarding.obligationsContinue", in: app)
+        XCTAssertTrue(anyText(app, containing: "Blue card").waitForExistence(timeout: 5))
+        XCTAssertTrue(anyText(app, containing: "Rent").exists)
+        tapContinue("onboarding.billsAndDebtsContinue", in: app)
 
-        // Step 8 — dates and reminders preview, permission not required.
+        // Step 6 — dates and reminders preview, permission not required.
         XCTAssertTrue(anyText(app, containing: "Your next paydays").waitForExistence(timeout: 5))
         tapContinue("onboarding.remindersContinue", in: app)
 
-        // Steps 9 and 10 — review, then generate and commit.
+        // Step 7 — review, then generate and commit.
         XCTAssertTrue(app.buttons["onboarding.generate"].waitForExistence(timeout: 5))
         app.buttons["onboarding.generate"].tap()
         XCTAssertTrue(app.buttons["onboarding.usePlan"].waitForExistence(timeout: 15))
