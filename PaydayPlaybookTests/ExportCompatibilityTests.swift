@@ -105,10 +105,11 @@ final class ExportCompatibilityTests: XCTestCase {
         let profileID = try XCTUnwrap(context.fetch(FetchDescriptor<UserGoalProfile>()).first).id
 
         let backup = try ExportService.buildBackup(context: context)
-        XCTAssertEqual(backup.schemaVersion, 2)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let decoded = try ExportService.readBackup(from: encoder.encode(backup))
+        // The writer emits export schema 3 (V3-09); this suite's subject is
+        // that the schema-2 *rows* survive a round trip, which they must
+        // whichever envelope carries them.
+        XCTAssertEqual(backup.schemaVersion, 3)
+        let decoded = try ExportService.readBackup(from: ExportService.encodeBackup(backup))
 
         let freshContainer = try TestSupport.makeContainer()
         let fresh = ModelContext(freshContainer)
@@ -142,16 +143,18 @@ final class ExportCompatibilityTests: XCTestCase {
         let context = ModelContext(container)
         try TestSupport.seed(context)
         var backup = try ExportService.buildBackup(context: context)
-        backup.schemaVersion = 3
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(backup)
+        // One past what this build reads. Written as a bare document (no
+        // envelope) so the *schema* is what rejects it, not the shape.
+        let future = ExportService.importableSchemaVersions.upperBound + 1
+        backup.schemaVersion = future
+        let data = try PortableCoding.encoder().encode(backup)
 
         XCTAssertThrowsError(try ExportService.readBackup(from: data)) { error in
-            guard case ExportService.ExportError.unsupportedSchema(3) = error else {
-                return XCTFail("Expected unsupportedSchema(3), got \(error)")
+            guard case PortabilityError.unsupportedSchema(let found, _, _) = error else {
+                return XCTFail("Expected unsupportedSchema(\(future)), got \(error)")
             }
-            XCTAssertTrue(error.localizedDescription.contains("schema version 3"))
+            XCTAssertEqual(found, future)
+            XCTAssertTrue(error.localizedDescription.contains("newer version"))
         }
         // The store was never touched.
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<PaydayPlanItem>()), 23)

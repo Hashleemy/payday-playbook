@@ -73,13 +73,12 @@ final class ExportServiceTests: XCTestCase {
         let context = try seededContextWithActivity()
         var backup = try ExportService.buildBackup(context: context)
         backup.schemaVersion = 99
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(backup)
+        let data = try PortableCoding.encoder().encode(backup)
         XCTAssertThrowsError(try ExportService.readBackup(from: data)) { error in
-            guard case ExportService.ExportError.unsupportedSchema(99) = error else {
+            guard case PortabilityError.unsupportedSchema(let found, _, _) = error else {
                 return XCTFail("Expected unsupportedSchema, got \(error)")
             }
+            XCTAssertEqual(found, 99)
         }
     }
 

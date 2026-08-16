@@ -4,10 +4,14 @@ import SwiftData
 /// Versioned JSON backup/restore and CSV exports. Every export and import is
 /// user-initiated; nothing leaves the device otherwise.
 struct ExportService {
-    /// Writes version 2; imports 1 and 2. Importing a v1 file runs the same
-    /// logical migration as an app upgrade (MVP_LAYOUT §2/§7, V2-18).
-    static let backupSchemaVersion = 2
-    static let importableSchemaVersions = 1...2
+    /// Writes version 3; imports 1, 2, and 3. Importing an older file runs the
+    /// same logical migrations as an app upgrade (MVP_LAYOUT §2/§7, V2-18).
+    ///
+    /// Version 3 is the first to be wrapped in a `PortableDocument` envelope
+    /// (V3-09). Versions 1 and 2 are bare `Backup` objects with no envelope,
+    /// which is how a reader tells them apart without guessing.
+    static let backupSchemaVersion = 3
+    static let importableSchemaVersions = 1...3
 
     // MARK: - Backup document
 
@@ -24,6 +28,10 @@ struct ExportService {
             var payCadenceRaw: String?
             var monthlyPayDay: Int?, semimonthlyPayDay1: Int?, semimonthlyPayDay2: Int?
             var incomeAccountID: UUID?, generatedFromProfile: Bool?, inputSnapshotData: Data?
+            // Schema 3 (V3-15). `inputSnapshotData` needs no new key: the
+            // extended `StoredPlanInput` encodes its scenario and extras
+            // inside the same blob, and v2 snapshots still decode.
+            var scenarioKindRaw: String?, effectiveDate: Date?
         }
         struct IncomeRuleDTO: Codable {
             var id: UUID, planVersionID: UUID, effectiveDate: Date, netPaycheckAmount: String
@@ -71,6 +79,9 @@ struct ExportService {
             var note: String?, isCorrection: Bool, correctsEntryID: UUID?, auditNote: String?
             // Schema 2 (optional so version-1 files still decode).
             var sourceAccountID: UUID?, destinationAccountID: UUID?
+            // Schema 3 (V3-02/V3-03). Nil is meaningful — "written before
+            // provenance existed" — so it is never backfilled on import.
+            var provenanceRaw: String?
         }
         struct SnapshotDTO: Codable {
             var id: UUID, debtAccountID: UUID?, debtPlanID: String?, cashAccountRaw: String?
@@ -105,6 +116,8 @@ struct ExportService {
             var id: UUID, name: String, currentBalance: String, rolesRaw: String
             var isDefaultIncome: Bool, sortOrder: Int, isArchived: Bool
             var legacyKindRaw: String?, createdAt: Date, updatedAt: Date
+            // Schema 3 (V3-02).
+            var protectedAmount: String?, balanceAsOf: Date?
         }
         struct ObligationDTO: Codable {
             var id: UUID, name: String, amount: String, cadenceRaw: String
@@ -116,6 +129,12 @@ struct ExportService {
             var id: UUID, goalText: String?, targetDebtFreeDate: Date?, postureRaw: String
             var protectedFloor: String, allowanceCap: String
             var onboardingCompletedAt: Date?, createdAt: Date, updatedAt: Date
+            // Schema 3 scenario constraints (V3-05/V3-06). Optional so v1/v2
+            // files decode; each defaults to zero, which the scenario layer
+            // reads as "the user has not stated this yet".
+            var minimumProtectedCash: String?, plannedSavingsPerPaycheck: String?
+            var additionalCushionReserve: String?, extraPaymentCeiling: String?
+            var zeroAllowanceConfirmedAt: Date?
         }
         struct OnboardingProgressDTO: Codable {
             var id: UUID, lastCompletedStepRaw: String
@@ -161,17 +180,21 @@ struct ExportService {
         var plannedObligationReserves: [PlannedObligationReserveDTO]?
     }
 
-    enum ExportError: LocalizedError {
+    enum ExportError: LocalizedError, Equatable {
         case unsupportedSchema(Int)
-        case decimalParse(String)
+        /// An amount in this collection could not be parsed. It names the
+        /// collection and never the value: error text reaches screenshots and
+        /// bug reports, and the old `decimalParse(raw)` case echoed a balance
+        /// straight into one (V3-13).
+        case amountUnreadable(collection: String)
         case encodingFailed
 
         var errorDescription: String? {
             switch self {
             case .unsupportedSchema(let version):
                 return "This backup uses schema version \(version), which this app version cannot restore."
-            case .decimalParse(let raw):
-                return "The backup contains an invalid amount: \(raw)"
+            case .amountUnreadable(let collection):
+                return "An amount in this backup's \(collection) section isn't a readable number."
             case .encodingFailed:
                 return "The backup could not be written."
             }
@@ -181,11 +204,23 @@ struct ExportService {
     private static func money(_ value: Decimal) -> String { "\(value)" }
     private static func money(_ value: Decimal?) -> String? { value.map { "\($0)" } }
 
-    private static func decimal(_ raw: String) throws -> Decimal {
+    /// Parses a stored money string.
+    ///
+    /// This is the backstop, not the diagnostic: `BackupValidator` walks every
+    /// collection's money fields before restore begins and reports the exact
+    /// collection and field. By the time row construction runs, an unreadable
+    /// amount has already been rejected — so this case only fires for a caller
+    /// that skipped validation, and says so generically rather than echoing
+    /// the value.
+    static func decimalOrThrow(_ raw: String) throws -> Decimal {
         guard let value = Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")) else {
-            throw ExportError.decimalParse(raw)
+            throw ExportError.amountUnreadable(collection: "records")
         }
         return value
+    }
+
+    private static func decimal(_ raw: String) throws -> Decimal {
+        try decimalOrThrow(raw)
     }
 
     private static func decimal(_ raw: String?) throws -> Decimal? {
@@ -193,29 +228,62 @@ struct ExportService {
         return try decimal(raw)
     }
 
+    /// Whether a stored money string is parseable, for the validation pass.
+    static func isReadableAmount(_ raw: String?) -> Bool {
+        guard let raw else { return true }
+        return Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")) != nil
+    }
+
+    /// Whether a stored money string names an amount greater than zero. Nil
+    /// and zero are both "not stated" — the template layer treats them the
+    /// same, because neither is a number a user gave.
+    static func isPositiveAmount(_ raw: String?) -> Bool {
+        guard let raw, let value = Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")) else {
+            return false
+        }
+        return value > 0
+    }
+
     // MARK: - Export
 
+    /// Fetches a collection in a stable order.
+    ///
+    /// `FetchDescriptor` with no sort returns rows in whatever order the store
+    /// happens to hold them, which differs between a store the user built up
+    /// and the same data after a restore. Exporting unordered arrays made two
+    /// exports of identical data differ, so a user diffing yesterday's backup
+    /// against today's saw churn that meant nothing. Sorting by `id` costs
+    /// nothing and makes an export a function of its data.
+    private static func ordered<T: PersistentModel>(
+        _ type: T.Type,
+        _ context: ModelContext,
+        by id: KeyPath<T, UUID>
+    ) throws -> [T] {
+        try context.fetch(FetchDescriptor<T>())
+            .sorted { $0[keyPath: id].uuidString < $1[keyPath: id].uuidString }
+    }
+
     static func buildBackup(context: ModelContext) throws -> Backup {
-        let plans = try context.fetch(FetchDescriptor<PlanVersion>())
-        let rules = try context.fetch(FetchDescriptor<IncomeRule>())
-        let debts = try context.fetch(FetchDescriptor<DebtAccount>())
-        let items = try context.fetch(FetchDescriptor<PaydayPlanItem>())
-        let planned = try context.fetch(FetchDescriptor<PlannedCardBalance>())
-        let checkIns = try context.fetch(FetchDescriptor<PaydayCheckIn>())
-        let payments = try context.fetch(FetchDescriptor<CheckInCardPayment>())
-        let entries = try context.fetch(FetchDescriptor<LedgerEntry>())
-        let snapshots = try context.fetch(FetchDescriptor<BalanceSnapshot>())
-        let forecasts = try context.fetch(FetchDescriptor<ForecastSnapshot>())
-        let preferences = try context.fetch(FetchDescriptor<NotificationPreference>())
-        let milestones = try context.fetch(FetchDescriptor<Milestone>())
-        let settings = try context.fetch(FetchDescriptor<AppSettings>())
-        let cashAccounts = try context.fetch(FetchDescriptor<CashAccount>())
-        let obligations = try context.fetch(FetchDescriptor<RecurringObligation>())
-        let profiles = try context.fetch(FetchDescriptor<UserGoalProfile>())
-        let onboarding = try context.fetch(FetchDescriptor<OnboardingProgress>())
-        let incomeSchedules = try context.fetch(FetchDescriptor<IncomeSchedule>())
-        let incomeChanges = try context.fetch(FetchDescriptor<IncomeChange>())
-        let obligationReserves = try context.fetch(FetchDescriptor<PlannedObligationReserve>())
+        let plans = try ordered(PlanVersion.self, context, by: \.id)
+        let rules = try ordered(IncomeRule.self, context, by: \.id)
+        let debts = try ordered(DebtAccount.self, context, by: \.id)
+        let items = try ordered(PaydayPlanItem.self, context, by: \.id)
+        let planned = try ordered(PlannedCardBalance.self, context, by: \.id)
+        let checkIns = try ordered(PaydayCheckIn.self, context, by: \.id)
+        let payments = try ordered(CheckInCardPayment.self, context, by: \.id)
+        let entries = try ordered(LedgerEntry.self, context, by: \.id)
+        let snapshots = try ordered(BalanceSnapshot.self, context, by: \.id)
+        let forecasts = try ordered(ForecastSnapshot.self, context, by: \.id)
+        let preferences = try ordered(NotificationPreference.self, context, by: \.id)
+        let milestones = try ordered(Milestone.self, context, by: \.id)
+        let settings = try ordered(AppSettings.self, context, by: \.id)
+        let cashAccounts = try ordered(CashAccount.self, context, by: \.id)
+        let obligations = try ordered(RecurringObligation.self, context, by: \.id)
+        let profiles = try ordered(UserGoalProfile.self, context, by: \.id)
+        let onboarding = try ordered(OnboardingProgress.self, context, by: \.id)
+        let incomeSchedules = try ordered(IncomeSchedule.self, context, by: \.id)
+        let incomeChanges = try ordered(IncomeChange.self, context, by: \.id)
+        let obligationReserves = try ordered(PlannedObligationReserve.self, context, by: \.id)
 
         return Backup(
             schemaVersion: backupSchemaVersion,
@@ -243,7 +311,9 @@ struct ExportService {
                     semimonthlyPayDay2: $0.semimonthlyPayDay2,
                     incomeAccountID: $0.incomeAccountID,
                     generatedFromProfile: $0.generatedFromProfile,
-                    inputSnapshotData: $0.inputSnapshotData
+                    inputSnapshotData: $0.inputSnapshotData,
+                    scenarioKindRaw: $0.scenarioKindRaw,
+                    effectiveDate: $0.effectiveDate
                 )
             },
             incomeRules: rules.map {
@@ -298,7 +368,8 @@ struct ExportService {
                       debtAccountID: $0.debtAccountID, debtPlanID: $0.debtPlanID,
                       paydayCheckInID: $0.paydayCheckInID, note: $0.note,
                       isCorrection: $0.isCorrection, correctsEntryID: $0.correctsEntryID, auditNote: $0.auditNote,
-                      sourceAccountID: $0.sourceAccountID, destinationAccountID: $0.destinationAccountID)
+                      sourceAccountID: $0.sourceAccountID, destinationAccountID: $0.destinationAccountID,
+                      provenanceRaw: $0.provenanceRaw)
             },
             balanceSnapshots: snapshots.map {
                 .init(id: $0.id, debtAccountID: $0.debtAccountID, debtPlanID: $0.debtPlanID,
@@ -337,7 +408,8 @@ struct ExportService {
                 .init(id: $0.id, name: $0.name, currentBalance: money($0.currentBalance),
                       rolesRaw: $0.rolesRaw, isDefaultIncome: $0.isDefaultIncome,
                       sortOrder: $0.sortOrder, isArchived: $0.isArchived,
-                      legacyKindRaw: $0.legacyKindRaw, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+                      legacyKindRaw: $0.legacyKindRaw, createdAt: $0.createdAt, updatedAt: $0.updatedAt,
+                      protectedAmount: money($0.protectedAmount), balanceAsOf: $0.balanceAsOf)
             },
             obligations: obligations.map {
                 .init(id: $0.id, name: $0.name, amount: money($0.amount), cadenceRaw: $0.cadenceRaw,
@@ -350,7 +422,12 @@ struct ExportService {
                       postureRaw: $0.postureRaw, protectedFloor: money($0.protectedFloor),
                       allowanceCap: money($0.allowanceCap),
                       onboardingCompletedAt: $0.onboardingCompletedAt,
-                      createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+                      createdAt: $0.createdAt, updatedAt: $0.updatedAt,
+                      minimumProtectedCash: money($0.minimumProtectedCash),
+                      plannedSavingsPerPaycheck: money($0.plannedSavingsPerPaycheck),
+                      additionalCushionReserve: money($0.additionalCushionReserve),
+                      extraPaymentCeiling: money($0.extraPaymentCeiling),
+                      zeroAllowanceConfirmedAt: $0.zeroAllowanceConfirmedAt)
             },
             onboardingProgress: onboarding.map {
                 .init(id: $0.id, lastCompletedStepRaw: $0.lastCompletedStepRaw,
@@ -375,14 +452,54 @@ struct ExportService {
         )
     }
 
+    /// Wraps a payload in the schema-3 envelope (V3-09).
+    static func document(for backup: Backup) -> PortableDocument<Backup> {
+        PortableDocument(
+            documentKind: .fullBackup,
+            schemaVersion: backup.schemaVersion,
+            appVersion: backup.appVersion,
+            calculationVersion: PlanContract.currentCalculationVersion,
+            exportedAt: backup.exportedAt,
+            integrity: integrity(of: backup),
+            payload: backup
+        )
+    }
+
+    /// Row counts per collection, re-derived on import to detect truncation.
+    /// Structural only — how many rows, never what is in them.
+    static func integrity(of backup: Backup) -> PortableIntegrity {
+        PortableIntegrity(recordCounts: [
+            "planVersions": backup.planVersions.count,
+            "incomeRules": backup.incomeRules.count,
+            "debts": backup.debts.count,
+            "paydayPlanItems": backup.paydayPlanItems.count,
+            "plannedCardBalances": backup.plannedCardBalances.count,
+            "checkIns": backup.checkIns.count,
+            "checkInCardPayments": backup.checkInCardPayments.count,
+            "ledgerEntries": backup.ledgerEntries.count,
+            "balanceSnapshots": backup.balanceSnapshots.count,
+            "forecastSnapshots": backup.forecastSnapshots.count,
+            "notificationPreferences": backup.notificationPreferences.count,
+            "milestones": backup.milestones.count,
+            "appSettings": backup.appSettings.count,
+            "cashAccounts": (backup.cashAccounts ?? []).count,
+            "obligations": (backup.obligations ?? []).count,
+            "userGoalProfiles": (backup.userGoalProfiles ?? []).count,
+            "onboardingProgress": (backup.onboardingProgress ?? []).count,
+            "incomeSchedules": (backup.incomeSchedules ?? []).count,
+            "incomeChanges": (backup.incomeChanges ?? []).count,
+            "plannedObligationReserves": (backup.plannedObligationReserves ?? []).count
+        ])
+    }
+
+    static func encodeBackup(_ backup: Backup) throws -> Data {
+        try PortableCoding.encoder().encode(document(for: backup))
+    }
+
     static func exportJSON(context: ModelContext, to directory: URL? = nil) throws -> URL {
-        let backup = try buildBackup(context: context)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(backup)
+        let data = try encodeBackup(try buildBackup(context: context))
         let stamp = fileTimestamp()
-        let url = (directory ?? FileManager.default.temporaryDirectory)
+        let url = (directory ?? PortableFileStore.backupsDirectory())
             .appendingPathComponent("PaydayPlaybook-Backup-\(stamp).json")
         try data.write(to: url, options: [.atomic, .completeFileProtection])
         return url
@@ -401,14 +518,77 @@ struct ExportService {
         let balanceSnapshots: Int
     }
 
+    /// Decodes a backup file of any supported export schema.
+    ///
+    /// Schema 3 arrives inside a `PortableDocument`; schemas 1 and 2 are bare
+    /// `Backup` objects written before the envelope existed. The probe routes
+    /// between them so neither shape has to be guessed at, and a template file
+    /// is rejected by name rather than failing somewhere inside the payload.
+    ///
+    /// Structural checks only — `BackupValidator` owns limits, relationships,
+    /// duplicate IDs, and amount readability.
     static func readBackup(from data: Data) throws -> Backup {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let backup = try decoder.decode(Backup.self, from: data)
-        guard importableSchemaVersions.contains(backup.schemaVersion) else {
-            throw ExportError.unsupportedSchema(backup.schemaVersion)
+        let decoder = PortableCoding.decoder()
+        let probe = try PortableDocumentProbe.probe(data, decoder: decoder)
+
+        if let kind = probe.documentKind, kind != .fullBackup {
+            throw PortabilityError.wrongDocumentKind(expected: .fullBackup, found: kind)
         }
-        return backup
+        guard importableSchemaVersions.contains(probe.schemaVersion) else {
+            throw PortabilityError.unsupportedSchema(
+                found: probe.schemaVersion,
+                lowest: importableSchemaVersions.lowerBound,
+                highest: importableSchemaVersions.upperBound
+            )
+        }
+
+        guard probe.documentKind != nil else {
+            // Export schema 1 or 2: the file *is* the payload.
+            return try decodeLegacyBackup(data, decoder: decoder)
+        }
+
+        let document: PortableDocument<Backup>
+        do {
+            document = try decoder.decode(PortableDocument<Backup>.self, from: data)
+        } catch let error as DecodingError {
+            throw PortabilityError.malformed(Self.fieldPath(error))
+        }
+        guard document.schemaVersion == document.payload.schemaVersion else {
+            throw PortabilityError.schemaVersionMismatch(
+                envelope: document.schemaVersion,
+                payload: document.payload.schemaVersion
+            )
+        }
+        let derived = integrity(of: document.payload)
+        if let (collection, declared, found) = document.integrity.disagreements(with: derived).first {
+            throw PortabilityError.integrityMismatch(
+                collection: collection, declared: declared, found: found
+            )
+        }
+        return document.payload
+    }
+
+    private static func decodeLegacyBackup(_ data: Data, decoder: JSONDecoder) throws -> Backup {
+        do {
+            return try decoder.decode(Backup.self, from: data)
+        } catch let error as DecodingError {
+            throw PortabilityError.malformed(Self.fieldPath(error))
+        }
+    }
+
+    /// The coding path a decoding failure occurred at — a field name, never
+    /// the field's contents (V3-13).
+    static func fieldPath(_ error: DecodingError) -> String {
+        let context: DecodingError.Context
+        switch error {
+        case .typeMismatch(_, let value), .valueNotFound(_, let value),
+             .keyNotFound(_, let value), .dataCorrupted(let value):
+            context = value
+        @unknown default:
+            return "document"
+        }
+        let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+        return path.isEmpty ? "document" : path
     }
 
     static func summarize(_ backup: Backup) -> RestoreSummary {
@@ -488,6 +668,8 @@ struct ExportService {
             plan.incomeAccountID = dto.incomeAccountID
             plan.generatedFromProfile = dto.generatedFromProfile ?? false
             plan.inputSnapshotData = dto.inputSnapshotData
+            plan.scenarioKindRaw = dto.scenarioKindRaw
+            plan.effectiveDate = dto.effectiveDate
             objects.append(plan)
         }
         for dto in backup.incomeRules {
@@ -583,6 +765,9 @@ struct ExportService {
             entry.destinationAccountRaw = dto.destinationAccountRaw
             entry.sourceAccountID = dto.sourceAccountID
             entry.destinationAccountID = dto.destinationAccountID
+            // Copied verbatim, nil included: a nil provenance records that the
+            // row predates the field, which is a fact, not a gap to fill.
+            entry.provenanceRaw = dto.provenanceRaw
             objects.append(entry)
         }
         for dto in backup.balanceSnapshots {
@@ -651,6 +836,8 @@ struct ExportService {
             )
             account.rolesRaw = dto.rolesRaw
             account.legacyKindRaw = dto.legacyKindRaw
+            account.protectedAmount = try decimal(dto.protectedAmount) ?? .zero
+            account.balanceAsOf = dto.balanceAsOf
             objects.append(account)
         }
         for dto in backup.obligations ?? [] {
@@ -674,6 +861,11 @@ struct ExportService {
                 createdAt: dto.createdAt, updatedAt: dto.updatedAt
             )
             profile.postureRaw = dto.postureRaw
+            profile.minimumProtectedCash = try decimal(dto.minimumProtectedCash) ?? .zero
+            profile.plannedSavingsPerPaycheck = try decimal(dto.plannedSavingsPerPaycheck) ?? .zero
+            profile.additionalCushionReserve = try decimal(dto.additionalCushionReserve) ?? .zero
+            profile.extraPaymentCeiling = try decimal(dto.extraPaymentCeiling) ?? .zero
+            profile.zeroAllowanceConfirmedAt = dto.zeroAllowanceConfirmedAt
             objects.append(profile)
         }
         for dto in backup.onboardingProgress ?? [] {
@@ -894,7 +1086,7 @@ struct ExportService {
 
     static func exportCSVs(context: ModelContext, to directory: URL? = nil) throws -> [URL] {
         let stamp = fileTimestamp()
-        let dir = directory ?? FileManager.default.temporaryDirectory
+        let dir = directory ?? PortableFileStore.csvDirectory()
         let files: [(String, String)] = [
             ("PaydayPlaybook-Ledger-\(stamp).csv", try ledgerCSV(context: context)),
             ("PaydayPlaybook-Balances-\(stamp).csv", try snapshotsCSV(context: context)),
@@ -911,10 +1103,6 @@ struct ExportService {
     }
 
     private static func fileTimestamp() -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return formatter.string(from: Date())
+        PortableFileStore.timestamp()
     }
 }

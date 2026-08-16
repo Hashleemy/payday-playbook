@@ -394,21 +394,84 @@ final class PaydayPlaybookUITests: XCTestCase {
         XCTAssertTrue(enable.waitForExistence(timeout: 5) || paydayToggle.waitForExistence(timeout: 5))
     }
 
-    // Backup screen produces a shareable JSON file (F-14).
+    // Backup screen produces a shareable JSON file (F-14, V3-09).
     @MainActor
     func testBackupCreatesShareableFile() throws {
         let app = launch(skipOnboarding: true)
         XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 10))
         app.buttons["Settings"].tap()
-        let backup = app.buttons["Backup & export"]
-        XCTAssertTrue(scrollTo(backup, in: app), "Backup row is reachable in Settings")
+        let backup = app.buttons["Create JSON Backup"]
+        XCTAssertTrue(scrollTo(backup, in: app), "Create JSON Backup is reachable in Settings")
         backup.tap()
         app.buttons["Create JSON backup"].tap()
         let shareRow = app.buttons.matching(NSPredicate(format: "label CONTAINS 'PaydayPlaybook-Backup'")).firstMatch
         XCTAssertTrue(shareRow.waitForExistence(timeout: 5))
+        // The sensitive-data warning is on the screen that writes the file,
+        // not buried a level away (V3-09).
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS 'plain text'")
+        ).firstMatch.exists)
+    }
 
+    // CSV exports survive the v0.3.0 regrouping (F-14).
+    @MainActor
+    func testCSVExportStillProducesFiles() throws {
+        let app = launch(skipOnboarding: true)
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 10))
+        app.buttons["Settings"].tap()
+        let csv = app.buttons["Export CSV Files"]
+        XCTAssertTrue(scrollTo(csv, in: app), "Export CSV Files is reachable in Settings")
+        csv.tap()
         app.buttons["Create CSV files"].tap()
         let csvRow = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Ledger'")).firstMatch
         XCTAssertTrue(csvRow.waitForExistence(timeout: 5))
+    }
+
+    // Generate Financial Report produces a PDF, and lives in its own group so
+    // raw JSON is never presented as the report (V3-11).
+    @MainActor
+    func testGenerateFinancialReportProducesAPDF() throws {
+        let app = launch(skipOnboarding: true)
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 10))
+        app.buttons["Settings"].tap()
+        let report = app.buttons["Generate Financial Report"]
+        XCTAssertTrue(scrollTo(report, in: app), "Generate Financial Report is reachable in Settings")
+        report.tap()
+
+        // The options form is long, and a SwiftUI List only builds the rows it
+        // has scrolled to — the action lives past the section toggles.
+        let generate = app.buttons["Generate Financial Report"]
+        XCTAssertTrue(scrollTo(generate, in: app, maxSwipes: 10), "the generate action is reachable")
+        generate.tap()
+        let shareRow = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'PaydayPlaybook-Report' AND label CONTAINS '.pdf'")
+        ).firstMatch
+        XCTAssertTrue(shareRow.waitForExistence(timeout: 20), "a PDF report is produced and offered for sharing")
+    }
+
+    // Template export starts with nothing sensitive selected (V3-10).
+    @MainActor
+    func testTemplateExportDefaultsToStructureOnly() throws {
+        let app = launch(skipOnboarding: true)
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 10))
+        app.buttons["Settings"].tap()
+        let template = app.buttons["Export Template"]
+        XCTAssertTrue(scrollTo(template, in: app), "Export Template is reachable in Settings")
+        template.tap()
+
+        // Every sensitive category must be off before the user touches
+        // anything — the whole consent model rests on it (V3-10).
+        for category in ["Names and labels", "Balances and principal", "Income amounts"] {
+            let toggle = app.switches[category]
+            // Scrolled to one at a time: the list builds rows lazily, so a
+            // switch further down does not exist until it comes into view.
+            XCTAssertTrue(scrollTo(toggle, in: app, maxSwipes: 10),
+                          "\(category) is offered as an explicit choice")
+            XCTAssertEqual(toggle.value as? String, "0", "\(category) must default to off")
+        }
+        let defaultNote = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS 'Nothing here is included by default'")
+        ).firstMatch
+        XCTAssertTrue(scrollTo(defaultNote, in: app, maxSwipes: 4), "the default is stated on screen")
     }
 }
