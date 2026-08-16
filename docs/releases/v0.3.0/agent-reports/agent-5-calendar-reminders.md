@@ -187,4 +187,6 @@ Items 1–7 of the inherited v0.2.0 device checklist remain unvalidated on hardw
 
 On `feature/v0.3-calendar-reminders` (base `6029107`):
 
-- see the commit hash recorded at the end of this file after the commit lands.
+- `e6a8165` — feat(v0.3.0): harden due dates, calendar events, and reminder reconciliation (20 files: 5 new, 15 modified).
+
+Validation at `e6a8165`: **338 unit tests, 0 failures** and **19 UI tests, 0 failures**, both on the dedicated `PP-Agent5` simulator with `-derivedDataPath` outside `~/Documents`. The UI suite was run alone with `-parallel-testing-enabled NO` per TESTING.md.
