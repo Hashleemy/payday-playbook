@@ -74,6 +74,9 @@ struct ProgressTabView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     InsightsRow(insights: insights)
+                    // §8.6: the primary entry to the three-plan calculator,
+                    // directly after the insights row.
+                    ScenariosEntryCard()
                     statsGrid
                     debtChartCard
                     perCardCard

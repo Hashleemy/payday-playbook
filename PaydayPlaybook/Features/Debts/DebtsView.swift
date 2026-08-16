@@ -164,6 +164,7 @@ struct DebtDetailView: View {
     @State private var forecastPayoff: Date?
     @State private var baselinePayoff: Date?
     @State private var showEdit = false
+    @State private var showExtraPayment = false
 
     var body: some View {
         List {
@@ -198,6 +199,15 @@ struct DebtDetailView: View {
                     } label: {
                         Label("Edit Debt", systemImage: "pencil")
                     }
+                    // V3-04: the extra-payment entry point on debt detail. It
+                    // opens a preview — nothing is scheduled or paid from here.
+                    Button {
+                        showExtraPayment = true
+                    } label: {
+                        Label("What if I pay extra?", systemImage: "arrow.up.forward.circle")
+                    }
+                    .accessibilityIdentifier("debt.whatIfExtra")
+                    .accessibilityHint("Shows what an extra payment would do. Nothing is scheduled.")
                 }
                 Section("Numbers") {
                     LabeledContent(item.debt.debtType.showsOriginalPrincipal
@@ -274,6 +284,11 @@ struct DebtDetailView: View {
             if let debt = item?.debt {
                 DebtEditView(debt: debt)
             }
+        }
+        .sheet(isPresented: $showExtraPayment) {
+            // No `onDismiss: reload` — the preview cannot have changed
+            // anything, and reloading would imply otherwise.
+            ExtraPaymentSheet(initialDebtID: item?.debt.id)
         }
     }
 
