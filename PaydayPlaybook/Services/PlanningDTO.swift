@@ -231,74 +231,6 @@ struct StoredPlanResult: Equatable {
     var cappedAtPaycheckLimit: Bool
 }
 
-// MARK: - Scenarios (V3-05)
-
-/// One extra payment a scenario applies on top of the plan's own allocation.
-///
-/// Storage-independent by construction: a `UUID` names the debt, so the
-/// calculation engine never has to know a `DebtAccount` exists.
-struct StoredExtraPayment: Equatable, Sendable {
-    var id: UUID
-    /// The debt receiving the extra principal.
-    var debtID: UUID
-    var amount: Decimal
-    /// First paycheck sequence the payment applies to (1-based).
-    var startingSequence: Int
-    /// Nil means "every paycheck from `startingSequence` onward".
-    var occurrences: Int?
-
-    init(
-        id: UUID = UUID(),
-        debtID: UUID,
-        amount: Decimal,
-        startingSequence: Int,
-        occurrences: Int? = nil
-    ) {
-        self.id = id
-        self.debtID = debtID
-        self.amount = amount
-        self.startingSequence = startingSequence
-        self.occurrences = occurrences
-    }
-}
-
-/// A saved what-if: the baseline input plus the deltas that define it.
-///
-/// The scenario stores its *own* complete `StoredPlanInput`, not a patch
-/// against the live plan. A patch would silently change meaning whenever the
-/// baseline changed underneath it, and a comparison between a scenario and a
-/// baseline it was never computed against is not a comparison at all.
-struct StoredScenarioDefinition: Equatable {
-    var id: UUID
-    var name: String
-    /// The plan version this scenario was branched from, for provenance.
-    var baselinePlanVersionID: UUID?
-    var createdAt: Date
-    /// Fully-resolved inputs, ready to hand to the engine unchanged.
-    var input: StoredPlanInput
-    var extraPayments: [StoredExtraPayment]
-    /// Free-text note the user attached. Never an engine input.
-    var note: String?
-
-    init(
-        id: UUID = UUID(),
-        name: String,
-        baselinePlanVersionID: UUID? = nil,
-        createdAt: Date,
-        input: StoredPlanInput,
-        extraPayments: [StoredExtraPayment] = [],
-        note: String? = nil
-    ) {
-        self.id = id
-        self.name = name
-        self.baselinePlanVersionID = baselinePlanVersionID
-        self.createdAt = createdAt
-        self.input = input
-        self.extraPayments = extraPayments
-        self.note = note
-    }
-}
-
 // MARK: - Obligation smoothing (R-04)
 
 /// The one smoothing rule shared by generator, migration check, and the live
@@ -358,60 +290,6 @@ enum ObligationMath {
 }
 
 // MARK: - Codable (money as strings)
-
-extension StoredExtraPayment: Codable {
-    private enum CodingKeys: String, CodingKey {
-        case id, debtID, amount, startingSequence, occurrences
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        debtID = try container.decode(UUID.self, forKey: .debtID)
-        amount = try container.money(forKey: .amount)
-        startingSequence = try container.decode(Int.self, forKey: .startingSequence)
-        occurrences = try container.decodeIfPresent(Int.self, forKey: .occurrences)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(debtID, forKey: .debtID)
-        try container.encodeMoney(amount, forKey: .amount)
-        try container.encode(startingSequence, forKey: .startingSequence)
-        try container.encodeIfPresent(occurrences, forKey: .occurrences)
-    }
-}
-
-extension StoredScenarioDefinition: Codable {
-    private enum CodingKeys: String, CodingKey {
-        case id, name, baselinePlanVersionID, createdAt, input, extraPayments, note
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        baselinePlanVersionID = try container.decodeIfPresent(UUID.self, forKey: .baselinePlanVersionID)
-        createdAt = try container.decode(Date.self, forKey: .createdAt)
-        input = try container.decode(StoredPlanInput.self, forKey: .input)
-        extraPayments = try container.decodeIfPresent(
-            [StoredExtraPayment].self, forKey: .extraPayments
-        ) ?? []
-        note = try container.decodeIfPresent(String.self, forKey: .note)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(name, forKey: .name)
-        try container.encodeIfPresent(baselinePlanVersionID, forKey: .baselinePlanVersionID)
-        try container.encode(createdAt, forKey: .createdAt)
-        try container.encode(input, forKey: .input)
-        try container.encode(extraPayments, forKey: .extraPayments)
-        try container.encodeIfPresent(note, forKey: .note)
-    }
-}
 
 extension PlanningIncomeChange: Codable {
     private enum CodingKeys: String, CodingKey { case effectiveDate, amount }
