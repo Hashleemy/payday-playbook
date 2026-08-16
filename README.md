@@ -5,15 +5,15 @@ payday ritual: know today's play, record what actually happened, and see the
 finish line.
 
 The shipped **0.1.x** build executed one exact seeded plan. **0.2.0**
-(current: 0.2.0-alpha.2, build 3) generalized the app to any user: guided,
-resumable onboarding, named checking accounts, all debt types, and a generated
-avalanche plan — while preserving the founding install's plan verbatim via
-migration. The **0.3.0 contract** (in progress — docs only so far) adds a
-Checking Accounts workspace, a three-plan payoff calculator, extra-payment
-insights, hardened due-date behavior, full JSON backup/restore, reusable
-templates, a generated PDF financial report, and the removal of all real
-personal financial data from tracked project artifacts. See
-[`CHANGELOG.md`](CHANGELOG.md).
+generalized the app to any user: guided, resumable onboarding, named checking
+accounts, all debt types, and a generated avalanche plan — while preserving the
+founding install's plan verbatim via migration. **0.3.0**
+(current: 0.3.0-alpha.1, build 4 — prepared, not yet distributed) adds a
+Checking Accounts workspace with an auditable ledger, a three-plan payoff
+calculator, extra-payment insights, hardened due-date behavior, full JSON
+backup/restore, reusable structure-only templates, a generated PDF financial
+report, and the removal of all real personal financial data from tracked
+project artifacts. See [`CHANGELOG.md`](CHANGELOG.md).
 
 - **Product constitution:** [`soul.md`](soul.md) — read first; F-01…F-16,
   V2-01…V2-18, and V3-01…V3-16 (as amended there) are non-negotiable.

@@ -67,6 +67,21 @@ whose build number is ≤ the last distributed one must fail.
   Engines dispatch on the stamp. **Reduction rule:** with no scenario constraints and no
   extra payments, calc v3 must reproduce calc v2 exactly (tested on fictional fixtures),
   just as calc v2 reduces to calc v1 for biweekly cadence.
+
+  **Amendment 1 (integration, v0.3.0-alpha.1).** "The current stamp" and "the boundary
+  below which a plan is handled by the frozen calc-v1 engine" are two different facts and
+  are now two constants: `PlanContract.currentCalculationVersion` (**3** — what a newly
+  generated plan is stamped, and what the export envelope records) and
+  `PlanContract.minimumModernCalculationVersion` (**2** — the legacy boundary that
+  reforecast, insights, Today's projection and the plan screen dispatch on).
+
+  They were one constant, and raising it to satisfy the mandate above would also have
+  raised the dispatch threshold: every plan a v0.2.0 user already has would fail `>= 3`,
+  fall through to the calc-v1 path, and find nothing there on any install that never had a
+  0.1.x baseline — blanking those four surfaces on upgrade, silently. The mandate is
+  unchanged and met; only the mechanism is split. The boundary constant moves **only** when
+  a calculation version is genuinely retired, which is a separate decision from stamping a
+  new one. Guarded by `ReleaseIntegrationTests`.
 - **Export schema** tracks the portable document envelope, which v0.3.0 extends with
   `documentKind` (`fullBackup` | `template`) and validation metadata. Writers emit
   version **3**; readers accept 1, 2, and 3 by running the same logical migrations used
