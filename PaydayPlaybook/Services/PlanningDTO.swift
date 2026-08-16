@@ -118,8 +118,69 @@ struct StoredPlanInput: Equatable {
     /// engine call (and its `generatedAsOf` label) exactly. Nil on snapshots
     /// written before this field existed; callers then supply their own.
     var asOf: Date? = nil
+    /// Calc v3 (V3-05): the scenario constraints this snapshot was generated
+    /// under. Nil on every calc-v2 snapshot and on the plain recommendation.
+    var scenario: StoredScenarioDefinition? = nil
+    /// Calc v3 (V3-04): extra payments modeled on top of the plan. Empty on
+    /// every calc-v2 snapshot.
+    var extraPayments: [StoredExtraPayment] = []
 
     static let defaultPaycheckCap = 600
+}
+
+// MARK: - Scenario definition (calc v3, V3-05/V3-06)
+
+/// R-18 income override as stored. Kept in the model layer's `PayCadence` plus
+/// day-of-month columns so it round-trips through the same conversion the base
+/// snapshot uses.
+struct StoredIncomeOverride: Equatable {
+    var amount: Decimal
+    var cadence: PayCadence
+    var monthlyPayDay: Int?
+    var semimonthlyPayDay1: Int?
+    var semimonthlyPayDay2: Int?
+    var effectiveDate: Date
+}
+
+/// The user's constraints for one scenario card. Every value is the user's own
+/// or nil; a nil the scenario needs becomes a named missing-input result, never
+/// an invented default (V3-06).
+struct StoredScenarioDefinition: Equatable {
+    var kind: ScenarioKind
+    var incomeOverride: StoredIncomeOverride?
+    /// Fastest Safe.
+    var minimumProtectedCash: Decimal?
+    /// Balanced / More Cushion; normally the profile's saved floor.
+    var preferredFloor: Decimal?
+    /// Balanced / More Cushion; normally the profile's saved allowance.
+    var preferredAllowance: Decimal?
+    /// Balanced / More Cushion.
+    var plannedSavingsPerPaycheck: Decimal?
+    /// More Cushion.
+    var additionalReserve: Decimal?
+    /// More Cushion.
+    var extraPaymentCeiling: Decimal?
+    /// Copied from `UserGoalProfile.zeroAllowanceConfirmedAt` by the data
+    /// layer. Fastest Safe drives the allowance to $0 and is not computable
+    /// without it (R-17) — the engine never assumes the confirmation.
+    var zeroAllowanceConfirmedAt: Date?
+    /// When this scenario's schedule would begin if applied (V3-15).
+    var effectiveDate: Date
+}
+
+// MARK: - Extra payment (calc v3, V3-04)
+
+/// A modeled extra payment. Storing one does not apply it: previews stay
+/// unpersisted until the user explicitly applies a scenario (R-15/V3-15).
+struct StoredExtraPayment: Equatable {
+    var id: UUID
+    var kind: ExtraPaymentKind
+    var amount: Decimal
+    var effectiveDate: Date
+    /// Nil = automatic avalanche target.
+    var targetDebtID: UUID?
+    /// Drives cash warnings only; the engine keeps its single-pool model.
+    var sourceAccountID: UUID?
 }
 
 // MARK: - StoredPlanResult
@@ -436,6 +497,7 @@ extension StoredPlanInput: Codable {
         case nextPayday, baseTakeHome, incomeChanges
         case spendingStartingBalance, protectedFloor, allowanceCap, firstCheckBufferAdd
         case obligations, debts, paycheckCap, timeZoneID, asOf
+        case scenario, extraPayments
     }
 
     init(from decoder: Decoder) throws {
@@ -457,6 +519,10 @@ extension StoredPlanInput: Codable {
         paycheckCap = try container.decode(Int.self, forKey: .paycheckCap)
         timeZoneID = try container.decode(String.self, forKey: .timeZoneID)
         asOf = try container.decodeIfPresent(Date.self, forKey: .asOf)
+        // Optional keys: every calc-v2 snapshot predates them and must keep
+        // decoding unchanged.
+        scenario = try container.decodeIfPresent(StoredScenarioDefinition.self, forKey: .scenario)
+        extraPayments = try container.decodeIfPresent([StoredExtraPayment].self, forKey: .extraPayments) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -478,6 +544,99 @@ extension StoredPlanInput: Codable {
         try container.encode(paycheckCap, forKey: .paycheckCap)
         try container.encode(timeZoneID, forKey: .timeZoneID)
         try container.encodeIfPresent(asOf, forKey: .asOf)
+        try container.encodeIfPresent(scenario, forKey: .scenario)
+        // Omitted when empty so a calc-v2 snapshot's bytes are unchanged.
+        if !extraPayments.isEmpty {
+            try container.encode(extraPayments, forKey: .extraPayments)
+        }
+    }
+}
+
+extension StoredIncomeOverride: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case amount, cadence, monthlyPayDay, semimonthlyPayDay1, semimonthlyPayDay2, effectiveDate
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        amount = try container.money(forKey: .amount)
+        cadence = try container.decode(PayCadence.self, forKey: .cadence)
+        monthlyPayDay = try container.decodeIfPresent(Int.self, forKey: .monthlyPayDay)
+        semimonthlyPayDay1 = try container.decodeIfPresent(Int.self, forKey: .semimonthlyPayDay1)
+        semimonthlyPayDay2 = try container.decodeIfPresent(Int.self, forKey: .semimonthlyPayDay2)
+        effectiveDate = try container.decode(Date.self, forKey: .effectiveDate)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeMoney(amount, forKey: .amount)
+        try container.encode(cadence, forKey: .cadence)
+        try container.encodeIfPresent(monthlyPayDay, forKey: .monthlyPayDay)
+        try container.encodeIfPresent(semimonthlyPayDay1, forKey: .semimonthlyPayDay1)
+        try container.encodeIfPresent(semimonthlyPayDay2, forKey: .semimonthlyPayDay2)
+        try container.encode(effectiveDate, forKey: .effectiveDate)
+    }
+}
+
+extension StoredScenarioDefinition: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case kind, incomeOverride, minimumProtectedCash, preferredFloor, preferredAllowance
+        case plannedSavingsPerPaycheck, additionalReserve, extraPaymentCeiling
+        case zeroAllowanceConfirmedAt, effectiveDate
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(ScenarioKind.self, forKey: .kind)
+        incomeOverride = try container.decodeIfPresent(StoredIncomeOverride.self, forKey: .incomeOverride)
+        minimumProtectedCash = try container.moneyIfPresent(forKey: .minimumProtectedCash)
+        preferredFloor = try container.moneyIfPresent(forKey: .preferredFloor)
+        preferredAllowance = try container.moneyIfPresent(forKey: .preferredAllowance)
+        plannedSavingsPerPaycheck = try container.moneyIfPresent(forKey: .plannedSavingsPerPaycheck)
+        additionalReserve = try container.moneyIfPresent(forKey: .additionalReserve)
+        extraPaymentCeiling = try container.moneyIfPresent(forKey: .extraPaymentCeiling)
+        zeroAllowanceConfirmedAt = try container.decodeIfPresent(Date.self, forKey: .zeroAllowanceConfirmedAt)
+        effectiveDate = try container.decode(Date.self, forKey: .effectiveDate)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(incomeOverride, forKey: .incomeOverride)
+        try container.encodeMoneyIfPresent(minimumProtectedCash, forKey: .minimumProtectedCash)
+        try container.encodeMoneyIfPresent(preferredFloor, forKey: .preferredFloor)
+        try container.encodeMoneyIfPresent(preferredAllowance, forKey: .preferredAllowance)
+        try container.encodeMoneyIfPresent(plannedSavingsPerPaycheck, forKey: .plannedSavingsPerPaycheck)
+        try container.encodeMoneyIfPresent(additionalReserve, forKey: .additionalReserve)
+        try container.encodeMoneyIfPresent(extraPaymentCeiling, forKey: .extraPaymentCeiling)
+        try container.encodeIfPresent(zeroAllowanceConfirmedAt, forKey: .zeroAllowanceConfirmedAt)
+        try container.encode(effectiveDate, forKey: .effectiveDate)
+    }
+}
+
+extension StoredExtraPayment: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, amount, effectiveDate, targetDebtID, sourceAccountID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(ExtraPaymentKind.self, forKey: .kind)
+        amount = try container.money(forKey: .amount)
+        effectiveDate = try container.decode(Date.self, forKey: .effectiveDate)
+        targetDebtID = try container.decodeIfPresent(UUID.self, forKey: .targetDebtID)
+        sourceAccountID = try container.decodeIfPresent(UUID.self, forKey: .sourceAccountID)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeMoney(amount, forKey: .amount)
+        try container.encode(effectiveDate, forKey: .effectiveDate)
+        try container.encodeIfPresent(targetDebtID, forKey: .targetDebtID)
+        try container.encodeIfPresent(sourceAccountID, forKey: .sourceAccountID)
     }
 }
 
