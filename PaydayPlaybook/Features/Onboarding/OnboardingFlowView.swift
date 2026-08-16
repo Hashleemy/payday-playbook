@@ -145,7 +145,7 @@ struct OnboardingFlowView: View {
         let context = modelContext
         let dateProvider = appEnvironment.dateProvider
         Task {
-            await notificationScheduler.rescheduleAll(context: context, dateProvider: dateProvider)
+            await notificationScheduler.rescheduleAll(context: context, dateProvider: dateProvider, trigger: .planActivation)
         }
     }
 }

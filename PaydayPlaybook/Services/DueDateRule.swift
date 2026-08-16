@@ -154,8 +154,67 @@ enum DueDateRule {
     /// One-line audit entry for a due-date edit (MVP_LAYOUT §9: the edit
     /// "appends an audit note to the item").
     static func auditNote(field: String, from oldValue: Int?, to newValue: Int?, on date: Date) -> String {
-        let old = oldValue.map(String.init) ?? "none"
-        let new = newValue.map(String.init) ?? "none"
+        auditNote(
+            field: field,
+            from: oldValue.map(String.init),
+            to: newValue.map(String.init),
+            on: date
+        )
+    }
+
+    /// Audit entry for a non-numeric due rule field (the weekend shift rule).
+    /// Kept in the same one-line shape so the log reads as one history.
+    ///
+    /// The log records *rule* changes only — never an amount, a balance, or a
+    /// user-entered label — so it stays safe to show and safe to export
+    /// (V3-13).
+    static func auditNote(field: String, from oldValue: String?, to newValue: String?, on date: Date) -> String {
+        let old = oldValue ?? "none"
+        let new = newValue ?? "none"
         return "\(DateMath.mediumString(date)): \(field) \(old) → \(new)"
+    }
+
+    /// The month's last valid day, as a number — the value a clamped due day
+    /// actually lands on, for disclosure copy (R-11).
+    static func lastValidDay(inMonthOf date: Date) -> Int {
+        let clamped = occurrence(dueDay: 31, inMonthOf: date)
+        return DateMath.calendar.component(.day, from: clamped)
+    }
+}
+
+/// A due rule as the user edits it: which day of the month the item is due,
+/// and what happens when that day lands on a weekend.
+///
+/// One value type for both subjects (debts and bills) so the editor, the
+/// audit log, and the reconciler all agree on what "the due rule" is — a
+/// change to either field is a change to the rule, and both are prospective.
+struct DueRule: Equatable {
+    /// Day of month 1–31, or nil for "no due day" (no marker, no reminder).
+    var dueDay: Int?
+    var shift: DueDateShiftRule
+
+    init(dueDay: Int? = nil, shift: DueDateShiftRule = .exactDay) {
+        self.dueDay = dueDay
+        self.shift = shift
+    }
+
+    /// A rule with no due day has nothing to shift, so the shift rule is
+    /// normalized away: "no due day, weekend → Monday" and "no due day" are
+    /// the same rule and must not read as an edit.
+    var normalized: DueRule {
+        dueDay == nil ? DueRule(dueDay: nil, shift: .exactDay) : self
+    }
+
+    /// True when this rule's day does not exist in `date`'s month, so the
+    /// occurrence lands on the month's last day instead (R-11).
+    func isClamped(inMonthOf date: Date) -> Bool {
+        guard let dueDay else { return false }
+        return DueDateRule.isClamped(dueDay: dueDay, inMonthOf: date)
+    }
+
+    /// The next occurrence on or after `date`, or nil when there is no due day.
+    func nextOccurrence(onOrAfter date: Date) -> Date? {
+        guard let dueDay else { return nil }
+        return DueDateRule.nextOccurrence(dueDay: dueDay, onOrAfter: date, shift: shift)
     }
 }

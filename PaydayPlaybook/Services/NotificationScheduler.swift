@@ -22,11 +22,40 @@ final class NotificationScheduler: ObservableObject {
     static let referenceKey = "reference"
     static let fingerprintKey = "fingerprint"
 
+    /// Every state that can invalidate the pending set (V3-07). Naming them
+    /// makes the contract checkable — the device pass and the diagnostics
+    /// screen can both answer "which of these has actually run?" — and gives
+    /// each call site one obvious thing to pass.
+    enum ReconcileTrigger: String, CaseIterable {
+        case launch
+        case foreground
+        case migration
+        case permissionChange
+        case dueDateEdit
+        case planActivation
+        case archiveOrPayoff
+        case timeZoneChange
+        case appSettingsChange
+        case checkInCompleted
+        case manualDiagnostics
+    }
+
+    /// Why a pass scheduled nothing. Distinguishes "no permission" from "no
+    /// work to do", which look identical from outside and mean very
+    /// different things during a device check.
+    enum SkipReason: String {
+        case notAuthorized
+        case scheduleUnavailable
+    }
+
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     /// Last reconcile outcome, for Settings diagnostics and tests.
     @Published private(set) var lastReconciliation: NotificationReconciliation?
     /// Requests the rolling-window cap left unscheduled at the last pass.
     @Published private(set) var lastDroppedByCap = 0
+    /// What prompted the last pass, and why it scheduled nothing if it did.
+    @Published private(set) var lastTrigger: ReconcileTrigger?
+    @Published private(set) var lastSkipReason: SkipReason?
 
     private let center: NotificationCenterProtocol
 
@@ -60,6 +89,21 @@ final class NotificationScheduler: ObservableObject {
         return granted
     }
 
+    /// Requests permission and immediately reconciles, so a grant produces a
+    /// schedule without waiting for the next foreground (V3-07: permission
+    /// change is a reconcile trigger). A denial reconciles too — the pass
+    /// records why it scheduled nothing instead of leaving the diagnostics
+    /// blank.
+    @discardableResult
+    func requestAuthorizationAndReconcile(
+        context: ModelContext,
+        dateProvider: DateProviding
+    ) async -> Bool {
+        let granted = await requestAuthorization()
+        await rescheduleAll(context: context, dateProvider: dateProvider, trigger: .permissionChange)
+        return granted
+    }
+
     /// True when the system will actually deliver what we schedule.
     /// Provisional authorization counts: quiet delivery is still delivery.
     static func canSchedule(_ status: UNAuthorizationStatus) -> Bool {
@@ -70,13 +114,32 @@ final class NotificationScheduler: ObservableObject {
 
     /// Recomputes the desired schedule and applies the difference.
     ///
-    /// Call after launch, plan activation, due-date edits, notification
-    /// setting edits, time-zone changes, and check-in completion.
-    func rescheduleAll(context: ModelContext, dateProvider: DateProviding) async {
+    /// Runs after every state that can invalidate the pending set (V3-07):
+    /// launch and foreground, migration, permission changes, due-rule edits,
+    /// plan activation and replacement, archive/payoff, time-zone changes,
+    /// reminder-settings edits, and check-in completion — see
+    /// `ReconcileTrigger`.
+    ///
+    /// The pass is idempotent by construction: `NotificationPlanner.plan` is
+    /// a pure function of the store, identifiers are stable, and the diff is
+    /// taken against what is actually pending. Running it twice with nothing
+    /// changed in between produces an empty add list and an empty remove
+    /// list, so a redundant trigger costs a read and nothing else.
+    func rescheduleAll(
+        context: ModelContext,
+        dateProvider: DateProviding,
+        trigger: ReconcileTrigger = .foreground
+    ) async {
+        lastTrigger = trigger
         authorizationStatus = await center.authorizationStatus()
         guard Self.canSchedule(authorizationStatus) else {
             // Denied or undetermined: nothing is scheduled, and nothing
-            // pending is touched — the user's data and the app are unaffected.
+            // pending is touched — the user's data and the app are
+            // unaffected, and the app stays fully usable (V3-16). Anything
+            // left pending from before a revocation cannot fire while
+            // permission is off, and the first pass after a re-grant removes
+            // whatever the current schedule no longer wants.
+            lastSkipReason = .notAuthorized
             return
         }
 
@@ -88,9 +151,12 @@ final class NotificationScheduler: ObservableObject {
         } catch {
             // Scheduling must never take the app down or wipe a good
             // schedule; the existing requests stand and the next trigger
-            // point retries.
+            // point retries. Cancelling on a read failure would be the worst
+            // outcome — a store hiccup would silently disarm every reminder.
+            lastSkipReason = .scheduleUnavailable
             return
         }
+        lastSkipReason = nil
 
         let pending = await center.pendingRequests().map {
             (identifier: $0.identifier, fingerprint: $0.content.userInfo[Self.fingerprintKey] as? String)

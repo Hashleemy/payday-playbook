@@ -418,6 +418,7 @@ struct CalendarTabView: View {
         switch event.link {
         case .checkIn: return "Open check-in"
         case .debt: return "Open debt"
+        case .obligation: return "Show this bill's due date"
         case .entry: return "Open entry"
         case .milestone: return "View milestone"
         case nil: return nil
@@ -438,9 +439,17 @@ struct CalendarTabView: View {
         case .openCheckIn(let itemID):
             checkInItem = (try? modelContext.fetch(FetchDescriptor<PaydayPlanItem>()))?
                 .first { $0.id == itemID }
-        case .openDebt(let planID):
-            router.pendingDebtPlanID = planID
+        case .openDebt(let debtID, let planID):
+            // Prefer entity identity; the letter is only a fallback for links
+            // that never carried a UUID.
+            if let debtID {
+                router.pendingDebtID = debtID
+            } else {
+                router.pendingDebtPlanID = planID
+            }
             router.selectedTab = .debts
+        case .openObligation(let obligationID):
+            revealObligation(obligationID)
         case .openEntry(let entryID):
             entryDetail = (try? modelContext.fetch(FetchDescriptor<LedgerEntry>()))?
                 .first { $0.id == entryID }
@@ -484,14 +493,25 @@ struct CalendarTabView: View {
     private func revealObligation(_ obligationID: UUID?) {
         guard let obligationID else { return }
         router.pendingObligationID = nil
-        let obligations = (try? modelContext.fetch(FetchDescriptor<RecurringObligation>())) ?? []
-        guard let obligation = obligations.first(where: { $0.id == obligationID && !$0.isArchived }),
-              let dueDay = obligation.dueDay else { return }
-        jump(to: DueDateRule.nextOccurrence(
-            dueDay: dueDay,
-            onOrAfter: appEnvironment.dateProvider.now,
-            shift: obligation.dueDateShiftRule
-        ))
+        // Resolve through the same path a tapped calendar row uses, so a
+        // bill archived or deleted since the reminder was scheduled gets the
+        // same calm explanation instead of a tap that appears to do nothing
+        // (V3-07).
+        let service = appEnvironment.calendarService(context: modelContext)
+        switch (try? service.resolve(.obligation(obligationID: obligationID))) {
+        case .openObligation(let id):
+            let obligations = (try? modelContext.fetch(FetchDescriptor<RecurringObligation>())) ?? []
+            guard let obligation = obligations.first(where: { $0.id == id }) else { return }
+            guard let next = obligation.dueRule.nextOccurrence(onOrAfter: appEnvironment.dateProvider.now) else {
+                missingTargetMessage = "This bill has no due date set, so there's nothing to show on the calendar."
+                return
+            }
+            jump(to: next)
+        case .unavailable(let message):
+            missingTargetMessage = message
+        default:
+            missingTargetMessage = "That bill can't be opened right now."
+        }
     }
 
     private func jump(to date: Date) {

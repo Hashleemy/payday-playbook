@@ -71,6 +71,11 @@ struct PlannedNotification: Equatable, Identifiable {
     let title: String
     let body: String
     let route: NotificationRoute
+    /// Deep-link payload: always an entity `UUID` string (or empty for routes
+    /// that address a tab rather than a row). Never an amount, a label, or a
+    /// plan letter — a letter is a reusable slot, so a delivered reminder
+    /// holding one could open a different debt after a delete-and-re-add
+    /// (V3-07, V3-13).
     let reference: String
 
     var id: String { identifier }
@@ -233,7 +238,7 @@ enum NotificationPlanner {
                             body: pref.detailed
                                 ? "\(debt.name) is due \(DateMath.mediumString(due))\(debt.minimum.map { " · minimum \(MoneyFormat.string($0))" } ?? "")."
                                 : "A debt payment is due soon.",
-                            route: .debt, reference: debt.planID
+                            route: .debt, reference: debt.id.uuidString
                         ) {
                             result.append(entry)
                         }
@@ -245,7 +250,7 @@ enum NotificationPlanner {
                         body: pref.detailed
                             ? "\(debt.name) is due today\(debt.minimum.map { " · minimum \(MoneyFormat.string($0))" } ?? "")."
                             : "A debt payment is due today.",
-                        route: .debt, reference: debt.planID
+                        route: .debt, reference: debt.id.uuidString
                     ) {
                         result.append(entry)
                     }

@@ -72,6 +72,7 @@ struct DebtsView: View {
                     router.pendingDebtPlanID = nil
                     pushedCard = PushedCard(planID: pending)
                 }
+                openPendingDebt(router.pendingDebtID)
             }
             .onChange(of: ledgerEntries.count) { _, _ in reload() }
             .onChange(of: snapshots.count) { _, _ in reload() }
@@ -79,6 +80,9 @@ struct DebtsView: View {
                 guard let planID else { return }
                 router.pendingDebtPlanID = nil
                 pushedCard = PushedCard(planID: planID)
+            }
+            .onChange(of: router.pendingDebtID) { _, debtID in
+                openPendingDebt(debtID)
             }
             .navigationDestination(item: $pushedCard) { card in
                 DebtDetailView(planID: card.planID)
@@ -88,6 +92,21 @@ struct DebtsView: View {
 
     private func reload() {
         balances = (try? appEnvironment.balanceService(context: modelContext).debtBalances()) ?? []
+    }
+
+    /// Opens a debt addressed by entity (a v0.3.0 reminder or calendar row).
+    /// The plan letter is looked up from the debt rather than trusted from
+    /// the link, so a letter reused after a delete cannot open the wrong
+    /// debt. A debt that no longer exists leaves the user on the Debts list,
+    /// which is the honest place to land (V3-07).
+    private func openPendingDebt(_ debtID: UUID?) {
+        guard let debtID else { return }
+        router.pendingDebtID = nil
+        let matches = (try? modelContext.fetch(
+            FetchDescriptor<DebtAccount>(predicate: #Predicate { $0.id == debtID })
+        )) ?? []
+        guard let debt = matches.first else { return }
+        pushedCard = PushedCard(planID: debt.planID)
     }
 }
 
@@ -585,36 +604,36 @@ struct DebtEditView: View {
             return
         }
 
-        let dueDayChanged = debt.dueDayOfMonth != dueDay
-        let previousDueDay = debt.dueDayOfMonth
+        // The due rule goes through the one shared prospective path, so a
+        // debt edited here and a bill edited in setup produce the same audit
+        // trail and the same effective date (V3-07). It must run before the
+        // other assignments: it diffs against what is currently stored.
+        let dueRuleChanged: Bool
+        do {
+            dueRuleChanged = try DueRuleEditService.apply(
+                DueRule(dueDay: dueDay, shift: shiftRule),
+                to: debt,
+                now: appEnvironment.dateProvider.now,
+                context: modelContext
+            ).didChange
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return
+        }
         debt.debtType = debtType
         debt.displayName = resolvedName
         let digits = String(lastFourText.filter(\.isNumber).prefix(4))
         debt.lastFour = digits.isEmpty ? nil : digits
         debt.apr = aprPercent / 100
         debt.minimumAmount = minimum
-        debt.dueDayOfMonth = dueDay
         debt.creditLimit = debtType.supportsCreditLimit ? creditLimit : nil
         debt.originalPrincipal = originalPrincipal
         debt.isExtraPrincipalEligible = extraPrincipalEligible
-        debt.dueDateShiftRule = shiftRule
-        if dueDayChanged {
-            // V2-11 / §9: the edit is prospective and audited on the item.
-            // The effective date stops past months being redrawn with a due
-            // day that was not in force then.
-            debt.appendDueDateAudit(DueDateRule.auditNote(
-                field: "due day",
-                from: previousDueDay,
-                to: dueDay,
-                on: appEnvironment.dateProvider.now
-            ))
-            debt.dueDayEffectiveFrom = DateMath.startOfDay(appEnvironment.dateProvider.now)
-        }
         debt.updatedAt = Date()
         do {
             try modelContext.save()
             _ = try? appEnvironment.reforecastService(context: modelContext)
-                .reforecast(trigger: dueDayChanged ? .planEdit : .aprChange)
+                .reforecast(trigger: dueRuleChanged ? .planEdit : .aprChange)
             // V2-11 / §9: the reschedule completes before the edit screen is
             // dismissed, so stable identifiers replace the old due-date
             // reminders with no stale fires and no duplicates.
@@ -622,7 +641,8 @@ struct DebtEditView: View {
             Task {
                 await notificationScheduler.rescheduleAll(
                     context: modelContext,
-                    dateProvider: appEnvironment.dateProvider
+                    dateProvider: appEnvironment.dateProvider,
+                    trigger: .dueDateEdit
                 )
                 isSaving = false
                 dismiss()
