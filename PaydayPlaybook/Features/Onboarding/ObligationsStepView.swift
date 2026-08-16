@@ -302,15 +302,31 @@ struct ObligationEditorView: View {
                             .foregroundStyle(.orange)
                     }
 
-                    if allowsDelete, let obligation = target.obligation {
-                        Button(role: .destructive) {
-                            delete(obligation)
+                    if let obligation = target.obligation {
+                        // Archive keeps the row and its history; delete is for
+                        // something entered by mistake. Both are offered
+                        // because they answer different questions — "I don't
+                        // pay this any more" and "this shouldn't be here".
+                        Button {
+                            archive(obligation)
                         } label: {
-                            Label("Remove this bill", systemImage: "trash")
+                            Label("I don't pay this any more", systemImage: "archivebox")
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         }
                         .buttonStyle(.bordered)
-                        .accessibilityIdentifier("obligation.delete")
+                        .accessibilityIdentifier("obligation.archive")
+                        .accessibilityHint("Archives the bill. Its history stays, and the plan stops reserving for it.")
+
+                        if allowsDelete {
+                            Button(role: .destructive) {
+                                delete(obligation)
+                            } label: {
+                                Label("Remove this bill", systemImage: "trash")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("obligation.delete")
+                        }
                     }
                 }
                 .padding()
@@ -392,6 +408,16 @@ struct ObligationEditorView: View {
     private func delete(_ obligation: RecurringObligation) {
         do {
             try ObligationRepository(context: modelContext).delete(obligation)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func archive(_ obligation: RecurringObligation) {
+        do {
+            try ObligationRepository(context: modelContext)
+                .archive(obligation, now: appEnvironment.dateProvider.now)
             dismiss()
         } catch {
             self.error = error.localizedDescription

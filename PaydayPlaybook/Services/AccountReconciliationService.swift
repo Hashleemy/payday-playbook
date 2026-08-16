@@ -111,10 +111,18 @@ struct AccountReconciliationService {
     ///
     /// Rows are matched by `createdAt`, not `effectiveDate`: a back-dated
     /// correction is still a fact learned *after* the snapshot, and ordering by
-    /// when it was recorded is what makes the arithmetic reproducible. The
-    /// adjustment row a snapshot is written with shares its `createdAt`, and is
-    /// excluded by the strict comparison because the stated balance already
-    /// contains it.
+    /// when it was recorded is what makes the arithmetic reproducible.
+    ///
+    /// **Rows stamped at the same instant as the snapshot count as after it,
+    /// except the snapshot's own correction.** `adjustBalance` writes the
+    /// snapshot and its explaining row in one save, so they share a timestamp;
+    /// that row is already inside the stated balance and would otherwise be
+    /// counted twice. Everything else at that instant belongs after, because
+    /// the stated balance is what the user reports having *seen* — anything
+    /// recorded in the same tick was recorded by the same code path, running
+    /// after they said it. A strict comparison instead of this rule silently
+    /// dropped every movement whenever the clock did not advance between
+    /// saves.
     func reconciliation(for account: CashAccount) throws -> AccountReconciliation {
         let accountID = account.id
         let snapshots = try context.fetch(FetchDescriptor<BalanceSnapshot>())
@@ -129,7 +137,8 @@ struct AccountReconciliationService {
                 guard entry.sourceAccountID == accountID || entry.destinationAccountID == accountID else {
                     return false
                 }
-                return entry.createdAt > anchor.createdAt
+                guard entry.createdAt >= anchor.createdAt else { return false }
+                return !Self.isCompanionRow(entry, of: anchor)
             }
 
         let derived = (anchor.amount + CashLedgerService.netMovement(of: subsequent, for: accountID)).rounded2
@@ -140,6 +149,16 @@ struct AccountReconciliationService {
         return .needsAttention(
             difference: difference, derivedBalance: derived, asOf: anchor.effectiveDate
         )
+    }
+
+    /// The adjustment row `adjustBalance` wrote alongside this snapshot: same
+    /// account, same instant, same effective date. Its amount is the delta the
+    /// stated balance already reflects.
+    private static func isCompanionRow(_ entry: LedgerEntry, of snapshot: BalanceSnapshot) -> Bool {
+        entry.type == .accountAdjustment
+            && entry.createdAt == snapshot.createdAt
+            && entry.effectiveDate == snapshot.effectiveDate
+            && entry.destinationAccountID == snapshot.cashAccountID
     }
 
     // MARK: Planned movement
