@@ -201,7 +201,7 @@ struct PlanActivationView: View {
                 .reforecast(trigger: .planEdit, varianceContext: "New plan version activated.")
             let context = modelContext
             let dateProvider = appEnvironment.dateProvider
-            Task { await notificationScheduler.rescheduleAll(context: context, dateProvider: dateProvider) }
+            Task { await notificationScheduler.rescheduleAll(context: context, dateProvider: dateProvider, trigger: .planActivation) }
         } catch {
             activationError = "The new plan version couldn't be saved. Nothing was changed — you can try again."
         }

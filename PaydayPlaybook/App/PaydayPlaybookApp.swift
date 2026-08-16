@@ -8,6 +8,9 @@ struct PaydayPlaybookApp: App {
     @StateObject private var router = AppRouter()
     @StateObject private var appLock = AppLockService()
     @Environment(\.scenePhase) private var scenePhase
+    /// Distinguishes the launch pass (which also covers migration) from
+    /// later foreground passes, so diagnostics can tell them apart.
+    @State private var didReconcileThisLaunch = false
 
     private let container: ModelContainer
     private let notificationDelegate = NotificationDelegate()
@@ -88,12 +91,22 @@ struct PaydayPlaybookApp: App {
                         // Launch and foreground both reconcile: the rolling
                         // window advances, and anything that changed while
                         // the app was away (dates passing, a completed
-                        // payday) is picked up here.
+                        // payday, permission revoked in iOS Settings, an
+                        // archive done on another screen) is picked up here.
+                        //
+                        // The first pass of a session is also the pass that
+                        // follows migration — `init` upgrades the store
+                        // before any view reads it — so a schema change can
+                        // never leave a stale schedule behind (V3-07).
                         Task {
+                            let trigger: NotificationScheduler.ReconcileTrigger =
+                                didReconcileThisLaunch ? .foreground : .launch
+                            didReconcileThisLaunch = true
                             await appEnvironment.notificationScheduler.refreshAuthorizationStatus()
                             await appEnvironment.notificationScheduler.rescheduleAll(
                                 context: container.mainContext,
-                                dateProvider: appEnvironment.dateProvider
+                                dateProvider: appEnvironment.dateProvider,
+                                trigger: trigger
                             )
                         }
                     default:
@@ -107,7 +120,8 @@ struct PaydayPlaybookApp: App {
                     Task {
                         await appEnvironment.notificationScheduler.rescheduleAll(
                             context: container.mainContext,
-                            dateProvider: appEnvironment.dateProvider
+                            dateProvider: appEnvironment.dateProvider,
+                            trigger: .timeZoneChange
                         )
                     }
                 }
@@ -115,7 +129,8 @@ struct PaydayPlaybookApp: App {
                     Task {
                         await appEnvironment.notificationScheduler.rescheduleAll(
                             context: container.mainContext,
-                            dateProvider: appEnvironment.dateProvider
+                            dateProvider: appEnvironment.dateProvider,
+                            trigger: .timeZoneChange
                         )
                     }
                 }

@@ -339,7 +339,7 @@ final class CalendarEventServiceTests: XCTestCase {
         )
         XCTAssertEqual(
             events.first { $0.kind == .debtDue && $0.id.contains(debt.id.uuidString) }?.link,
-            .debt(planID: "B")
+            .debt(debtID: debt.id, planID: "B")
         )
         XCTAssertEqual(
             events.first { $0.kind == .entry && $0.id.contains(entry.id.uuidString) }?.link,
@@ -367,7 +367,17 @@ final class CalendarEventServiceTests: XCTestCase {
         let milestone = try XCTUnwrap(try context.fetch(FetchDescriptor<Milestone>()).first)
 
         XCTAssertEqual(try service.resolve(.checkIn(itemID: item.id)), .openCheckIn(item: item.id))
-        XCTAssertEqual(try service.resolve(.debt(planID: "B")), .openDebt(planID: "B"))
+        let debtB = try XCTUnwrap(try context.fetch(FetchDescriptor<DebtAccount>()).first { $0.planID == "B" })
+        XCTAssertEqual(
+            try service.resolve(.debt(debtID: debtB.id, planID: "B")),
+            .openDebt(debtID: debtB.id, planID: "B")
+        )
+        // A legacy link that carries only the letter still resolves, and
+        // comes back carrying the entity it found.
+        XCTAssertEqual(
+            try service.resolve(.debt(planID: "B")),
+            .openDebt(debtID: debtB.id, planID: "B")
+        )
         XCTAssertEqual(try service.resolve(.entry(entryID: entry.id)), .openEntry(entryID: entry.id))
         XCTAssertEqual(
             try service.resolve(.milestone(milestoneID: milestone.id)),
