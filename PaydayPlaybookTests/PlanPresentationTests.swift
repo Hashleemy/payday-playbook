@@ -69,7 +69,8 @@ final class PlanPresentationTests: XCTestCase {
         XCTAssertNil(car.utilization, "Only cards carry utilization.")
 
         let card = try XCTUnwrap(data.debtRows.first { $0.planID == "A" })
-        // 1049 / 2000 = 0.5245
+        // Utilization is the stored balance over the entered limit, carried at
+        // four places so a card near a threshold does not round across it.
         XCTAssertEqual(try XCTUnwrap(card.utilization), TestSupport.money("0.5500"))
 
         let cardWithoutLimit = try XCTUnwrap(data.debtRows.first { $0.planID == "B" })
