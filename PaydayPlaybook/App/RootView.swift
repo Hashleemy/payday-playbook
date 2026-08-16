@@ -41,6 +41,11 @@ struct RootView: View {
                 coldLaunchHandled = true
                 // A fresh process must authenticate too, not just resumes.
                 appLock.lockIfEnabled()
+                // A-11: clear generated backups, templates, CSVs, and PDF
+                // reports left in temporary storage by the previous run.
+                // Anything the user meant to keep left through the share
+                // sheet, which copies the file out.
+                PortableFileStore.purgeTransient()
             }
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--uitest-skip-onboarding") {

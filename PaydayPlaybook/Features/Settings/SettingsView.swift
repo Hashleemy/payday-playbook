@@ -57,8 +57,19 @@ struct SettingsView: View {
             Section("Security") {
                 AppLockToggleRow()
             }
+            // V3-09…V3-11: machine-readable protection and human-readable
+            // reporting are separate groups. Raw JSON is never a "report".
+            Section("Back Up & Restore") {
+                NavigationLink("Create JSON Backup") { CreateBackupView() }
+                NavigationLink("Restore JSON Backup") { RestoreBackupView() }
+                NavigationLink("Export Template") { ExportTemplateView() }
+                NavigationLink("Import Template") { ImportTemplateView() }
+                NavigationLink("Export CSV Files") { ExportCSVView() }
+            }
+            Section("Reports") {
+                NavigationLink("Generate Financial Report") { FinancialReportView() }
+            }
             Section("Data") {
-                NavigationLink("Backup & export") { ExportView() }
                 NavigationLink("Privacy") { PrivacyView() }
             }
             Section("About") {
@@ -549,135 +560,6 @@ struct NotificationPreferenceRow: View {
         components.minute = preference.minute
         let date = Calendar.current.date(from: components) ?? Date()
         return formatter.string(from: date)
-    }
-}
-
-// MARK: - Export / restore
-
-struct ExportView: View {
-    @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var appEnvironment: AppEnvironment
-
-    @State private var jsonURL: URL?
-    @State private var csvURLs: [URL] = []
-    @State private var errorMessage: String?
-    @State private var showImporter = false
-    @State private var pendingBackup: ExportService.Backup?
-    @State private var pendingSummary: ExportService.RestoreSummary?
-    @State private var restoreDone = false
-
-    var body: some View {
-        List {
-            Section("Backup") {
-                Button {
-                    do {
-                        jsonURL = try ExportService.exportJSON(context: modelContext)
-                    } catch {
-                        errorMessage = error.localizedDescription
-                    }
-                } label: {
-                    Label("Create JSON backup", systemImage: "doc.badge.arrow.up")
-                }
-                if let jsonURL {
-                    ShareLink(item: jsonURL) {
-                        Label("Share \(jsonURL.lastPathComponent)", systemImage: "square.and.arrow.up")
-                    }
-                }
-            }
-            Section("CSV exports") {
-                Button {
-                    do {
-                        csvURLs = try ExportService.exportCSVs(context: modelContext)
-                    } catch {
-                        errorMessage = error.localizedDescription
-                    }
-                } label: {
-                    Label("Create CSV files", systemImage: "tablecells")
-                }
-                ForEach(csvURLs, id: \.self) { url in
-                    ShareLink(item: url) {
-                        Label(url.lastPathComponent, systemImage: "square.and.arrow.up")
-                    }
-                }
-            }
-            Section("Restore") {
-                Button {
-                    showImporter = true
-                } label: {
-                    Label("Restore from JSON backup", systemImage: "doc.badge.arrow.down")
-                }
-                Text("Restoring replaces all current data. A rollback backup is created automatically first.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            if restoreDone {
-                Section {
-                    Label("Restore complete.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.mint)
-                }
-            }
-            if let errorMessage {
-                Section {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                }
-            }
-        }
-        .navigationTitle("Backup & export")
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
-            switch result {
-            case .success(let url):
-                readBackup(url)
-            case .failure(let error):
-                errorMessage = error.localizedDescription
-            }
-        }
-        .confirmationDialog(
-            restoreSummaryText,
-            isPresented: Binding(
-                get: { pendingBackup != nil },
-                set: { if !$0 { pendingBackup = nil; pendingSummary = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Replace all data", role: .destructive) { performRestore() }
-            Button("Cancel", role: .cancel) { pendingBackup = nil; pendingSummary = nil }
-        }
-    }
-
-    private var restoreSummaryText: String {
-        guard let summary = pendingSummary else { return "" }
-        return "Backup from \(DateMath.mediumString(summary.exportedAt)): \(summary.planVersions) plan version(s), \(summary.debts) debts, \(summary.paydays) paydays, \(summary.checkIns) check-ins, \(summary.ledgerEntries) ledger entries. Replace everything currently in the app?"
-    }
-
-    private func readBackup(_ url: URL) {
-        do {
-            let secured = url.startAccessingSecurityScopedResource()
-            defer { if secured { url.stopAccessingSecurityScopedResource() } }
-            let data = try Data(contentsOf: url)
-            let backup = try ExportService.readBackup(from: data)
-            pendingBackup = backup
-            pendingSummary = ExportService.summarize(backup)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func performRestore() {
-        guard let backup = pendingBackup else { return }
-        do {
-            // Local rollback backup before the destructive replace.
-            _ = try ExportService.exportJSON(
-                context: modelContext,
-                to: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            )
-            try ExportService.restore(backup, context: modelContext)
-            restoreDone = true
-            pendingBackup = nil
-            pendingSummary = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 }
 
