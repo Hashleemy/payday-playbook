@@ -41,10 +41,11 @@ extension DebtType {
         self == .creditCard ? "Statement due day" : "Payment due day"
     }
 
-    /// Whether the original-principal row is meaningful for this type
-    /// (installment debt amortizes from a known starting principal).
+    /// Whether the original-principal row is meaningful for this type.
+    /// Forwards to the semantic model-layer predicate (V4-01) so editors,
+    /// chips, and the completeness service can never disagree.
     var showsOriginalPrincipal: Bool {
-        self != .creditCard
+        usesOriginalPrincipal
     }
 }
 
