@@ -252,5 +252,7 @@ Bound by name (docs, plan §4 / layout §6): `PlanCalculationVersion.v4BalancedQ
 
 On `feature/v0.4-contract` (base `124d56b`):
 
-- *(recorded in the follow-up commit, per the v0.3.0 precedent)* — docs(v0.4): establish
-  release contract and agent boundaries.
+- `9071553` — docs(v0.4): establish release contract and agent boundaries (10 files:
+  the four governing docs, the versioning contract, this report, the three contract
+  leaf types, and their tests; unit suite 526/526 green at this commit).
+- (+ one follow-up commit recording this hash in this report, per the v0.3.0 precedent.)
