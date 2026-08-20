@@ -28,6 +28,7 @@ struct CashLedgerService {
 
     enum LedgerError: LocalizedError, Equatable {
         case amountNotPositive
+        case adjustmentAmountZero
         case sameAccountTransfer
         case accountArchived(String)
 
@@ -35,6 +36,8 @@ struct CashLedgerService {
             switch self {
             case .amountNotPositive:
                 return "Enter an amount greater than zero."
+            case .adjustmentAmountZero:
+                return "Enter a non-zero amount — positive to add, negative to subtract."
             case .sameAccountTransfer:
                 return "Choose two different accounts for a transfer."
             case .accountArchived(let name):
@@ -205,6 +208,31 @@ struct CashLedgerService {
         account.updatedAt = now
         try context.save()
         return (entry, snapshot)
+    }
+
+    /// Corrects an account by a signed amount (V4-06 "Adjust by amount").
+    ///
+    /// Routes through `adjustBalance(of:to:)` with stated = current + delta,
+    /// so both adjustment types write the identical snapshot-plus-companion-row
+    /// shape in one save and reconciliation cannot tell them apart.
+    @discardableResult
+    func adjustBalance(
+        of account: CashAccount,
+        by delta: Decimal,
+        effectiveDate: Date? = nil,
+        note: String? = nil,
+        auditNote: String? = nil,
+        provenance: LedgerProvenance = .user
+    ) throws -> (entry: LedgerEntry?, snapshot: BalanceSnapshot) {
+        guard delta != 0 else { throw LedgerError.adjustmentAmountZero }
+        return try adjustBalance(
+            of: account,
+            to: (account.currentBalance + delta).rounded2,
+            effectiveDate: effectiveDate,
+            note: note,
+            auditNote: auditNote,
+            provenance: provenance
+        )
     }
 
     // MARK: - Queries

@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// Global "+" sheet: payment, balance update, windfall, C1/C2 adjustment, note.
+/// Global "+" sheet: payment, balance update, windfall, checking-account
+/// adjustment, note.
 struct QuickAddSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -24,9 +25,9 @@ struct QuickAddSheet: View {
                     Label("Windfall", systemImage: "gift")
                 }
                 NavigationLink {
-                    CashAdjustmentView()
+                    CheckingAccountAdjustmentView()
                 } label: {
-                    Label("Checking 1 / 2 adjustment", systemImage: "building.columns")
+                    Label(CheckingAccountAdjustmentView.menuTitle, systemImage: "building.columns")
                 }
                 NavigationLink {
                     RefundCorrectionView()
@@ -95,9 +96,8 @@ struct AddPaymentView: View {
                     save()
                 } label: {
                     Text("Record Payment")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
                 .accessibilityIdentifier("payment.save")
 
                 // V3-04: the second contracted entry point. Offered beside
@@ -211,9 +211,8 @@ struct BalanceUpdateView: View {
                     save()
                 } label: {
                     Text("Save Balance")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
                 .accessibilityIdentifier("balance.save")
             }
             .listRowBackground(Color.clear)
@@ -258,32 +257,38 @@ struct BalanceUpdateView: View {
     }
 }
 
-/// Records a windfall assigned to Checking 2 (debt) or kept in Checking 1.
+/// Records a windfall assigned to debt or kept for spending. The destination
+/// labels speak the user's own account names (V4-06); the persisted legacy
+/// raws underneath are unchanged.
 struct WindfallView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appEnvironment: AppEnvironment
 
     enum Destination: String, CaseIterable, Identifiable {
-        case debt = "Apply to debt (Checking 2)"
-        case keep = "Keep in Checking 1"
+        case debt
+        case keep
         var id: String { rawValue }
     }
 
+    @State private var accounts: [CashAccount] = []
     @State private var amount: Decimal?
     @State private var destination: Destination = .debt
     @State private var effectiveDate = Date()
     @State private var note = ""
     @State private var errorMessage: String?
 
+    private var destinationLabels: (debt: String, keep: String) {
+        LegacyCheckingLabels.windfallLabels(in: accounts)
+    }
+
     var body: some View {
         Form {
             Section("Windfall") {
                 MoneyField(label: "Amount", value: $amount)
                 Picker("Use it for", selection: $destination) {
-                    ForEach(Destination.allCases) { destination in
-                        Text(destination.rawValue).tag(destination)
-                    }
+                    Text(destinationLabels.debt).tag(Destination.debt)
+                    Text(destinationLabels.keep).tag(Destination.keep)
                 }
                 DatePicker("Date", selection: $effectiveDate, displayedComponents: .date)
                 TextField("Source — bonus, refund, gift… (optional)", text: $note)
@@ -303,14 +308,16 @@ struct WindfallView: View {
                     save()
                 } label: {
                     Text("Record Windfall")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
             }
             .listRowBackground(Color.clear)
         }
         .navigationTitle("Windfall")
-        .onAppear { effectiveDate = appEnvironment.dateProvider.now }
+        .onAppear {
+            effectiveDate = appEnvironment.dateProvider.now
+            accounts = (try? CashAccountRepository(context: modelContext).activeAccounts()) ?? []
+        }
     }
 
     private func save() {
@@ -337,111 +344,311 @@ struct WindfallView: View {
     }
 }
 
-/// Manual C1/C2 adjustments, C1 spending, and reserve use entries.
-struct CashAdjustmentView: View {
+/// User-facing names for the two legacy movement slots (V4-06 vocabulary
+/// sweep). The persisted `MoneyAccount` raws (`checking1`/`checking2`) are
+/// schema and never change; only the words shown for them derive from the
+/// user's own accounts. Migrated installs name their accounts "Checking 1"
+/// and "Checking 2", so the derived labels reproduce the founding wording
+/// there; the literals below are only the no-account fallback.
+enum LegacyCheckingLabels {
+    /// (spending, reserves): the day-to-day spending account stands in for
+    /// the legacy `checking1` slot, the reserves account for `checking2`.
+    /// With one account holding every role, both slots name that account.
+    static func labels(in accounts: [CashAccount]) -> (spending: String, reserves: String) {
+        let active = accounts
+            .filter { !$0.isArchived }
+            .sorted { ($0.sortOrder, $0.createdAt) < ($1.sortOrder, $1.createdAt) }
+        let spending = active.first { $0.roles.contains(.spending) } ?? active.first
+        let reserves = active.first { $0.roles.contains(.reserves) && $0.id != spending?.id }
+            ?? active.first { $0.roles.contains(.reserves) }
+            ?? spending
+        return (spending?.name ?? "Checking 1", reserves?.name ?? "Checking 2")
+    }
+
+    /// Windfall destination labels: "Apply to debt (<reserves account>)" /
+    /// "Keep in <spending account>", dropping the parenthetical when both
+    /// slots resolve to the same account — naming it twice would read as two
+    /// different places.
+    static func windfallLabels(in accounts: [CashAccount]) -> (debt: String, keep: String) {
+        let base = labels(in: accounts)
+        let debt = base.reserves == base.spending
+            ? "Apply to debt"
+            : "Apply to debt (\(base.reserves))"
+        return (debt, "Keep in \(base.spending)")
+    }
+
+    /// Refund/correction target labels, kept distinguishable when one
+    /// account holds both roles.
+    static func targetLabels(in accounts: [CashAccount]) -> (checking1: String, checking2: String) {
+        let base = labels(in: accounts)
+        guard base.spending == base.reserves else { return (base.spending, base.reserves) }
+        return (base.spending, "\(base.reserves) (reserves)")
+    }
+}
+
+/// Generic checking-account adjustment (V4-06): choose one of the user's own
+/// active accounts, then record either a stated balance ("Set balance to…")
+/// or a signed change ("Adjust by amount"). Both types converge on
+/// `CashLedgerService.adjustBalance`, which appends a dated
+/// `accountAdjustment` delta beside an authoritative snapshot in one save —
+/// history is never rewritten.
+struct CheckingAccountAdjustmentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appEnvironment: AppEnvironment
 
-    enum Kind: String, CaseIterable, Identifiable {
-        case c1Spending = "Checking 1 spending"
-        case c1Add = "Checking 1 buffer addition"
-        case c1Adjust = "Checking 1 balance adjustment"
-        case carUse = "Car reserve use"
-        case trainUse = "Train reserve use"
-        case carAdd = "Car reserve contribution"
-        case trainAdd = "Train reserve contribution"
-        var id: String { rawValue }
+    /// Exact Add Entry menu copy (T-23).
+    static let menuTitle = "Checking account adjustment"
+
+    /// With exactly one active account there is nothing to choose, so it is
+    /// preselected; with several, choosing is the form's first step.
+    static func preselectedAccountID(in accounts: [CashAccount]) -> UUID? {
+        accounts.count == 1 ? accounts.first?.id : nil
     }
 
-    @State private var kind: Kind = .c1Spending
+    enum AdjustmentType: String, CaseIterable, Identifiable {
+        case setBalance
+        case adjustByAmount
+
+        var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .setBalance: return "Set balance to…"
+            case .adjustByAmount: return "Adjust by amount"
+            }
+        }
+    }
+
+    @State private var accounts: [CashAccount] = []
+    @State private var selectedAccountID: UUID?
+    @State private var adjustmentType: AdjustmentType = .setBalance
+    @State private var statedBalance: Decimal?
     @State private var amount: Decimal?
     @State private var effectiveDate = Date()
     @State private var note = ""
     @State private var errorMessage: String?
+    @State private var isConfirming = false
+    @State private var loaded = false
+
+    private var selectedAccount: CashAccount? {
+        accounts.first { $0.id == selectedAccountID }
+    }
 
     var body: some View {
         Form {
-            Section("Adjustment") {
-                Picker("Type", selection: $kind) {
-                    ForEach(Kind.allCases) { kind in
-                        Text(kind.rawValue).tag(kind)
-                    }
-                }
-                MoneyField(label: kind == .c1Adjust ? "Amount (+/−)" : "Amount", value: $amount)
-                DatePicker("Date", selection: $effectiveDate, displayedComponents: .date)
-                TextField("Note (optional)", text: $note)
-            }
-            if kind == .c1Adjust {
+            if loaded && accounts.isEmpty {
                 Section {
-                    Text("Adjustments can be negative to correct the Checking 1 balance downward. An audit note is recommended.")
+                    Text("There's no active checking account to adjust yet. Add one in the Accounts tab first.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+            } else {
+                accountSection
+                if let account = selectedAccount {
+                    adjustmentSection(for: account)
+                    previewSection(for: account)
+                } else {
+                    Section {
+                        Text("Choose which account is being adjusted.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             if let errorMessage {
                 Section {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
                 }
             }
             Section {
                 Button {
-                    save()
+                    isConfirming = true
                 } label: {
                     Text("Record")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
+                .disabled(!isValid)
+                .accessibilityIdentifier("adjustment.record")
             }
             .listRowBackground(Color.clear)
         }
         .navigationTitle("Adjustment")
-        .onAppear { effectiveDate = appEnvironment.dateProvider.now }
+        .onAppear(perform: load)
+        .onChange(of: selectedAccountID) { _, _ in
+            errorMessage = nil
+            if let account = selectedAccount {
+                statedBalance = account.currentBalance
+            }
+        }
+        .alert("Record this adjustment?", isPresented: $isConfirming) {
+            Button("Record") { commit() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(confirmationMessage)
+        }
     }
 
-    private func save() {
-        guard let amount else {
-            errorMessage = "Enter an amount."
-            return
+    private var accountSection: some View {
+        Section("Account") {
+            Picker("Account", selection: $selectedAccountID) {
+                if selectedAccountID == nil {
+                    Text("Choose an account").tag(UUID?.none)
+                }
+                ForEach(accounts) { account in
+                    Text(account.name).tag(UUID?.some(account.id))
+                }
+            }
+            .accessibilityIdentifier("adjustment.account")
+            if let account = selectedAccount {
+                HStack {
+                    Text("Recorded balance")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    MoneyText(amount: account.currentBalance, font: .body.weight(.semibold))
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(account.name), recorded balance \(MoneyFormat.string(account.currentBalance))")
+            }
         }
-        if amount.isNegative && kind != .c1Adjust {
-            errorMessage = "Only balance adjustments may be negative. Use a refund/correction for other reversals."
-            return
+    }
+
+    private func adjustmentSection(for account: CashAccount) -> some View {
+        Section("Adjustment") {
+            Picker("Type", selection: $adjustmentType) {
+                ForEach(AdjustmentType.allCases) { type in
+                    Text(type.displayName).tag(type)
+                }
+            }
+            .accessibilityIdentifier("adjustment.type")
+            switch adjustmentType {
+            case .setBalance:
+                MoneyField(label: "Set balance to", value: $statedBalance)
+                    .accessibilityIdentifier("adjustment.statedBalance")
+            case .adjustByAmount:
+                MoneyField(label: "Amount (+/−)", value: $amount)
+                    .accessibilityIdentifier("adjustment.amount")
+            }
+            DatePicker("Date", selection: $effectiveDate, displayedComponents: .date)
+                .accessibilityIdentifier("adjustment.date")
+            TextField("Note (optional)", text: $note)
+                .accessibilityIdentifier("adjustment.note")
         }
-        if amount == 0 {
-            errorMessage = "Enter a non-zero amount."
-            return
+    }
+
+    @ViewBuilder
+    private func previewSection(for account: CashAccount) -> some View {
+        if let delta = proposedDelta(for: account), let resulting = resultingBalance(for: account) {
+            Section {
+                HStack {
+                    Text(delta == 0 ? "No change" : (delta > 0 ? "Difference to add" : "Difference to subtract"))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    MoneyText(amount: abs(delta), font: .footnote.weight(.semibold))
+                }
+                .font(.footnote)
+                .accessibilityElement(children: .combine)
+                if resulting < account.protectedAmount, account.protectedAmount > 0 {
+                    Text("That's below the \(MoneyFormat.string(account.protectedAmount)) protected on this account. Recording it is the right thing to do — the plan will simply work with what's actually there.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Text("The difference is written as its own dated entry. Everything already recorded stays exactly as it is.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } else if adjustmentType == .setBalance, statedBalanceError != nil {
+            Section {
+                Label(statedBalanceError ?? "", systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
-        let entry: LedgerEntry
+    }
+
+    // MARK: - Derived values
+
+    private func proposedDelta(for account: CashAccount) -> Decimal? {
+        switch adjustmentType {
+        case .setBalance:
+            guard let statedBalance, statedBalance >= 0 else { return nil }
+            return (statedBalance - account.currentBalance).rounded2
+        case .adjustByAmount:
+            guard let amount else { return nil }
+            return amount.rounded2
+        }
+    }
+
+    private func resultingBalance(for account: CashAccount) -> Decimal? {
+        guard let delta = proposedDelta(for: account) else { return nil }
+        return (account.currentBalance + delta).rounded2
+    }
+
+    private var statedBalanceError: String? {
+        guard adjustmentType == .setBalance, let statedBalance, statedBalance < 0 else { return nil }
+        return "A checking balance can't be below zero here. If you're overdrawn, record it as zero and add a note."
+    }
+
+    private var isValid: Bool {
+        guard let account = selectedAccount else { return false }
+        switch adjustmentType {
+        case .setBalance:
+            return proposedDelta(for: account) != nil
+        case .adjustByAmount:
+            guard let delta = proposedDelta(for: account) else { return false }
+            return delta != 0
+        }
+    }
+
+    private var confirmationMessage: String {
+        guard let account = selectedAccount,
+              let delta = proposedDelta(for: account),
+              let resulting = resultingBalance(for: account) else { return "" }
+        let dateText = DateFormat.medium(effectiveDate)
+        if delta == 0 {
+            return "\(account.name) is already recorded at \(MoneyFormat.string(resulting)). Confirming saves that you checked on \(dateText). No entry is added and nothing already recorded changes."
+        }
+        let direction = delta > 0 ? "up" : "down"
+        return "\(account.name) goes \(direction) to \(MoneyFormat.string(resulting)) as of \(dateText). A \(MoneyFormat.string(abs(delta))) entry is added to explain the difference. Nothing already recorded is changed or removed."
+    }
+
+    // MARK: - Load and commit
+
+    private func load() {
+        guard !loaded else { return }
+        loaded = true
+        effectiveDate = appEnvironment.dateProvider.now
+        accounts = (try? CashAccountRepository(context: modelContext).activeAccounts()) ?? []
+        selectedAccountID = Self.preselectedAccountID(in: accounts)
+        if let account = selectedAccount {
+            statedBalance = account.currentBalance
+        }
+    }
+
+    private func commit() {
+        guard let account = selectedAccount else { return }
+        let service = CashLedgerService(
+            context: modelContext, dateProvider: appEnvironment.dateProvider
+        )
         let date = DateMath.startOfDay(effectiveDate)
-        let text = note.isEmpty ? nil : note
-        switch kind {
-        case .c1Spending:
-            entry = LedgerEntry(effectiveDate: date, type: .c1Spending, amount: amount,
-                                sourceAccount: .checking1, destinationAccount: .external, note: text)
-        case .c1Add:
-            entry = LedgerEntry(effectiveDate: date, type: .c1BufferAddition, amount: amount,
-                                sourceAccount: .external, destinationAccount: .checking1, note: text)
-        case .c1Adjust:
-            entry = LedgerEntry(effectiveDate: date, type: .c1BalanceAdjustment, amount: amount,
-                                sourceAccount: nil, destinationAccount: .checking1, note: text,
-                                auditNote: text ?? "Manual adjustment")
-        case .carUse:
-            entry = LedgerEntry(effectiveDate: date, type: .carReserveUse, amount: amount,
-                                sourceAccount: .checking2, destinationAccount: .external, note: text)
-        case .trainUse:
-            entry = LedgerEntry(effectiveDate: date, type: .trainReserveUse, amount: amount,
-                                sourceAccount: .checking2, destinationAccount: .external, note: text)
-        case .carAdd:
-            entry = LedgerEntry(effectiveDate: date, type: .carReserveContribution, amount: amount,
-                                sourceAccount: .checking2, destinationAccount: .checking2, note: text)
-        case .trainAdd:
-            entry = LedgerEntry(effectiveDate: date, type: .trainReserveContribution, amount: amount,
-                                sourceAccount: .checking2, destinationAccount: .checking2, note: text)
-        }
-        modelContext.insert(entry)
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = trimmed.isEmpty ? nil : trimmed
         do {
-            try modelContext.save()
+            switch adjustmentType {
+            case .setBalance:
+                guard let statedBalance else { return }
+                try service.adjustBalance(
+                    of: account, to: statedBalance, effectiveDate: date, note: text,
+                    auditNote: "Balance stated by the user on \(DateFormat.medium(date))."
+                )
+            case .adjustByAmount:
+                guard let amount else { return }
+                try service.adjustBalance(
+                    of: account, by: amount, effectiveDate: date, note: text,
+                    auditNote: "Balance adjusted by the user on \(DateFormat.medium(date))."
+                )
+            }
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
@@ -469,9 +676,8 @@ struct NoteEntryView: View {
                     save()
                 } label: {
                     Text("Save Note")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
                 .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .listRowBackground(Color.clear)
@@ -517,11 +723,18 @@ struct RefundCorrectionView: View {
 
     @State private var kind: Kind = .refund
     @State private var target: Target = .card("B")
+    @State private var accounts: [CashAccount] = []
     @State private var amount: Decimal?
     @State private var effectiveDate = Date()
     @State private var note = ""
     @State private var auditNote = ""
     @State private var errorMessage: String?
+
+    /// The two legacy checking slots, shown under the user's own account
+    /// names (V4-06); the persisted raws underneath are unchanged.
+    private var targetLabels: (checking1: String, checking2: String) {
+        LegacyCheckingLabels.targetLabels(in: accounts)
+    }
 
     var body: some View {
         Form {
@@ -535,8 +748,8 @@ struct RefundCorrectionView: View {
                     ForEach(debts) { debt in
                         Text("\(debt.displayName) (\(debt.planID))").tag(Target.card(debt.planID))
                     }
-                    Text("Checking 1").tag(Target.checking1)
-                    Text("Checking 2").tag(Target.checking2)
+                    Text(targetLabels.checking1).tag(Target.checking1)
+                    Text(targetLabels.checking2).tag(Target.checking2)
                 }
                 MoneyField(label: kind == .correction ? "Amount (+/−)" : "Amount", value: $amount)
                 DatePicker("Date", selection: $effectiveDate, displayedComponents: .date)
@@ -561,15 +774,15 @@ struct RefundCorrectionView: View {
                     save()
                 } label: {
                     Text("Record")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
             }
             .listRowBackground(Color.clear)
         }
         .navigationTitle("Refund / correction")
         .onAppear {
             effectiveDate = appEnvironment.dateProvider.now
+            accounts = (try? CashAccountRepository(context: modelContext).activeAccounts()) ?? []
             if let first = debts.first { target = .card(first.planID) }
         }
     }
