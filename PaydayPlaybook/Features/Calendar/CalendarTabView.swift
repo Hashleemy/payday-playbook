@@ -10,6 +10,7 @@ struct CalendarTabView: View {
     @EnvironmentObject private var router: AppRouter
     @Query private var checkIns: [PaydayCheckIn]
     @Query private var ledgerEntries: [LedgerEntry]
+    @Query private var planVersions: [PlanVersion]
 
     enum Mode: String, CaseIterable, Identifiable {
         case month = "Month"
@@ -28,12 +29,30 @@ struct CalendarTabView: View {
     @State private var milestoneDetail: Milestone?
     @State private var showAddSheet = false
     @State private var missingTargetMessage: String?
+    @State private var dashboard = CalendarDebtDashboardState()
 
     private var calendar: Calendar { DateMath.calendar }
+
+    /// Ledger content + active plan identity (row IDs and `updatedAt`, not
+    /// row counts): an amount edit that keeps counts equal still changes this,
+    /// so the debt dashboard refreshes on every content change (R-29), and a
+    /// plan activation re-derives the re-anchored fold.
+    private var contentFingerprint: Int {
+        DebtAllocationFingerprint.fingerprint(
+            entries: ledgerEntries.map { ($0.id, $0.updatedAt) },
+            activePlanIDs: planVersions.filter(\.isActive).map(\.id)
+        )
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if dashboard.showsCard {
+                    CalendarDebtDashboardCard(state: dashboard)
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                        .padding(.bottom, 6)
+                }
                 controls
                 switch mode {
                 case .month:
@@ -69,6 +88,7 @@ struct CalendarTabView: View {
                     selectedDay = DateMath.startOfDay(appEnvironment.dateProvider.now)
                 }
                 reload()
+                reloadDashboard()
                 revealObligation(router.pendingObligationID)
             }
             .onChange(of: displayedMonth) { _, _ in reload() }
@@ -77,8 +97,13 @@ struct CalendarTabView: View {
                 revealObligation(obligationID)
             }
             .onChange(of: checkIns.count) { _, _ in reload() }
-            .onChange(of: ledgerEntries.count) { _, _ in reload() }
-            .sheet(item: $checkInItem, onDismiss: reload) { item in
+            // Content fingerprint, not row count: inserts, deletes, AND
+            // same-count edits all land here (R-29).
+            .onChange(of: contentFingerprint) { _, _ in
+                reload()
+                reloadDashboard()
+            }
+            .sheet(item: $checkInItem, onDismiss: refreshAfterSheet) { item in
                 CheckInFlowView(planItem: item)
             }
             .sheet(item: $entryDetail) { entry in
@@ -90,7 +115,7 @@ struct CalendarTabView: View {
                     router.selectedTab = .progress
                 }
             }
-            .sheet(isPresented: $showAddSheet, onDismiss: reload) {
+            .sheet(isPresented: $showAddSheet, onDismiss: refreshAfterSheet) {
                 QuickAddSheet()
             }
             .alert(
@@ -540,6 +565,21 @@ struct CalendarTabView: View {
             from: DateMath.addingDays(-7, to: interval.start),
             to: DateMath.addingDays(6, to: interval.end)
         )) ?? []
+    }
+
+    /// Recomputes the debt dashboard from the allocation service (V4-08).
+    /// Cheap derived arithmetic over stored plan items and ledger rows — no
+    /// engine run, so it is safe on every content change.
+    private func reloadDashboard() {
+        dashboard = CalendarDebtDashboardState.load(context: modelContext, environment: appEnvironment)
+    }
+
+    /// Belt-and-suspenders after a sheet that may have written to the store:
+    /// the fingerprint observer catches content changes, and this catches
+    /// anything else the sheet touched (snapshots, check-in status).
+    private func refreshAfterSheet() {
+        reload()
+        reloadDashboard()
     }
 }
 
