@@ -3,7 +3,7 @@
 - **Role:** Release Contract & Architecture owner (registry, versioning, shared
   interfaces, agent boundaries). No feature implementation — only the three contract-level
   leaf types the plan §4 lands deliberately.
-- **Branch:** `feature/v0.4-contract`, based on `main` at `124d56b` (the merged
+- **Branch:** `feature/v0.4-contract`, based on `main` at `3b20669` (the merged
   v0.3.0-alpha.1 integration; working tree verified clean before work began).
 - **Date:** 2026-08-17. Current state verified as **0.3.0 / build 4 / schema 3 / calc 3 /
   export 3** (`project.pbxproj`, `PlanContract`, `ExportService` constants read directly;
@@ -178,7 +178,7 @@ Bound by name (docs, plan §4 / layout §6): `PlanCalculationVersion.v4BalancedQ
 
 ## Checks run
 
-- **Branch/versions verified** before any change: `feature/v0.4-contract` at `124d56b`
+- **Branch/versions verified** before any change: `feature/v0.4-contract` at `3b20669`
   == `main`, clean tree; `MARKETING_VERSION 0.3.0` / `CURRENT_PROJECT_VERSION 4`;
   `PlanContract` 3/3/2/1/1; `ExportService` 3 / 1...3 — all read from source.
 - **Survey evidence:** every V4 contract statement is grounded in file:line findings from
@@ -250,9 +250,9 @@ Bound by name (docs, plan §4 / layout §6): `PlanCalculationVersion.v4BalancedQ
 
 ## Commits
 
-On `feature/v0.4-contract` (base `124d56b`):
+On `feature/v0.4-contract` (base `3b20669`):
 
-- `9071553` — docs(v0.4): establish release contract and agent boundaries (10 files:
+- `80b2ee4` — docs(v0.4): establish release contract and agent boundaries (10 files:
   the four governing docs, the versioning contract, this report, the three contract
   leaf types, and their tests; unit suite 526/526 green at this commit).
 - (+ one follow-up commit recording this hash in this report, per the v0.3.0 precedent.)

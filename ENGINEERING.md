@@ -3,12 +3,12 @@
 ## Read first
 
 `soul.md` is the product constitution; `MVP_LAYOUT.md` is the spec. The F-01…F-16,
-V2-01…V2-18, and V3-01…V3-16 contracts (as amended in `soul.md`) are
-non-negotiable — never remove, rename, or reinterpret a requirement without
+V2-01…V2-18, V3-01…V3-16, and V4-01…V4-08 contracts (as amended in `soul.md`)
+are non-negotiable — never remove, rename, or reinterpret a requirement without
 explicit user approval. The founding user's source plan document is kept
 outside the repository, deliberately (V3-12); on the migrated install the
 stored baseline is its own authority. Versioning rules:
-`docs/releases/v0.3.0/VERSIONING.md` (current cycle).
+`docs/releases/v0.4.0/VERSIONING.md` (current cycle).
 
 ## Build & test commands
 
@@ -34,10 +34,10 @@ Xcode 26.6 requires the iOS 26.5 simulator runtime
   (half-away-from-zero) only at persistence/display boundaries. The engine
   carries full precision internally.
 - **Original Plan v1 is immutable.** It exists only on the founding install's
-  device. The bundled `PaydayPlaybook/Resources/OriginalPlanV1.json` is already
-  excluded from Release builds and its **full removal from every build
-  configuration is contracted under V3-12** — never extend it, copy it, or add
-  new dependencies on it.
+  device. The once-bundled resource, its seeder, and its template catalog were
+  **removed from every build configuration under V3-12** — never reintroduce
+  them or add anything that depends on that data. The `#if DEBUG` development
+  fixture that replaced it is invented.
 - **No real personal financial data in tracked artifacts.** Code, fixtures,
   previews, tests, comments, logs, docs, prompts, and reports use clearly
   fictional values only (V3-12/V3-13).
@@ -55,8 +55,11 @@ Xcode 26.6 requires the iOS 26.5 simulator runtime
 
 - Services are structs taking `ModelContext` + `DateProviding`; the engine
   (`DebtCalculationEngine`) is pure and SwiftData-free. Views assemble state
-  via services in `onAppear`/`onChange(of: query.count)` and use `@Query` for
-  reactive lists.
+  via services in `onAppear`/`onChange` and use `@Query` for reactive lists.
+  Since v0.4.0, derived state that must react to *edits* keys its invalidation
+  on a content fingerprint (row IDs + `updatedAt` — `SetupInputFingerprint`,
+  `DebtAllocationFingerprint`), not on row counts; new observers should follow
+  that pattern rather than `onChange(of: query.count)`.
 - Deep links: `NotificationScheduler.Route` → `AppRouter.handleNotificationRoute`.
 - Check-in completion is atomic via `ReconciliationService.completeCheckIn`
   (one save), then reforecast + milestone refresh + notification reschedule.

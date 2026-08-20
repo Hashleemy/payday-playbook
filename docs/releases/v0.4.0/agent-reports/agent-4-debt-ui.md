@@ -2,7 +2,7 @@
 
 - **Role:** V4-04 (correct credit utilization, one canonical calculation) and V4-05
   (legible primary actions) for v0.4.0-alpha.1.
-- **Branch:** `feature/v0.4-debt-ui`, based on the contract commit `b71e193`
+- **Branch:** `feature/v0.4-debt-ui`, based on the contract commit `06e8c36`
   (verified clean before work began; Wave 2 has not landed on this branch, so the
   engine's inline utilization ratio was still present and its routing fell to this
   agent under the plan's "one sanctioned mechanical edit" clause).
@@ -268,9 +268,9 @@ Agent 2's branch) and their resolutions are recorded in
 
 ## 11. Commit
 
-On `feature/v0.4-debt-ui` (base `b71e193`):
+On `feature/v0.4-debt-ui` (base `06e8c36`):
 
-- `fc29b23` — fix(debt-ui): whole-percent utilization display and contrast-safe
+- `2badd77` — fix(debt-ui): whole-percent utilization display and contrast-safe
   primary actions (19 files: the implementation described above, the two new
   test suites, and this report). The work was complete but uncommitted at
   handoff; Agent 7 committed it verbatim from this worktree at integration.

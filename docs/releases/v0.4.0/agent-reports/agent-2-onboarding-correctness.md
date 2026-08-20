@@ -3,7 +3,7 @@
 - **Role:** Onboarding Validation and Reactive Setup owner — V4-01 (debt-type-specific
   validation) and V4-02 (reactive onboarding/setup state).
 - **Branch:** `feature/v0.4-onboarding-correctness`, branched from the Agent 1 contract
-  commit `b71e193` (verified: `git log` ancestry and clean tree before work began).
+  commit `06e8c36` (verified: `git log` ancestry and clean tree before work began).
   *Naming note:* the plan document (§6) names this branch
   `feature/v0.4-validation-reactivity` and this report
   `agent-2-validation-reactivity.md`; the launch prompt for this agent named
@@ -304,9 +304,9 @@ xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
 
 ## Commits
 
-On `feature/v0.4-onboarding-correctness` (base `b71e193`):
+On `feature/v0.4-onboarding-correctness` (base `06e8c36`):
 
-- `da8fd11` — fix(onboarding): make debt validation type-aware and previews
+- `8bf335c` — fix(onboarding): make debt validation type-aware and previews
   reactive (16 files: the V4-01 trio, the fingerprint service and commit guard, the
   reactive step views, the retired obligations step, two Settings observation fixes,
   T-18 + T-19, the re-anchored upgrade-checklist suite, and this report; unit suite

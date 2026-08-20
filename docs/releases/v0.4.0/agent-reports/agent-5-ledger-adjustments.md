@@ -4,12 +4,12 @@
   quick-add path with a generic checking-account adjustment flow that works for any
   user's account structure.
 - **Branch:** `feature/v0.4-ledger-adjustments`, based on the v0.4.0 contract commit
-  `b71e193`. (The plan's prompt names the branch `feature/v0.4-account-adjustment` and the
+  `06e8c36`. (The plan's prompt names the branch `feature/v0.4-account-adjustment` and the
   report `agent-5-account-adjustment.md`; this thread was launched with the
   `-ledger-adjustments` names — same scope, same contract. Recorded here so Agent 7's
   merge script finds both.)
 - **Date:** 2026-08-20.
-- **Commit:** `68908a3` (code + tests + this report; hash recorded by this follow-up
+- **Commit:** `d0cb448` (code + tests + this report; hash recorded by this follow-up
   docs commit per the release precedent).
 
 This report contains no personal financial values (V3-12/V3-13, permanent).
@@ -266,9 +266,9 @@ Per the contract, out of this cycle's scope, listed for a future registry entry:
 
 ## 11. Commits
 
-On `feature/v0.4-ledger-adjustments` (base `b71e193`):
+On `feature/v0.4-ledger-adjustments` (base `06e8c36`):
 
-- `68908a3` — feat(ledger): generalize checking account adjustment flow (QuickAddSheet
+- `d0cb448` — feat(ledger): generalize checking account adjustment flow (QuickAddSheet
   rework, additive `CashLedgerService.adjustBalance(of:by:)`, label sweep,
   `.primaryAction` adoption, T-23 suite, this report; full unit suite 553/553 green at
   this commit).

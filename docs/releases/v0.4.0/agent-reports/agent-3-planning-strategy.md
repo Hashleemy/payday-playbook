@@ -3,8 +3,8 @@
 - **Role:** Balanced Strategy and Calculation Version owner — V4-03 (R-25…R-27),
   the calc-4 bump at every stamping site, and the export-4 bump.
 - **Branch:** `feature/v0.4-planning-strategy`, based on the Agent 1 contract
-  commit `b71e193` (verified before any edit; clean tree).
-- **Commit:** `76a7502` — feat(planning): add explainable balanced payoff
+  commit `06e8c36` (verified before any edit; clean tree).
+- **Commit:** `64a19d0` — feat(planning): add explainable balanced payoff
   optimization (this hash line follows in its own commit, per the v0.2/v0.3
   precedent).
 - **Date:** 2026-08-20.

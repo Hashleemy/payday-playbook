@@ -7,17 +7,25 @@ finish line.
 The shipped **0.1.x** build executed one exact seeded plan. **0.2.0**
 generalized the app to any user: guided, resumable onboarding, named checking
 accounts, all debt types, and a generated avalanche plan — while preserving the
-founding install's plan verbatim via migration. **0.3.0**
-(current: 0.3.0-alpha.1, build 4 — prepared, not yet distributed) adds a
+founding install's plan verbatim via migration. **0.3.0** added a
 Checking Accounts workspace with an auditable ledger, a three-plan payoff
 calculator, extra-payment insights, hardened due-date behavior, full JSON
 backup/restore, reusable structure-only templates, a generated PDF financial
 report, and the removal of all real personal financial data from tracked
-project artifacts. See [`CHANGELOG.md`](CHANGELOG.md).
+project artifacts. **0.4.0** (current: 0.4.0-alpha.1, build 5 — prepared, not
+yet distributed) makes setup honest about what each debt type actually needs
+and reactive to every back-edit, upgrades Balanced (Recommended) into a
+proven multi-objective strategy that explains itself, fixes credit utilization
+with one canonical calculation, gives primary actions a contrast-verified
+button treatment, generalizes checking-account adjustments to any account, and
+adds a derived pay-cycle debt allocation with a Calendar debt dashboard. See
+[`CHANGELOG.md`](CHANGELOG.md).
 
 - **Product constitution:** [`soul.md`](soul.md) — read first; F-01…F-16,
-  V2-01…V2-18, and V3-01…V3-16 (as amended there) are non-negotiable.
+  V2-01…V2-18, V3-01…V3-16, and V4-01…V4-08 (as amended there) are
+  non-negotiable.
 - **Product/technical spec:** [`MVP_LAYOUT.md`](MVP_LAYOUT.md)
+- **v0.4.0 release plan and feature registry:** [`ALPHA_V0.4.0_MULTI_AGENT_PLAN.md`](ALPHA_V0.4.0_MULTI_AGENT_PLAN.md); versioning: [`docs/releases/v0.4.0/VERSIONING.md`](docs/releases/v0.4.0/VERSIONING.md)
 - **v0.3.0 release plan and feature registry:** [`ALPHA_V0.3.0_MULTI_AGENT_PLAN.md`](ALPHA_V0.3.0_MULTI_AGENT_PLAN.md); versioning: [`docs/releases/v0.3.0/VERSIONING.md`](docs/releases/v0.3.0/VERSIONING.md)
 - **v0.2.0 feature registry:** [`ALPHA_V0.2.0_MULTI_AGENT_PLAN.md`](ALPHA_V0.2.0_MULTI_AGENT_PLAN.md); versioning: [`docs/releases/v0.2.0/VERSIONING.md`](docs/releases/v0.2.0/VERSIONING.md)
 - **Source plan:** the founding user's personal plan document — kept outside

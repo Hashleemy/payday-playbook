@@ -353,9 +353,17 @@ final class PaydayPlaybookUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Calendar"].waitForExistence(timeout: 10))
         app.tabBars.buttons["Calendar"].tap()
 
-        // Selected-day panel (today = Aug 20) lists payday #1.
+        // Selected-day section (today = Aug 20) lists payday #1. Month mode is
+        // one lazy list (v0.4.0: dashboard card, grid, then the day) — scroll
+        // to materialize the day rows before asserting on them.
         let payday = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Payday #1'")).firstMatch
+        var scrollAttempts = 0
+        while !payday.exists && scrollAttempts < 5 {
+            app.swipeUp()
+            scrollAttempts += 1
+        }
         XCTAssertTrue(payday.waitForExistence(timeout: 8))
+        if !payday.isHittable { app.swipeUp() }
         payday.tap()
 
         XCTAssertTrue(app.staticTexts["Step 1 of 5 — Income"].waitForExistence(timeout: 5))

@@ -23,7 +23,7 @@ rename them to match releases.
 ## 2. App version decision (SemVer)
 
 - **Found in the repo:** `MARKETING_VERSION = 0.3.0`, `CURRENT_PROJECT_VERSION = 4`
-  on `main` at `124d56b` (the merged v0.3.0-alpha.1 integration). 0.3.0-alpha.1 is
+  on `main` at `3b20669` (the merged v0.3.0-alpha.1 integration). 0.3.0-alpha.1 is
   **prepared but untagged and undistributed**; external distribution remains blocked on the
   owner's Git-history decision (v0.3.0 integration report §8). The current release lineage
   is therefore v0.3.x, and the next backward-compatible feature release is **0.4.0**,

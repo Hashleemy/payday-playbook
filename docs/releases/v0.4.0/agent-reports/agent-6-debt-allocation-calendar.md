@@ -3,7 +3,7 @@
 - **Role:** V4-07 (canonical derived pay-cycle debt-allocation service) and V4-08
   (Calendar debt dashboard), per R-28/R-29 exactly.
 - **Branch:** `feature/v0.4-debt-allocation-calendar`, based on Agent 1's contract commit
-  `b71e193` (verified before work began; clean tree).
+  `06e8c36` (verified before work began; clean tree).
 - **Date:** 2026-08-20.
 
 This report contains no personal financial values (V3-12/V3-13, permanent). Every number
@@ -273,8 +273,8 @@ no utilization logic, no version constant, no schema change, no new persisted fi
 
 ## Commits
 
-On `feature/v0.4-debt-allocation-calendar` (base `b71e193`):
+On `feature/v0.4-debt-allocation-calendar` (base `06e8c36`):
 
-- `f3838d5` — feat(calendar): track pay-cycle debt allocation and carryover
+- `af6b81c` — feat(calendar): track pay-cycle debt allocation and carryover
   (V4-07/V4-08, R-28/R-29; unit suite 573/573 green at this commit).
 - (+ one follow-up commit recording this hash in this report, per the v0.3.0 precedent.)

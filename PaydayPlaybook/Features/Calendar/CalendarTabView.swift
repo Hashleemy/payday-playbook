@@ -47,7 +47,10 @@ struct CalendarTabView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if dashboard.showsCard {
+                // In month mode the dashboard card leads the scrollable list
+                // instead — a fixed card plus the grid would squeeze the
+                // selected-day panel to an unusable sliver (V4-08 integration).
+                if dashboard.showsCard && mode != .month {
                     CalendarDebtDashboardCard(state: dashboard)
                         .padding(.horizontal)
                         .padding(.top, 8)
@@ -56,9 +59,7 @@ struct CalendarTabView: View {
                 controls
                 switch mode {
                 case .month:
-                    monthGrid
-                    Divider()
-                    selectedDayPanel
+                    monthList
                 case .week:
                     weekStrip
                     Divider()
@@ -354,27 +355,55 @@ struct CalendarTabView: View {
 
     // MARK: - Selected day panel
 
+    /// Month mode is one scrollable list — dashboard card, grid, then the
+    /// selected day — so the day panel keeps a usable height with the card
+    /// visible (the card stays the topmost content, per §5.2).
+    private var monthList: some View {
+        List {
+            if dashboard.showsCard {
+                Section {
+                    CalendarDebtDashboardCard(state: dashboard)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+            }
+            Section {
+                monthGrid
+                    .buttonStyle(.borderless)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
+            }
+            daySections
+        }
+        .listStyle(.insetGrouped)
+    }
+
     private var selectedDayPanel: some View {
         List {
-            if let selectedDay {
-                let dayEvents = eventsByDay[DateMath.startOfDay(selectedDay)] ?? []
-                Section(DateMath.mediumString(selectedDay)) {
-                    if dayEvents.isEmpty {
-                        Text("Nothing planned or recorded.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(dayEvents) { event in
-                        eventRow(event)
-                    }
-                    Button {
-                        showAddSheet = true
-                    } label: {
-                        Label("Add Entry", systemImage: "plus.circle")
-                    }
+            daySections
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    @ViewBuilder
+    private var daySections: some View {
+        if let selectedDay {
+            let dayEvents = eventsByDay[DateMath.startOfDay(selectedDay)] ?? []
+            Section(DateMath.mediumString(selectedDay)) {
+                if dayEvents.isEmpty {
+                    Text("Nothing planned or recorded.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(dayEvents) { event in
+                    eventRow(event)
+                }
+                Button {
+                    showAddSheet = true
+                } label: {
+                    Label("Add Entry", systemImage: "plus.circle")
                 }
             }
         }
-        .listStyle(.insetGrouped)
     }
 
     private var agendaList: some View {
