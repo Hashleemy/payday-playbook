@@ -30,6 +30,10 @@ final class AppEnvironment: ObservableObject {
     func calendarService(context: ModelContext) -> CalendarEventService {
         CalendarEventService(context: context, dateProvider: dateProvider)
     }
+
+    func debtAllocationService(context: ModelContext) -> DebtAllocationService {
+        DebtAllocationService(context: context, dateProvider: dateProvider)
+    }
 }
 
 /// Routes notification taps into the router. Taps that arrive before the UI
