@@ -166,6 +166,12 @@ struct StoredScenarioDefinition: Equatable {
     var zeroAllowanceConfirmedAt: Date?
     /// When this scenario's schedule would begin if applied (V3-15).
     var effectiveDate: Date
+    /// Calc v4 (R-25/R-27): the quick-win promotion pinned by applying a
+    /// Balanced selection. Empty everywhere else — previews carry the
+    /// selection only in the result's rationale until the user applies it,
+    /// and regenerating a pinned snapshot re-runs the engine, never the
+    /// selector. Optional key; calc-v2/v3 snapshot bytes are unchanged.
+    var quickWinPromotions: [UUID] = []
 }
 
 // MARK: - Extra payment (calc v3, V3-04)
@@ -460,7 +466,7 @@ extension StoredScenarioDefinition: Codable {
     private enum CodingKeys: String, CodingKey {
         case kind, incomeOverride, minimumProtectedCash, preferredFloor, preferredAllowance
         case plannedSavingsPerPaycheck, additionalReserve, extraPaymentCeiling
-        case zeroAllowanceConfirmedAt, effectiveDate
+        case zeroAllowanceConfirmedAt, effectiveDate, quickWinPromotions
     }
 
     init(from decoder: Decoder) throws {
@@ -475,6 +481,9 @@ extension StoredScenarioDefinition: Codable {
         extraPaymentCeiling = try container.moneyIfPresent(forKey: .extraPaymentCeiling)
         zeroAllowanceConfirmedAt = try container.decodeIfPresent(Date.self, forKey: .zeroAllowanceConfirmedAt)
         effectiveDate = try container.decode(Date.self, forKey: .effectiveDate)
+        // Optional key: every calc-v2/v3 snapshot predates it and must keep
+        // decoding unchanged.
+        quickWinPromotions = try container.decodeIfPresent([UUID].self, forKey: .quickWinPromotions) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -489,6 +498,10 @@ extension StoredScenarioDefinition: Codable {
         try container.encodeMoneyIfPresent(extraPaymentCeiling, forKey: .extraPaymentCeiling)
         try container.encodeIfPresent(zeroAllowanceConfirmedAt, forKey: .zeroAllowanceConfirmedAt)
         try container.encode(effectiveDate, forKey: .effectiveDate)
+        // Omitted when empty so a calc-v3 snapshot's bytes are unchanged.
+        if !quickWinPromotions.isEmpty {
+            try container.encode(quickWinPromotions, forKey: .quickWinPromotions)
+        }
     }
 }
 

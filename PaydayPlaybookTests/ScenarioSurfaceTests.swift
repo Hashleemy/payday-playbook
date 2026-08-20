@@ -307,7 +307,7 @@ final class ScenarioSurfaceTests: XCTestCase {
         )
     }
 
-    func testApplyingCreatesAFutureEffectiveCalcV3PlanStampedAsAScenario() throws {
+    func testApplyingCreatesAFutureEffectiveCalcV4PlanStampedAsAScenario() throws {
         let context = try makeSetup()
         let state = try loadWorkspace(context)
         let result = try XCTUnwrap(state.result(for: .moreCushion))
@@ -321,13 +321,13 @@ final class ScenarioSurfaceTests: XCTestCase {
         XCTAssertTrue(plan.isActive)
         XCTAssertEqual(plan.scenarioKind, .scenario)
         XCTAssertEqual(plan.effectiveDate, definition.effectiveDate)
-        XCTAssertEqual(plan.calculationVersion, PlanCalculationVersion.v3Scenario.rawValue)
+        XCTAssertEqual(plan.calculationVersion, PlanCalculationVersion.v4BalancedQuickWin.rawValue)
 
         // The stored snapshot is the scenario's own input, so regenerating the
         // plan reproduces what the user actually saw.
         let stored = try GeneratedPlanService.storedInput(for: plan)
         XCTAssertEqual(stored.scenario?.kind, .moreCushion)
-        XCTAssertEqual(stored.calculationVersion, PlanCalculationVersion.v3Scenario.rawValue)
+        XCTAssertEqual(stored.calculationVersion, PlanCalculationVersion.v4BalancedQuickWin.rawValue)
     }
 
     /// V3-15: the previous plan and all history remain intact.

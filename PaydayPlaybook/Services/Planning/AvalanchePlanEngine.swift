@@ -1,12 +1,17 @@
 import Foundation
 
-/// Avalanche plan generator for calculation versions 2 and 3.
+/// Avalanche plan generator for calculation versions 2, 3, and 4.
 ///
 /// Calc v2 is rules R-01…R-16. Calc v3 adds the scenario and extra-payment
 /// rules R-17…R-24 to the *same* projection — there is deliberately no second
 /// payoff algorithm. With no scenario and no extra payments, a v3 run produces
 /// byte-identical output to a v2 run apart from the version stamp
-/// (`CalcV3ReductionTests`).
+/// (`CalcV3ReductionTests`). Calc v4 adds the quick-win promotion input
+/// (R-25): promoted debts sort ahead of the R-08 extra-principal attack order
+/// and the assembled payoff order, in list order, until retired — minimums
+/// funding, reserves, floor, allowance, and shortfall math are untouched, so
+/// the four R-16 identities hold unchanged. With no promotions, a v4 run is
+/// byte-identical to a v3 run apart from the stamp (`CalcV4ReductionTests`).
 ///
 /// Pure functions only: no SwiftUI, no SwiftData, no clock access — identical
 /// inputs always produce identical outputs. All money is `Decimal`.
@@ -41,6 +46,7 @@ enum AvalanchePlanEngine {
         case noIncome
         case invalidCadence(String)
         case invalidDueDay(String)
+        case promotionsRequireCalcV4
 
         var description: String {
             switch self {
@@ -48,6 +54,8 @@ enum AvalanchePlanEngine {
             case .noIncome: return "At least one income amount is required"
             case .invalidCadence(let what): return "Invalid pay cadence: \(what)"
             case .invalidDueDay(let what): return "Invalid due day: \(what)"
+            case .promotionsRequireCalcV4:
+                return "Quick-win promotions require calculation version 4 or later"
             }
         }
     }
@@ -56,10 +64,26 @@ enum AvalanchePlanEngine {
 
     /// Generates the immutable recommended plan from onboarding inputs.
     static func generatePlan(_ input: PlanningInput) throws -> PlanningResult {
+        try generatePlan(input, includeMinimumOnlyComparison: true)
+    }
+
+    /// Internal-option variant (R-27): candidate runs inside the Balanced
+    /// selector may skip the minimums-only comparison projection, halving
+    /// their cost. Skipping only leaves `minimumOnlyComparison` nil (and its
+    /// availability notes absent) — the projection itself is untouched, so
+    /// this option can never change a stamped output: everything persisted or
+    /// shown comes from a full run.
+    static func generatePlan(
+        _ input: PlanningInput,
+        includeMinimumOnlyComparison: Bool
+    ) throws -> PlanningResult {
         try validate(input)
         let normalized = normalize(input)
         let outcome = runProjection(normalized, extraEnabled: true, actuals: nil)
-        let comparison = minimumOnlyComparison(normalized, against: outcome, actuals: nil)
+        let comparison: (comparison: MinimumOnlyComparison?, notes: [PlanningNote]) =
+            includeMinimumOnlyComparison
+            ? minimumOnlyComparison(normalized, against: outcome, actuals: nil)
+            : (nil, [])
         return assemble(kind: .plan, input: normalized, outcome: outcome, comparison: comparison,
                         savedCadence: input.income.cadence)
     }
@@ -116,6 +140,14 @@ enum AvalanchePlanEngine {
         }
         try validateCadence(input.income.cadence)
         if let scenario = input.scenario {
+            // R-25: the promotion field is gated on the calc-v4 stamp. An
+            // older-stamped input carrying promotions is a caller bug — it
+            // must fail loudly, never be silently ignored or silently
+            // upgraded, or a stored v3 plan could reforecast differently.
+            if !scenario.quickWinPromotions.isEmpty,
+               input.calculationVersion.rawValue < PlanCalculationVersion.v4BalancedQuickWin.rawValue {
+                throw PlanningValidationError.promotionsRequireCalcV4
+            }
             try nonNegative(scenario.minimumProtectedCash ?? 0, "minimum protected cash")
             try nonNegative(scenario.preferredFloor ?? 0, "preferred floor")
             try nonNegative(scenario.preferredAllowance ?? 0, "preferred allowance")
@@ -281,6 +313,10 @@ enum AvalanchePlanEngine {
         /// Extra payments that actually reached a payday inside the projection
         /// (R-20); anything missing landed after payoff or the horizon.
         var placedExtraPaymentIDs: Set<UUID> = []
+        /// R-25 promotions that survived validation (active, `.eligible`), in
+        /// list order — the order the attack step and the assembled payoff
+        /// order honor. Empty on every calc-v2/v3 run.
+        var promotedOrder: [UUID] = []
     }
 
     // MARK: - Projection core
@@ -295,28 +331,86 @@ enum AvalanchePlanEngine {
 
     private static func dateKey(_ date: Date) -> String { eventDateFormatter.string(from: date) }
 
+    /// One R-08 priority key, shared by the projection loop's working state
+    /// and the public plan-start ordering so the two can never drift.
+    private struct PriorityKey {
+        let apr: Decimal
+        let dueDay: Int?
+        let balance: Decimal
+        let createdOrder: Int
+        let id: UUID
+    }
+
     /// Deterministic priority: effective APR descending, due day ascending
     /// (debts without a due day last), current principal ascending, creation
     /// order, then UUID string. (Extends R-08 with the due-day key per the
     /// v0.2 engine mission; 0% APR debts naturally sort last.)
-    private static func prioritySorted(_ indices: [Int], debts: [WorkingDebt], on date: Date) -> [Int] {
-        indices.sorted { a, b in
-            let da = debts[a], db = debts[b]
-            let aprA = da.input.effectiveAPR(on: date)
-            let aprB = db.input.effectiveAPR(on: date)
-            if aprA != aprB { return aprA > aprB }
-            switch (da.input.dueDay, db.input.dueDay) {
-            case let (x?, y?) where x != y: return x < y
-            case (.some, .none): return true
-            case (.none, .some): return false
-            default: break
-            }
-            if da.balance != db.balance { return da.balance < db.balance }
-            if da.input.createdOrder != db.input.createdOrder {
-                return da.input.createdOrder < db.input.createdOrder
-            }
-            return da.input.id.uuidString < db.input.id.uuidString
+    private static func priorityPrecedes(_ a: PriorityKey, _ b: PriorityKey) -> Bool {
+        if a.apr != b.apr { return a.apr > b.apr }
+        switch (a.dueDay, b.dueDay) {
+        case let (x?, y?) where x != y: return x < y
+        case (.some, .none): return true
+        case (.none, .some): return false
+        default: break
         }
+        if a.balance != b.balance { return a.balance < b.balance }
+        if a.createdOrder != b.createdOrder { return a.createdOrder < b.createdOrder }
+        return a.id.uuidString < b.id.uuidString
+    }
+
+    private static func prioritySorted(_ indices: [Int], debts: [WorkingDebt], on date: Date) -> [Int] {
+        func key(_ index: Int) -> PriorityKey {
+            let debt = debts[index]
+            return PriorityKey(
+                apr: debt.input.effectiveAPR(on: date),
+                dueDay: debt.input.dueDay,
+                balance: debt.balance,
+                createdOrder: debt.input.createdOrder,
+                id: debt.input.id
+            )
+        }
+        return indices.sorted { priorityPrecedes(key($0), key($1)) }
+    }
+
+    /// R-08 attack order at `date` for the given inputs (current balances as
+    /// entered). The Balanced selector's "promoted debt earliest in R-08 order
+    /// at plan start" tie-break reads this so it can never disagree with the
+    /// order the projection itself uses.
+    static func attackOrder(debts: [DebtInput], on date: Date) -> [UUID] {
+        debts
+            .map { debt in
+                PriorityKey(
+                    apr: debt.effectiveAPR(on: date),
+                    dueDay: debt.dueDay,
+                    balance: debt.balance,
+                    createdOrder: debt.createdOrder,
+                    id: debt.id
+                )
+            }
+            .sorted { priorityPrecedes($0, $1) }
+            .map(\.id)
+    }
+
+    /// R-25 extra-principal attack order: validated promoted debts first, in
+    /// promotion-list order, then the pure R-08 priority order behind them.
+    /// With no promotions this is exactly `prioritySorted` — the calc-v3
+    /// reduction depends on it.
+    private static func attackSorted(
+        _ indices: [Int],
+        debts: [WorkingDebt],
+        promotions: [UUID],
+        on date: Date
+    ) -> [Int] {
+        guard !promotions.isEmpty else { return prioritySorted(indices, debts: debts, on: date) }
+        var promoted: [Int] = []
+        var promotedSet: Set<Int> = []
+        for id in promotions {
+            guard let index = indices.first(where: { debts[$0].input.id == id }),
+                  promotedSet.insert(index).inserted else { continue }
+            promoted.append(index)
+        }
+        let rest = indices.filter { !promotedSet.contains($0) }
+        return promoted + prioritySorted(rest, debts: debts, on: date)
     }
 
     private static func incomeAmount(on date: Date, amounts: [PlanningIncomeChange]) -> Decimal {
@@ -472,6 +566,28 @@ enum AvalanchePlanEngine {
                      "The debts are not paid off within \(horizonCap) paychecks as configured.")
             }
             return outcome
+        }
+
+        // R-25: promotions apply only to debts that are active and `.eligible`
+        // at plan start. Anything else — retired, ineligible, unknown-terms,
+        // or simply not in this plan — is a no-op with a warning, never a
+        // silent reorder and never a silent drop.
+        var promotedIDs: Set<UUID> = []
+        for id in input.scenario?.quickWinPromotions ?? [] {
+            guard !promotedIDs.contains(id) else { continue }
+            if let debt = outcome.debts.first(where: { $0.input.id == id }),
+               debt.isActive, debt.extraEligible {
+                promotedIDs.insert(id)
+                outcome.promotedOrder.append(id)
+            } else if let debt = outcome.debts.first(where: { $0.input.id == id }) {
+                warn(.quickWinPromotionIneligible,
+                     "\(debt.input.name) can't be promoted as a quick win — it is paid off or doesn't accept extra principal — so the payoff order is unchanged.",
+                     debtID: id)
+            } else {
+                warn(.quickWinPromotionIneligible,
+                     "A promoted quick-win account is no longer in this plan, so the payoff order is unchanged.",
+                     debtID: id)
+            }
         }
 
         // Missing installment minimums are a setup problem, warned once.
@@ -748,10 +864,11 @@ enum AvalanchePlanEngine {
                         outcome.debts[index].payoffDate = payday
                     }
                 }
-                // 5b. Everything else avalanches.
-                let eligible = prioritySorted(
+                // 5b. Everything else avalanches — promoted quick-win debts
+                //     first (R-25), then the pure R-08 order behind them.
+                let eligible = attackSorted(
                     outcome.debts.indices.filter { outcome.debts[$0].isActive && outcome.debts[$0].extraEligible },
-                    debts: outcome.debts, on: payday
+                    debts: outcome.debts, promotions: outcome.promotedOrder, on: payday
                 )
                 for index in eligible {
                     guard remaining > 0 else { break }
@@ -877,8 +994,12 @@ enum AvalanchePlanEngine {
                 let isLast = offset == extraOrder.count - 1
                 let rounded = isLast ? extraRemainder : min((extraByIndex[index] ?? 0).rounded2, extraRemainder)
                 extraRemainder -= rounded
+                // R-27: a payment to a promoted debt is marked as the quick
+                // win it is — calling it "highest effective APR" would lie.
                 var reasons: [ReasonCode] = directedIndices.contains(index)
-                    ? [.extraPaymentDirectedTarget] : [.avalancheHighestEffectiveAPR]
+                    ? [.extraPaymentDirectedTarget]
+                    : outcome.promotedOrder.contains(debt.input.id)
+                        ? [.quickWinPromotion] : [.avalancheHighestEffectiveAPR]
                 if debt.input.id != targetDebtID { reasons.append(.rolloverAfterPayoff) }
                 if let promo = debt.input.promo {
                     reasons.append(payday < promo.expirationDate ? .promoRateActive : .promoRateExpired)
@@ -930,9 +1051,13 @@ enum AvalanchePlanEngine {
             }
             if let avalancheTargetID,
                let target = outcome.debts.first(where: { $0.input.id == avalancheTargetID }) {
-                let apr = target.input.effectiveAPR(on: payday) * 100
                 let avalancheExtra = directedPlacements.reduce(extraTotalEmit) { $0 - $1.amount.rounded2 }
-                movements.append("Send \(MoneyFormat.string(avalancheExtra)) extra to \(target.input.name) — highest effective APR (\(apr.rounded2)%).")
+                if outcome.promotedOrder.contains(avalancheTargetID) {
+                    movements.append("Send \(MoneyFormat.string(avalancheExtra)) extra to \(target.input.name) — clearing this account early frees its minimum payment for the rest of the plan.")
+                } else {
+                    let apr = target.input.effectiveAPR(on: payday) * 100
+                    movements.append("Send \(MoneyFormat.string(avalancheExtra)) extra to \(target.input.name) — highest effective APR (\(apr.rounded2)%).")
+                }
             }
             if scenarioRetainedEmit > 0 {
                 let ceilingNote = ceilingHeldBack > 0
@@ -1183,10 +1308,12 @@ enum AvalanchePlanEngine {
         savedCadence: PlanningPayCadence
     ) -> PlanningResult {
         // Payoff order: projected payoff sequence; unfinished debts follow in
-        // priority order at plan start.
+        // priority order at plan start — promoted quick-win debts ahead of it
+        // until retired (R-25's "assembled payoff order").
         let startDate = outcome.paychecks.first?.date ?? input.income.firstPayday
-        let startPriority = prioritySorted(
-            Array(outcome.debts.indices), debts: outcome.debts, on: startDate
+        let startPriority = attackSorted(
+            Array(outcome.debts.indices), debts: outcome.debts,
+            promotions: outcome.promotedOrder, on: startDate
         )
         let priorityRank = Dictionary(uniqueKeysWithValues: startPriority.enumerated().map { ($1, $0) })
         let payoffOrder = outcome.debts.indices.sorted { a, b in
@@ -1216,20 +1343,21 @@ enum AvalanchePlanEngine {
             .filter { $0.debtType == .creditCard }
             .map { debt in
                 let current = (actuals?.balances.first { $0.debtID == debt.id }?.balance ?? debt.balance).rounded2
-                guard let limit = debt.creditLimit, limit > 0 else {
+                // R-12 (V4-04): the one utilization implementation. Unknown or
+                // non-positive limits stay unknown — never 0%.
+                guard var ratio = UtilizationMath.utilization(balance: current, limit: debt.creditLimit) else {
                     return CreditUtilization(
                         debtID: debt.id, balance: current,
                         creditLimit: debt.creditLimit, utilization: nil, level: .unknown
                     )
                 }
-                var ratio = current / limit
                 var rounded = Decimal()
                 NSDecimalRound(&rounded, &ratio, 4, .plain)
-                let level: UtilizationLevel = rounded >= Decimal(string: "0.9")! ? .critical
-                    : rounded >= Decimal(string: "0.3")! ? .elevated : .ok
+                let level: UtilizationLevel = rounded >= UtilizationMath.attentionThreshold ? .critical
+                    : rounded >= UtilizationMath.informationalThreshold ? .elevated : .ok
                 return CreditUtilization(
                     debtID: debt.id, balance: current,
-                    creditLimit: limit, utilization: rounded, level: level
+                    creditLimit: debt.creditLimit, utilization: rounded, level: level
                 )
             }
 
@@ -1272,14 +1400,24 @@ enum AvalanchePlanEngine {
         }
         assumptions.append(contentsOf: scenarioAssumptions(for: input, savedCadence: savedCadence))
 
-        var recommendationReasons: [ReasonCode] = [.avalancheHighestEffectiveAPR]
-        var explanations = [
-            "Minimum payments are covered first, then every remaining dollar attacks the debt with the highest effective APR. This minimizes estimated interest and reaches payoff as early as possible."
-        ]
+        let firstTargetIsPromoted = outcome.firstTargetDebtID
+            .map { outcome.promotedOrder.contains($0) } ?? false
+        var recommendationReasons: [ReasonCode] = firstTargetIsPromoted
+            ? [.quickWinPromotion, .avalancheHighestEffectiveAPR]
+            : [.avalancheHighestEffectiveAPR]
+        var explanations = firstTargetIsPromoted
+            ? [
+                "Minimum payments are covered first. A small account is cleared as an early win — freeing its minimum payment for the rest of the plan — then every remaining dollar attacks the debt with the highest effective APR."
+            ]
+            : [
+                "Minimum payments are covered first, then every remaining dollar attacks the debt with the highest effective APR. This minimizes estimated interest and reaches payoff as early as possible."
+            ]
         if let targetID = outcome.firstTargetDebtID,
            let target = input.debts.first(where: { $0.id == targetID }) {
             let apr = target.effectiveAPR(on: startDate) * 100
-            explanations.append("Current target: \(target.name) at \(apr.rounded2)% effective APR.")
+            explanations.append(firstTargetIsPromoted
+                ? "Current target: \(target.name) — promoted as a quick win (\(apr.rounded2)% effective APR)."
+                : "Current target: \(target.name) at \(apr.rounded2)% effective APR.")
             if let promo = target.promo, startDate < promo.expirationDate {
                 recommendationReasons.append(.promoRateActive)
             }
@@ -1293,10 +1431,16 @@ enum AvalanchePlanEngine {
             explanations.append("This forecast starts from your latest entered balances. The original plan is unchanged.")
         }
 
+        let stamp: PlanCalculationVersion
+        switch input.calculationVersion {
+        // Calc v3/v4 are stamped only when the caller asked for them. A v1
+        // input must never reach this allocator, so it is never stamped here.
+        case .v4BalancedQuickWin: stamp = .v4BalancedQuickWin
+        case .v3Scenario: stamp = .v3Scenario
+        case .v1LegacyBaseline, .v2Avalanche: stamp = .v2Avalanche
+        }
         return PlanningResult(
-            // Calc v3 is stamped only when the caller asked for it. A v1 input
-            // must never reach this allocator, so it is never stamped here.
-            calculationVersion: input.calculationVersion == .v3Scenario ? .v3Scenario : .v2Avalanche,
+            calculationVersion: stamp,
             kind: kind,
             generatedAsOf: actuals.map { DateMath.startOfDay($0.asOf) } ?? input.asOf,
             totalStartingPrincipal: input.debts.reduce(Decimal.zero) { $0 + $1.balance }.rounded2,

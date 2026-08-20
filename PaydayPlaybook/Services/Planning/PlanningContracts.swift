@@ -6,7 +6,8 @@ import Foundation
 /// implemented by `DebtCalculationEngine`; it must keep reproducing its stored
 /// schedule forever. Version 2 is the generalized avalanche generator in
 /// `AvalanchePlanEngine` (calc rules R-01…R-16). Version 3 is the same engine
-/// plus the scenario and extra-payment rules R-17…R-24. Dispatch on
+/// plus the scenario and extra-payment rules R-17…R-24. Version 4 adds the
+/// Balanced quick-win promotion input (R-25…R-27). Dispatch on
 /// `PlanningInput.calculationVersion`; never route version-1 plans through a
 /// later allocator.
 enum PlanCalculationVersion: Int, Codable, Equatable, Sendable {
@@ -18,6 +19,11 @@ enum PlanCalculationVersion: Int, Codable, Equatable, Sendable {
     /// (R-17…R-24). Reduces to `.v2Avalanche` output exactly when the input
     /// carries no scenario and no extra payments (R-22).
     case v3Scenario = 3
+    /// Scenario engine with the quick-win promotion input (R-25…R-27).
+    /// Reduces to `.v3Scenario` output exactly when `quickWinPromotions` is
+    /// empty; carrying promotions on an input stamped below this version is a
+    /// validation error, never a silent ignore.
+    case v4BalancedQuickWin = 4
 }
 
 // MARK: - Input DTOs
@@ -124,6 +130,13 @@ struct ScenarioInput: Codable, Equatable, Sendable {
     /// When this scenario's schedule begins if it is ever applied (V3-15).
     /// Preview math is unaffected; applying is a separate, explicit step.
     var effectiveDate: Date
+    /// Calc v4 (R-25): debts promoted ahead of the R-08 extra-principal attack
+    /// order and the assembled payoff order, in list order, until retired.
+    /// Only active, `.eligible` debts take effect; anything else is a no-op
+    /// with a `.quickWinPromotionIneligible` warning. Minimums funding,
+    /// reserves, floor, allowance, and shortfall math are untouched. Empty on
+    /// every calc-v2/v3 input, and requires `.v4BalancedQuickWin` to carry.
+    var quickWinPromotions: [UUID] = []
 
     /// The protected floor this scenario preserves. Nil leaves the saved floor
     /// in place.
@@ -159,6 +172,49 @@ struct ScenarioInput: Codable, Equatable, Sendable {
     /// Per-paycheck cap on extra principal; only More Cushion may impose one.
     var resolvedExtraPaymentCeiling: Decimal? {
         kind == .moreCushion ? extraPaymentCeiling : nil
+    }
+}
+
+extension ScenarioInput {
+    private enum CodingKeys: String, CodingKey {
+        case kind, incomeOverride, minimumProtectedCash, preferredFloor, preferredAllowance
+        case plannedSavingsPerPaycheck, additionalReserve, extraPaymentCeiling
+        case zeroAllowanceConfirmedAt, effectiveDate, quickWinPromotions
+    }
+
+    /// Decoded tolerantly so calc-v3 payloads written before the promotion
+    /// key existed still round-trip (`quickWinPromotions` defaults to empty).
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(ScenarioKind.self, forKey: .kind)
+        incomeOverride = try container.decodeIfPresent(IncomeOverrideInput.self, forKey: .incomeOverride)
+        minimumProtectedCash = try container.decodeIfPresent(Decimal.self, forKey: .minimumProtectedCash)
+        preferredFloor = try container.decodeIfPresent(Decimal.self, forKey: .preferredFloor)
+        preferredAllowance = try container.decodeIfPresent(Decimal.self, forKey: .preferredAllowance)
+        plannedSavingsPerPaycheck = try container.decodeIfPresent(Decimal.self, forKey: .plannedSavingsPerPaycheck)
+        additionalReserve = try container.decodeIfPresent(Decimal.self, forKey: .additionalReserve)
+        extraPaymentCeiling = try container.decodeIfPresent(Decimal.self, forKey: .extraPaymentCeiling)
+        zeroAllowanceConfirmedAt = try container.decodeIfPresent(Date.self, forKey: .zeroAllowanceConfirmedAt)
+        effectiveDate = try container.decode(Date.self, forKey: .effectiveDate)
+        quickWinPromotions = try container.decodeIfPresent([UUID].self, forKey: .quickWinPromotions) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(incomeOverride, forKey: .incomeOverride)
+        try container.encodeIfPresent(minimumProtectedCash, forKey: .minimumProtectedCash)
+        try container.encodeIfPresent(preferredFloor, forKey: .preferredFloor)
+        try container.encodeIfPresent(preferredAllowance, forKey: .preferredAllowance)
+        try container.encodeIfPresent(plannedSavingsPerPaycheck, forKey: .plannedSavingsPerPaycheck)
+        try container.encodeIfPresent(additionalReserve, forKey: .additionalReserve)
+        try container.encodeIfPresent(extraPaymentCeiling, forKey: .extraPaymentCeiling)
+        try container.encodeIfPresent(zeroAllowanceConfirmedAt, forKey: .zeroAllowanceConfirmedAt)
+        try container.encode(effectiveDate, forKey: .effectiveDate)
+        // Omitted when empty so a calc-v3 payload's bytes are unchanged.
+        if !quickWinPromotions.isEmpty {
+            try container.encode(quickWinPromotions, forKey: .quickWinPromotions)
+        }
     }
 }
 
@@ -379,6 +435,8 @@ enum ReasonCode: String, Codable, Equatable, Sendable {
     // Calc v3 (R-20)
     case extraPaymentApplied            // a modeled extra payment funded this payment
     case extraPaymentDirectedTarget     // the user named this debt for the extra
+    // Calc v4 (R-25/R-27)
+    case quickWinPromotion              // extra sent to a promoted quick-win debt
 }
 
 /// Warning / assumption note codes.
@@ -421,6 +479,10 @@ enum PlanningNoteCode: String, Codable, Equatable, Sendable {
     case incomeOverrideRebasesTimeline      // a cadence change restarts the payday timeline
     case scenarioCashRetainedPerPaycheck    // planned savings / cushion held each paycheck
     case extraPaymentsAreNewMoney           // modeled as arriving in the spending pool
+    // Calc v4 (R-25…R-27)
+    case quickWinSelected                   // Balanced promoted a quick-win debt
+    case quickWinCostsMoreInterest          // the quick win adds estimated interest, stated
+    case quickWinPromotionIneligible        // promoted debt inactive/ineligible — no-op
 }
 
 struct PlanningNote: Codable, Equatable, Sendable {
@@ -655,6 +717,50 @@ struct PlanningResult: Codable, Equatable, Sendable {
     var notPayableAsConfigured: Bool
 }
 
+// MARK: - Balanced selection rationale (calc v4, R-27)
+
+/// Why Balanced chose the target it chose — machine-testable, engine-proven.
+///
+/// Every figure comes from two complete engine runs: the selected projection
+/// and the pure-avalanche Balanced baseline (B0). Nothing here is estimated by
+/// a side formula, and no saving is claimed unless both compared projections
+/// finished (the R-16 precedent). `explanations` carries calm, quantified
+/// sentences for the scenario card; the numeric fields are the single source
+/// every surface derives its copy from — no view invents its own comparison.
+struct BalancedSelectionRationale: Codable, Equatable, Sendable {
+    enum Selection: String, Codable, Equatable, Sendable {
+        /// No quick win passed the R-26 guardrails; B0 is Balanced — exactly
+        /// the pre-v0.4.0 behavior.
+        case avalanche
+        /// A quick-win promotion won the R-26 lexicographic selection.
+        case quickWin
+    }
+
+    var selection: Selection
+    /// The promoted debt; nil when `selection == .avalanche`.
+    var promotedDebtID: UUID?
+    var promotedDebtName: String?
+    /// R-25 candidates — debts whose full promotion simulation retired them
+    /// within `balancedQuickWinHorizonPaychecks` — whether or not admissible.
+    var candidatesConsidered: Int
+    /// Selected-run estimated interest minus B0's. Positive means the quick
+    /// win costs more; 0 for an avalanche selection.
+    var interestDeltaVsAvalanche: Decimal
+    /// Selected-run paycheck count minus B0's (≤ the G1 guardrail; 0 for an
+    /// avalanche selection).
+    var payoffDelayPaychecks: Int
+    /// Days the first account payoff moved earlier versus B0; nil when B0 has
+    /// no first payoff inside its projection or nothing was promoted.
+    var firstPayoffAdvanceDays: Int?
+    /// The minimum payment B0 still funds for the promoted debt in the first
+    /// paycheck after the quick win retires it — the per-paycheck obligation
+    /// the promotion releases. Nil when B0 funds none after that date (or for
+    /// an avalanche selection).
+    var releasedMinimumPerPaycheck: Decimal?
+    /// Card-ready sentences; every number in them restates a field above.
+    var explanations: [String]
+}
+
 // MARK: - Scenario results (calc v3, R-19/R-24)
 
 /// A named input a scenario or insight needs before it can answer honestly.
@@ -747,6 +853,10 @@ struct ScenarioResult: Codable, Equatable, Sendable {
     var warnings: [PlanningNote]
     /// True when the horizon cap was reached before payoff.
     var notPayableAsConfigured: Bool
+    /// Calc v4 (R-27): the Balanced selection rationale. Nil for the other
+    /// two kinds, for non-computable cards, and for definitions that arrived
+    /// with a pinned promotion (regeneration never re-runs the selector).
+    var balancedRationale: BalancedSelectionRationale? = nil
 
     /// False when missing inputs prevented an honest calculation.
     var isComputable: Bool { plan != nil }

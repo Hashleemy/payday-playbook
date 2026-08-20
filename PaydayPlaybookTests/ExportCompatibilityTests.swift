@@ -105,10 +105,10 @@ final class ExportCompatibilityTests: XCTestCase {
         let profileID = try XCTUnwrap(context.fetch(FetchDescriptor<UserGoalProfile>()).first).id
 
         let backup = try ExportService.buildBackup(context: context)
-        // The writer emits export schema 3 (V3-09); this suite's subject is
-        // that the schema-2 *rows* survive a round trip, which they must
-        // whichever envelope carries them.
-        XCTAssertEqual(backup.schemaVersion, 3)
+        // The writer emits export schema 4 (V4-03 semantic bump, VERSIONING.md
+        // §5); this suite's subject is that the schema-2 *rows* survive a
+        // round trip, which they must whichever envelope carries them.
+        XCTAssertEqual(backup.schemaVersion, 4)
         let decoded = try ExportService.readBackup(from: ExportService.encodeBackup(backup))
 
         let freshContainer = try TestSupport.makeContainer()
@@ -134,6 +134,88 @@ final class ExportCompatibilityTests: XCTestCase {
         // Restoring a v2 file must not re-run migration side effects twice.
         let settings = try XCTUnwrap(fresh.fetch(FetchDescriptor<AppSettings>()).first)
         XCTAssertEqual(settings.seedSchemaVersion, PlanContract.currentSchemaVersion)
+    }
+
+    // MARK: - Export schema 4 (V4-03, VERSIONING.md §5)
+
+    /// A schema-3 file — the 0.3.0 shape, enveloped — still imports, and the
+    /// restore is byte-faithful: no migration side effect may fire, because
+    /// export 3 and export 4 carry the same schema-3 rows (the 4 bump is
+    /// semantic). Re-copying the profile floor onto an account whose
+    /// protected amount the user zeroed, or forcing `onboardingComplete`,
+    /// would be value mutations.
+    func testSchema3FileStillImportsWithoutMigrationSideEffects() throws {
+        let container = try TestSupport.makeContainer()
+        let context = ModelContext(container)
+        try TestSupport.seed(context)
+        // A deliberate post-migration state: the user zeroed the spending
+        // account's protected amount and had not finished onboarding.
+        let spending = try XCTUnwrap(
+            context.fetch(FetchDescriptor<CashAccount>()).first { $0.roles.contains(.spending) }
+        )
+        spending.protectedAmount = .zero
+        if let settings = try context.fetch(FetchDescriptor<AppSettings>()).first {
+            settings.onboardingComplete = false
+        }
+        try context.save()
+
+        var backup = try ExportService.buildBackup(context: context)
+        backup.schemaVersion = 3
+        let decoded = try ExportService.readBackup(from: ExportService.encodeBackup(backup))
+        XCTAssertEqual(decoded.schemaVersion, 3)
+
+        let freshContainer = try TestSupport.makeContainer()
+        let fresh = ModelContext(freshContainer)
+        try ExportService.restore(decoded, context: fresh)
+
+        let restoredSpending = try XCTUnwrap(
+            fresh.fetch(FetchDescriptor<CashAccount>()).first { $0.roles.contains(.spending) }
+        )
+        XCTAssertEqual(restoredSpending.protectedAmount, .zero,
+                       "restoring a schema-3 file must not re-copy the profile floor")
+        let settings = try XCTUnwrap(fresh.fetch(FetchDescriptor<AppSettings>()).first)
+        XCTAssertFalse(settings.onboardingComplete,
+                       "restoring a schema-3 file must not force onboarding complete")
+        XCTAssertEqual(settings.seedSchemaVersion, PlanContract.currentSchemaVersion,
+                       "a schema-3 store is already current — nothing to stamp")
+    }
+
+    /// A calc-4 plan's promotion key survives the export round trip inside
+    /// `inputSnapshotData`, and the envelope reports the calc version the
+    /// forward-refusal exists for.
+    func testSchema4RoundTripCarriesTheCalc4Snapshot() throws {
+        let container = try TestSupport.makeContainer()
+        let context = ModelContext(container)
+        try TestSupport.seed(context)
+
+        // The seeded plan is the migrated calc-v1 baseline (no snapshot), so
+        // give it a calc-4 snapshot the way an applied 0.4.0 Balanced plan
+        // carries one: a full stored input whose definition pins a promotion.
+        let plan = try XCTUnwrap(context.fetch(FetchDescriptor<PlanVersion>()).first)
+        var definition = ScenarioFixtures.definition(.balanced)
+        definition.quickWinPromotions = [ScenarioFixtures.debtID(3)]
+        let stored = ScenarioFixtures.snapshot(calculationVersion: 4, scenario: definition)
+        plan.inputSnapshotData = try PlanningSnapshotCoder.encode(stored)
+        plan.calculationVersion = 4
+        try context.save()
+
+        let backup = try ExportService.buildBackup(context: context)
+        XCTAssertEqual(backup.schemaVersion, 4)
+        let document = ExportService.document(for: backup)
+        XCTAssertEqual(document.schemaVersion, 4)
+        XCTAssertEqual(document.calculationVersion, PlanContract.currentCalculationVersion)
+
+        let decoded = try ExportService.readBackup(from: ExportService.encodeBackup(backup))
+        let freshContainer = try TestSupport.makeContainer()
+        let fresh = ModelContext(freshContainer)
+        try ExportService.restore(decoded, context: fresh)
+
+        let restored = try XCTUnwrap(fresh.fetch(FetchDescriptor<PlanVersion>()).first)
+        XCTAssertEqual(restored.calculationVersion, 4)
+        let snapshot = try GeneratedPlanService.storedInput(for: restored)
+        XCTAssertEqual(snapshot.calculationVersion, 4)
+        XCTAssertEqual(snapshot.scenario?.quickWinPromotions, [ScenarioFixtures.debtID(3)],
+                       "the pinned promotion survives backup and restore")
     }
 
     // MARK: - Fail-safe incompatibility (mission rule 7)

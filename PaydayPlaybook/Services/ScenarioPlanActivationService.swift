@@ -63,7 +63,7 @@ struct ScenarioPlanActivationService {
             replacesPlanNamed: try context.fetch(FetchDescriptor<PlanVersion>())
                 .first(where: \.isActive)?.name,
             calculationVersion: result.plan?.calculationVersion.rawValue
-                ?? PlanCalculationVersion.v3Scenario.rawValue
+                ?? PlanCalculationVersion.v4BalancedQuickWin.rawValue
         )
     }
 
@@ -71,8 +71,14 @@ struct ScenarioPlanActivationService {
     ///
     /// The snapshot stored on the row is the *scenario's own* input — the one
     /// the projection was actually computed from, carrying its constraints and
-    /// calc-v3 stamp. Storing the baseline input instead would produce a plan
+    /// calc-v4 stamp. Storing the baseline input instead would produce a plan
     /// that regenerates into something the user never saw.
+    ///
+    /// **Applying pins the Balanced selection (R-27).** When the previewed
+    /// Balanced result chose a quick win, the concrete promotion is written
+    /// into the persisted definition here, so regenerating the applied plan
+    /// re-runs the engine with the pinned promotion and never re-runs the
+    /// selector — the plan reproduces identically forever.
     @discardableResult
     func apply(
         result: ScenarioResult,
@@ -81,9 +87,18 @@ struct ScenarioPlanActivationService {
     ) throws -> PlanVersion {
         guard let projection = result.plan else { throw ActivationError.scenarioNotComputable }
 
+        var pinnedDefinition = definition
+        if result.kind == .balanced,
+           pinnedDefinition.quickWinPromotions.isEmpty,
+           let rationale = result.balancedRationale,
+           rationale.selection == .quickWin,
+           let promoted = rationale.promotedDebtID {
+            pinnedDefinition.quickWinPromotions = [promoted]
+        }
+
         var snapshot = baseInput
-        snapshot.calculationVersion = PlanCalculationVersion.v3Scenario.rawValue
-        snapshot.scenario = definition
+        snapshot.calculationVersion = projection.calculationVersion.rawValue
+        snapshot.scenario = pinnedDefinition
 
         let now = dateProvider.now
         let name = try GeneratedPlanService.nextPlanName(context: context)

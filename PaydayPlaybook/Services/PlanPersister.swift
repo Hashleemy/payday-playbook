@@ -241,10 +241,14 @@ struct PlanPersister {
 
     /// R-08 presentation order: APR descending, ties by lower balance, then
     /// input (creation) order; 0% APR last. The engine applies the same rule —
-    /// this keeps `avalancheOrderRaw` consistent for display.
+    /// this keeps `avalancheOrderRaw` consistent for display. Calc v4 (R-25):
+    /// promoted quick-win debts sort ahead exactly as they do in the engine's
+    /// attack and payoff orders, so the plan screen, Today's target, and the
+    /// stored order can never disagree about who is first. With no promotions
+    /// the order is unchanged.
     private func orderedDisplayIDs(input: StoredPlanInput, result: StoredPlanResult) -> [String] {
         let indexed = input.debts.enumerated()
-        return indexed.sorted { lhs, rhs in
+        let base = indexed.sorted { lhs, rhs in
             let (li, ld) = lhs, (ri, rd) = rhs
             if ld.apr != rd.apr {
                 if ld.apr == 0 { return false }
@@ -254,5 +258,15 @@ struct PlanPersister {
             if ld.currentBalance != rd.currentBalance { return ld.currentBalance < rd.currentBalance }
             return li < ri
         }.map(\.element.displayID)
+
+        let promoted = (input.scenario?.quickWinPromotions ?? []).compactMap { id -> String? in
+            // The engine's promotion rule exactly: active, `.eligible` only.
+            guard let debt = input.debts.first(where: { $0.id == id }),
+                  debt.currentBalance.rounded2 > 0,
+                  debt.effectivePrepayment == .eligible else { return nil }
+            return debt.displayID
+        }
+        guard !promoted.isEmpty else { return base }
+        return promoted + base.filter { !promoted.contains($0) }
     }
 }
