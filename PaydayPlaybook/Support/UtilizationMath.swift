@@ -25,4 +25,22 @@ enum UtilizationMath {
         guard let limit, limit > 0 else { return nil }
         return balance / limit
     }
+
+    /// The one display rounding for a utilization ratio: nearest whole
+    /// percent, "<1%" for a non-zero ratio that would otherwise read as a
+    /// false 0%, values above the limit rendered past 100%, and negative
+    /// (overpayment/correction) balances clamped to 0%.
+    ///
+    /// Never route the ratio through `NSDecimalNumber.intValue` /
+    /// `Int(truncating:)`: a full-width division mantissa (any
+    /// non-terminating balance ÷ limit) garbles it — 948.27 ÷ 950.00 came
+    /// back as 0, which is the "0% of limit" defect this replaces (V4-04).
+    static func wholePercentString(_ utilization: Decimal) -> String {
+        guard utilization > 0 else { return "0%" }
+        var scaled = utilization * 100
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &scaled, 0, .plain)
+        guard rounded > 0 else { return "<1%" }
+        return "\(rounded)%"
+    }
 }

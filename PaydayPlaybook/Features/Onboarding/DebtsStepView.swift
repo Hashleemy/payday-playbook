@@ -198,16 +198,15 @@ private struct SetupDebtRow: View {
         guard let utilization = debt.utilization(currentBalance: debt.startingBalance) else {
             return debt.creditLimit == nil ? "Credit limit unknown" : nil
         }
-        let percent = (utilization * 100).rounded2
-        return "\(MoneyFormat.editingString(percent))% of the limit used"
+        return "\(UtilizationMath.wholePercentString(utilization)) of the limit used"
     }
 
     private var utilizationColor: Color {
         guard let utilization = debt.utilization(currentBalance: debt.startingBalance) else {
             return .secondary
         }
-        if utilization >= Decimal(string: "0.9")! { return .orange }
-        if utilization >= Decimal(string: "0.3")! { return .yellow }
+        if utilization >= UtilizationMath.attentionThreshold { return .orange }
+        if utilization >= UtilizationMath.informationalThreshold { return .yellow }
         return .secondary
     }
 
@@ -504,12 +503,14 @@ struct DebtEditorView: View {
     }
 
     private var utilizationPreview: String? {
-        guard let creditLimit, creditLimit > 0, let balance else { return nil }
-        let percent = ((balance / creditLimit) * 100).rounded2
-        var text = "\(MoneyFormat.editingString(percent))%"
-        if percent >= 90 {
+        guard let balance,
+              let utilization = UtilizationMath.utilization(balance: balance, limit: creditLimit) else {
+            return nil
+        }
+        var text = UtilizationMath.wholePercentString(utilization)
+        if utilization >= UtilizationMath.attentionThreshold {
             text += " — that's high; paying it down helps your credit score too"
-        } else if percent >= 30 {
+        } else if utilization >= UtilizationMath.informationalThreshold {
             text += " — above 30%"
         }
         return text

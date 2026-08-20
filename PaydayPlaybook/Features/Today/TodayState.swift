@@ -228,10 +228,11 @@ struct TodayState {
            let gap = item.shortfallAmount {
             return "Payday #\(item.sequenceNumber) needs about \(MoneyFormat.string(gap)) from outside funds. Minimums stay covered in the plan."
         }
-        // 2. Critical utilization (R-12).
+        // 2. Critical utilization (R-12) — the canonical threshold, so this
+        // line can never fire at a level the badge would not (V4-04).
         if let critical = state.debtBalances.first(where: { balance in
             guard let utilization = balance.debt.utilization(currentBalance: balance.balance) else { return false }
-            return utilization >= Decimal(string: "0.9")!
+            return utilization >= UtilizationMath.attentionThreshold
         }) {
             return "\(critical.debt.displayName) is using over 90% of its limit — needs attention."
         }

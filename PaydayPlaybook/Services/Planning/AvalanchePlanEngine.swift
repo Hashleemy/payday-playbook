@@ -1216,20 +1216,22 @@ enum AvalanchePlanEngine {
             .filter { $0.debtType == .creditCard }
             .map { debt in
                 let current = (actuals?.balances.first { $0.debtID == debt.id }?.balance ?? debt.balance).rounded2
-                guard let limit = debt.creditLimit, limit > 0 else {
+                // V4-04: the ratio and both thresholds come from the one
+                // canonical implementation; only the 4-place rounding is the
+                // engine's own (stamped-output precision, unchanged).
+                guard var ratio = UtilizationMath.utilization(balance: current, limit: debt.creditLimit) else {
                     return CreditUtilization(
                         debtID: debt.id, balance: current,
                         creditLimit: debt.creditLimit, utilization: nil, level: .unknown
                     )
                 }
-                var ratio = current / limit
                 var rounded = Decimal()
                 NSDecimalRound(&rounded, &ratio, 4, .plain)
-                let level: UtilizationLevel = rounded >= Decimal(string: "0.9")! ? .critical
-                    : rounded >= Decimal(string: "0.3")! ? .elevated : .ok
+                let level: UtilizationLevel = rounded >= UtilizationMath.attentionThreshold ? .critical
+                    : rounded >= UtilizationMath.informationalThreshold ? .elevated : .ok
                 return CreditUtilization(
                     debtID: debt.id, balance: current,
-                    creditLimit: limit, utilization: rounded, level: level
+                    creditLimit: debt.creditLimit, utilization: rounded, level: level
                 )
             }
 

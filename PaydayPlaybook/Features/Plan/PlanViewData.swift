@@ -115,6 +115,10 @@ struct PlanViewData {
 
     // Recommendation
     var debtRows: [PlanDebtRow] = []
+    /// Set when live balance derivation failed (V4-04): the rows fall back to
+    /// each debt's starting balance, say so, and claim no utilization —
+    /// never a silent substitution presented as current.
+    var balanceUnavailableReason: String?
     var avalancheExplanation: String = ""
     var totalPrincipalNow: Decimal = .zero
     var totalStartingPrincipal: Decimal = .zero

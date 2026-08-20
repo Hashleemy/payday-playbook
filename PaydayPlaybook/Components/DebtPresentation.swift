@@ -51,16 +51,17 @@ extension DebtType {
 
 // MARK: - Utilization badge (R-12)
 
-/// Display-only utilization level; thresholds match the engine's R-12 rule
-/// (< 30% ok, ≥ 30% informational, ≥ 90% needs attention).
+/// Display-only utilization level; consumes the canonical R-12 thresholds
+/// (< 30% ok, ≥ 30% informational, ≥ 90% needs attention) so a badge can
+/// never warn at a level the engine or an insight would not (V4-04).
 enum UtilizationDisplayLevel {
     case ok
     case elevated
     case critical
 
     static func level(for utilization: Decimal) -> UtilizationDisplayLevel {
-        if utilization >= Decimal(string: "0.9")! { return .critical }
-        if utilization >= Decimal(string: "0.3")! { return .elevated }
+        if utilization >= UtilizationMath.attentionThreshold { return .critical }
+        if utilization >= UtilizationMath.informationalThreshold { return .elevated }
         return .ok
     }
 }
@@ -74,8 +75,7 @@ struct UtilizationBadge: View {
     private var level: UtilizationDisplayLevel { .level(for: utilization) }
 
     private var percentText: String {
-        let percent = (utilization * 100) as NSDecimalNumber
-        return "\(Int(truncating: percent))% of limit"
+        "\(UtilizationMath.wholePercentString(utilization)) of limit"
     }
 
     private var color: Color {

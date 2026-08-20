@@ -195,10 +195,11 @@ struct ReviewStepView: View {
 
     private var utilizationText: String {
         let limit = cardsWithLimits.compactMap(\.creditLimit).reduce(Decimal.zero, +)
-        guard limit > 0 else { return "—" }
         let balance = cardsWithLimits.reduce(Decimal.zero) { $0 + $1.startingBalance }
-        let percent = ((balance / limit) * 100).rounded2
-        return "\(MoneyFormat.editingString(percent))% used"
+        guard let utilization = UtilizationMath.utilization(balance: balance, limit: limit) else {
+            return "—"
+        }
+        return "\(UtilizationMath.wholePercentString(utilization)) used"
     }
 
     // MARK: - What's missing

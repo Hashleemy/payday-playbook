@@ -135,7 +135,16 @@ enum PlanViewDataLoader {
         // MARK: Recommendation / principal
 
         let balanceService = environment.balanceService(context: context)
-        let liveBalances = (try? balanceService.debtBalances()) ?? []
+        // V4-04: a failed derivation is surfaced, never silently papered over
+        // with starting balances that would render stale figures — and stale
+        // utilization — as if they were current.
+        let liveBalances: [AccountBalanceService.DebtBalance]
+        do {
+            liveBalances = try balanceService.debtBalances()
+        } catch {
+            liveBalances = []
+            data.balanceUnavailableReason = "Current balances couldn't be derived just now, so each debt shows its balance when this plan started, without utilization. Your entries are unchanged."
+        }
         let balanceByID = Dictionary(liveBalances.map { ($0.debt.id, $0.balance) }, uniquingKeysWith: { first, _ in first })
 
         let forecast = try? environment.reforecastService(context: context).latestForecast()
@@ -155,7 +164,8 @@ enum PlanViewDataLoader {
         let ordered: [DebtAccount] = orderedPlanIDs.compactMap { debtsByPlanID[$0] }
         let remaining = debts.filter { debt in !orderedPlanIDs.contains(debt.planID) }
         data.debtRows = (ordered + remaining).enumerated().map { index, debt in
-            let balance = balanceByID[debt.id] ?? debt.startingBalance
+            let derived = balanceByID[debt.id]
+            let balance = derived ?? debt.startingBalance
             return PlanDebtRow(
                 id: debt.id,
                 planID: debt.planID,
@@ -165,7 +175,9 @@ enum PlanViewDataLoader {
                 currentBalance: balance,
                 originalPrincipal: debt.originalPrincipal,
                 creditLimit: debt.creditLimit,
-                utilization: debt.utilization(currentBalance: balance),
+                // Utilization only from a genuinely derived balance — a
+                // fallback figure must not wear a live badge (V4-04).
+                utilization: derived.flatMap { debt.utilization(currentBalance: $0) },
                 minimum: debt.minimumAmount,
                 dueDay: debt.dueDayOfMonth,
                 priority: index + 1,
