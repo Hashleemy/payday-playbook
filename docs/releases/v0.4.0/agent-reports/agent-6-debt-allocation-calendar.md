@@ -275,5 +275,6 @@ no utilization logic, no version constant, no schema change, no new persisted fi
 
 On `feature/v0.4-debt-allocation-calendar` (base `b71e193`):
 
-- `PENDING_SHA` — feat(calendar): track pay-cycle debt allocation and carryover
+- `f3838d5` — feat(calendar): track pay-cycle debt allocation and carryover
   (V4-07/V4-08, R-28/R-29; unit suite 573/573 green at this commit).
+- (+ one follow-up commit recording this hash in this report, per the v0.3.0 precedent.)
