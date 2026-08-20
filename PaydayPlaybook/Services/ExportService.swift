@@ -4,14 +4,21 @@ import SwiftData
 /// Versioned JSON backup/restore and CSV exports. Every export and import is
 /// user-initiated; nothing leaves the device otherwise.
 struct ExportService {
-    /// Writes version 3; imports 1, 2, and 3. Importing an older file runs the
-    /// same logical migrations as an app upgrade (MVP_LAYOUT §2/§7, V2-18).
+    /// Writes version 4; imports 1, 2, 3, and 4. Importing an older file runs
+    /// the same logical migrations as an app upgrade (MVP_LAYOUT §2/§7, V2-18).
     ///
-    /// Version 3 is the first to be wrapped in a `PortableDocument` envelope
+    /// Version 3 was the first to be wrapped in a `PortableDocument` envelope
     /// (V3-09). Versions 1 and 2 are bare `Backup` objects with no envelope,
     /// which is how a reader tells them apart without guessing.
-    static let backupSchemaVersion = 3
-    static let importableSchemaVersions = 1...3
+    ///
+    /// Version 4 is a *semantic* bump (V4-03, VERSIONING.md §5): the envelope
+    /// shape and the store schema are unchanged, but a 0.4.0 backup can carry
+    /// plans stamped calculation version 4, which an older reader cannot
+    /// faithfully re-dispatch — so it must refuse the document by name rather
+    /// than guess. The persistence schema stays 3; restore keys its migration
+    /// steps on that axis, not on this one.
+    static let backupSchemaVersion = 4
+    static let importableSchemaVersions = 1...4
 
     // MARK: - Backup document
 
@@ -617,7 +624,15 @@ struct ExportService {
         do {
             try deleteAllWithoutSaving(context: context)
             for object in objects { context.insert(object) }
-            if backup.schemaVersion < backupSchemaVersion {
+            // Migration steps key on the *persistence* schema the file's rows
+            // were written under, not on the export-envelope version: export
+            // schemas 3 and 4 both carry schema-3 rows (the 4 bump is
+            // semantic — calc-v4 plans — per VERSIONING.md §5). Keying on
+            // `backupSchemaVersion` here would re-run the schema-3 upgrade on
+            // an already-schema-3 restore, re-copying the profile floor onto
+            // an account whose protected amount the user has since zeroed and
+            // forcing `onboardingComplete` — both value mutations.
+            if backup.schemaVersion < PlanContract.currentSchemaVersion {
                 // Every step the backup predates, in order. Restoring a v1
                 // document must land on the current schema, not part-way:
                 // a store stamped behind the app is indistinguishable from a

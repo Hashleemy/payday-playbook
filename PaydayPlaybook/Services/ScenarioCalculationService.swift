@@ -44,30 +44,59 @@ struct ScenarioCalculationService: ScenarioCalculating {
 
         let audit = ScenarioInputAudit(snapshot: snapshot)
 
+        /// One definition's computed pieces: the projection plus the Balanced
+        /// selection rationale and its R-27 notes (empty for the other kinds).
+        struct Computed {
+            var plan: PlanningResult?
+            var rationale: BalancedSelectionRationale? = nil
+            var assumptionNotes: [PlanningNote] = []
+            var warningNotes: [PlanningNote] = []
+        }
+
         // Pass 1: run every computable definition.
-        var plans: [PlanningResult?] = []
+        var computed: [Computed] = []
         for definition in definitions {
             let missing = audit.missingInputs + audit.missingInputs(for: definition)
             guard missing.isEmpty else {
-                plans.append(nil)
+                computed.append(Computed(plan: nil))
                 continue
             }
-            var scenarioSnapshot = snapshot
-            scenarioSnapshot.calculationVersion = PlanCalculationVersion.v3Scenario.rawValue
-            scenarioSnapshot.scenario = definition
-            plans.append(try PlanGenerationService.generate(from: scenarioSnapshot).result)
+            if definition.kind == .balanced && definition.quickWinPromotions.isEmpty {
+                // V4-03: Balanced previews run the quick-win selector. A
+                // definition that already carries a pinned promotion skips it
+                // — a pinned selection is an instruction, and regeneration
+                // must re-run the engine, never the selector (R-27).
+                let selection = try BalancedStrategySelector.select(
+                    snapshot: snapshot, definition: definition
+                )
+                computed.append(Computed(
+                    plan: selection.result,
+                    rationale: selection.rationale,
+                    assumptionNotes: selection.assumptionNotes,
+                    warningNotes: selection.warningNotes
+                ))
+            } else {
+                var scenarioSnapshot = snapshot
+                scenarioSnapshot.calculationVersion = PlanCalculationVersion.v4BalancedQuickWin.rawValue
+                scenarioSnapshot.scenario = definition
+                computed.append(Computed(plan: try PlanGenerationService.generate(from: scenarioSnapshot).result))
+            }
         }
 
         // Pass 2: summarize, then measure everything against Balanced. Two
         // passes because Balanced may appear anywhere in `definitions`.
-        var results = zip(definitions, plans).map { definition, plan in
-            summary(
+        var results = zip(definitions, computed).map { definition, item -> ScenarioResult in
+            var result = summary(
                 kind: definition.kind,
-                plan: plan,
+                plan: item.plan,
                 missingInputs: audit.missingInputs + audit.missingInputs(for: definition),
                 extraWarnings: audit.warnings,
                 snapshot: snapshot
             )
+            result.balancedRationale = item.rationale
+            result.assumptions.append(contentsOf: item.assumptionNotes)
+            result.warnings.append(contentsOf: item.warningNotes)
+            return result
         }
         if let balanced = results.first(where: { $0.kind == .balanced && $0.isComputable }) {
             for index in results.indices {

@@ -78,6 +78,10 @@ struct PlanActivationView: View {
             return "The pay cadence settings are incomplete."
         case .invalidDueDay:
             return "A due day is outside the 1–31 range."
+        case .promotionsRequireCalcV4:
+            // Unreachable from this screen: previews from current inputs never
+            // carry a quick-win promotion. Named for exhaustiveness only.
+            return "This plan's stored inputs are from a newer version of the app."
         }
     }
 
