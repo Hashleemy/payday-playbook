@@ -9,7 +9,8 @@
   `-ledger-adjustments` names — same scope, same contract. Recorded here so Agent 7's
   merge script finds both.)
 - **Date:** 2026-08-20.
-- **Commit:** recorded in §11 by the follow-up docs commit, per the release precedent.
+- **Commit:** `68908a3` (code + tests + this report; hash recorded by this follow-up
+  docs commit per the release precedent).
 
 This report contains no personal financial values (V3-12/V3-13, permanent).
 
@@ -267,7 +268,8 @@ Per the contract, out of this cycle's scope, listed for a future registry entry:
 
 On `feature/v0.4-ledger-adjustments` (base `b71e193`):
 
-- feat(ledger): generalize checking account adjustment flow (QuickAddSheet rework,
-  additive `CashLedgerService.adjustBalance(of:by:)`, label sweep, `.primaryAction`
-  adoption, T-23 suite, this report; full unit suite 553/553 green at this commit).
-- (+ one follow-up commit recording that commit's hash here, per the release precedent.)
+- `68908a3` — feat(ledger): generalize checking account adjustment flow (QuickAddSheet
+  rework, additive `CashLedgerService.adjustBalance(of:by:)`, label sweep,
+  `.primaryAction` adoption, T-23 suite, this report; full unit suite 553/553 green at
+  this commit).
+- (+ this follow-up commit recording the hash, per the release precedent.)
