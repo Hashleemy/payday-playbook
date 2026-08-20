@@ -338,4 +338,6 @@ git-history decision (§8).
 - `5423f78` merge(v0.4.0): integrate Agent 5 generic checking-account adjustment flow
 - `9b64e02` merge(v0.4.0): integrate Agent 6 pay-cycle debt allocation and Calendar dashboard
 - `cfdac57` merge(v0.4.0): integrate Agent 4 utilization display and primary-action design
-- (release commit hash recorded in the follow-up, per precedent)
+- `e73634c` release: prepare v0.4.0-alpha.1 integration (versions, Calendar
+  layout fix, display-convention resolution, docs, this report)
+- (+ one follow-up commit recording this hash, per precedent)
