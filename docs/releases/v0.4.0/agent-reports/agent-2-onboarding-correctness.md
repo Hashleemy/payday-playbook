@@ -306,8 +306,10 @@ xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
 
 On `feature/v0.4-onboarding-correctness` (base `b71e193`):
 
-- `PENDING_SHA` — fix(onboarding): make debt validation type-aware and previews
-  reactive (14 files: the V4-01 trio, the fingerprint service and commit guard, the
+- `da8fd11` — fix(onboarding): make debt validation type-aware and previews
+  reactive (16 files: the V4-01 trio, the fingerprint service and commit guard, the
   reactive step views, the retired obligations step, two Settings observation fixes,
-  T-18 + T-19, and the re-anchored upgrade-checklist suite).
-- (+ one follow-up commit recording this hash here, per the Agent 1/v0.3.0 precedent.)
+  T-18 + T-19, the re-anchored upgrade-checklist suite, and this report; unit suite
+  548/548 green at this commit).
+- (+ one follow-up commit recording this hash in this report, per the Agent 1/v0.3.0
+  precedent.)
