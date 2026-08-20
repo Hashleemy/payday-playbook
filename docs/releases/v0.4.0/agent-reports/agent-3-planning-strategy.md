@@ -4,7 +4,9 @@
   the calc-4 bump at every stamping site, and the export-4 bump.
 - **Branch:** `feature/v0.4-planning-strategy`, based on the Agent 1 contract
   commit `b71e193` (verified before any edit; clean tree).
-- **Commit:** recorded in the follow-up commit, per the v0.2/v0.3 precedent.
+- **Commit:** `76a7502` — feat(planning): add explainable balanced payoff
+  optimization (this hash line follows in its own commit, per the v0.2/v0.3
+  precedent).
 - **Date:** 2026-08-20.
 
 This report contains no real person's financial values (V3-12/V3-13,
