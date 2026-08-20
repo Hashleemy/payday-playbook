@@ -162,8 +162,7 @@ struct DebtRow: View {
             percentPaidText
         ]
         if let utilization {
-            let percent = (utilization * 100) as NSDecimalNumber
-            parts.append("using \(Int(truncating: percent)) percent of its limit")
+            parts.append("using \(UtilizationMath.wholePercentString(utilization)) of its limit")
         }
         return parts.joined(separator: ", ")
     }
@@ -184,6 +183,7 @@ struct DebtDetailView: View {
     @State private var baselinePayoff: Date?
     @State private var showEdit = false
     @State private var showExtraPayment = false
+    @State private var showAddPayment = false
 
     var body: some View {
         List {
@@ -202,12 +202,21 @@ struct DebtDetailView: View {
                         }
                     }
                 }
+                // The screen's primary action (V4-05): a Button + destination
+                // rather than a NavigationLink row, because List rows ignore
+                // custom button styles and the primary CTA must read as one.
                 Section {
-                    NavigationLink {
-                        AddPaymentView(preselectedPlanID: planID)
+                    Button {
+                        showAddPayment = true
                     } label: {
                         Label("Add Payment", systemImage: "plus.circle")
                     }
+                    .buttonStyle(.primaryAction)
+                    .accessibilityHint("Records a payment toward this debt")
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+                Section {
                     NavigationLink {
                         BalanceUpdateView(preselectedPlanID: planID)
                     } label: {
@@ -296,6 +305,9 @@ struct DebtDetailView: View {
             }
         }
         .navigationTitle(item?.debt.displayName ?? "Debt \(planID)")
+        .navigationDestination(isPresented: $showAddPayment) {
+            AddPaymentView(preselectedPlanID: planID)
+        }
         .onAppear(perform: reload)
         .onChange(of: ledgerEntries.count) { _, _ in reload() }
         .onChange(of: allSnapshots.count) { _, _ in reload() }
@@ -501,9 +513,8 @@ struct DebtEditView: View {
                         save()
                     } label: {
                         Text(isSaving ? "Saving…" : "Save")
-                            .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.primaryAction)
                     .disabled(isSaving)
                 }
                 .listRowBackground(Color.clear)

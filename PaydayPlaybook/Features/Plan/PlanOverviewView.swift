@@ -214,6 +214,12 @@ struct PlanOverviewView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let reason = data.balanceUnavailableReason {
+                    Label(reason, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 ForEach(data.debtRows) { row in
                     debtRowView(row)
                 }
@@ -290,8 +296,7 @@ struct PlanOverviewView: View {
             "balance \(MoneyFormat.string(row.currentBalance))"
         ]
         if let utilization = row.utilization {
-            let percent = (utilization * 100) as NSDecimalNumber
-            parts.append("using \(Int(truncating: percent)) percent of its limit")
+            parts.append("using \(UtilizationMath.wholePercentString(utilization)) of its limit")
         }
         if !row.receivesExtraPrincipal { parts.append("receives minimums only") }
         if let payoff = row.payoffDate { parts.append("projected payoff \(DateMath.mediumString(payoff))") }
@@ -555,9 +560,8 @@ struct PlanOverviewView: View {
                     showActivateFlow = true
                 } label: {
                     Text("Save & Activate New Plan Version")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
                 .accessibilityIdentifier("plan.activateButton")
             }
         }

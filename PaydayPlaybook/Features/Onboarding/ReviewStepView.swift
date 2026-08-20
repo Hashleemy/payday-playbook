@@ -232,8 +232,7 @@ struct ReviewStepView: View {
         guard let utilization = UtilizationMath.utilization(balance: balance, limit: limit) else {
             return "—"
         }
-        let percent = (utilization * 100).rounded2
-        return "\(MoneyFormat.editingString(percent))% used"
+        return "\(UtilizationMath.wholePercentString(utilization)) used"
     }
 
     // MARK: - What's missing

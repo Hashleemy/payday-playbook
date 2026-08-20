@@ -151,9 +151,8 @@ struct PlanActivationView: View {
                     activate(preview)
                 } label: {
                     Text(isWorking ? "Saving…" : "Save & Activate \(nextName)")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
                 .disabled(isWorking)
                 .accessibilityIdentifier("plan.confirmActivate")
             }
@@ -177,9 +176,8 @@ struct PlanActivationView: View {
                     dismiss()
                 } label: {
                     Text("Done")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
             }
         }
     }

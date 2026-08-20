@@ -176,9 +176,8 @@ struct TodayView: View {
                     SettingsView()
                 } label: {
                     Text("Open Settings")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
             }
         }
     }
@@ -301,9 +300,8 @@ struct TodayView: View {
             checkInItem = item
         } label: {
             Text(buttonTitle(for: status))
-                .frame(maxWidth: .infinity, minHeight: 44)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.primaryAction)
         .accessibilityIdentifier("today.checkInButton")
     }
 
@@ -365,9 +363,8 @@ struct TodayView: View {
                     AddPaymentView(preselectedPlanID: target.debt.planID)
                 } label: {
                     Text("Add Payment")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.primaryAction)
             }
         }
     }
@@ -420,9 +417,8 @@ struct TodayView: View {
                         PlanOverviewView(plan: plan)
                     } label: {
                         Text("View Full Plan")
-                            .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.primaryAction)
                     .accessibilityIdentifier("today.viewPlanButton")
                 }
             }
@@ -589,9 +585,8 @@ struct TodayView: View {
                     showDebtFreeFlow = true
                 } label: {
                     Text("Confirm Debt-Free")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.primaryAction)
             }
         }
     }

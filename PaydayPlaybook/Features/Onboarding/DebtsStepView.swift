@@ -204,8 +204,7 @@ private struct SetupDebtRow: View {
         guard let utilization = debt.utilization(currentBalance: debt.startingBalance) else {
             return debt.creditLimit == nil ? "Credit limit unknown" : nil
         }
-        let percent = (utilization * 100).rounded2
-        return "\(MoneyFormat.editingString(percent))% of the limit used"
+        return "\(UtilizationMath.wholePercentString(utilization)) of the limit used"
     }
 
     private var utilizationColor: Color {
@@ -515,12 +514,11 @@ struct DebtEditorView: View {
     }
 
     private var utilizationPreview: String? {
-        // R-12/V4-04: the one canonical ratio and the one set of thresholds.
+        // R-12/V4-04: the one canonical ratio, thresholds, and display rounding.
         guard let balance,
               let utilization = UtilizationMath.utilization(balance: balance, limit: creditLimit)
         else { return nil }
-        let percent = (utilization * 100).rounded2
-        var text = "\(MoneyFormat.editingString(percent))%"
+        var text = UtilizationMath.wholePercentString(utilization)
         if utilization >= UtilizationMath.attentionThreshold {
             text += " — that's high; paying it down helps your credit score too"
         } else if utilization >= UtilizationMath.informationalThreshold {

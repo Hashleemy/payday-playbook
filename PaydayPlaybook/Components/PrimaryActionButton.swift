@@ -9,21 +9,37 @@ import SwiftUI
 /// and dark appearance, a pressed state that reads as pressed, a disabled
 /// state that cannot be mistaken for an enabled one, a 44-point minimum
 /// target, and Dynamic Type scaling.
+///
+/// The fill is `AccentColor` (deep navy in light, light blue in dark — the
+/// dark variant exists so accent-tinted content is never navy-on-near-black)
+/// and the label is `PrimaryActionLabel` (white on navy, near-navy-black on
+/// light blue). The two colorsets swap appearance together; verified as a
+/// WCAG pair by `PrimaryActionContrastTests`.
 struct PrimaryActionButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+    }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
             .frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(isEnabled ? Color.white : Color.secondary)
+            .foregroundStyle(isEnabled ? Color("PrimaryActionLabel") : Color.secondary)
             .background(
-                isEnabled
-                    ? Color.accentColor.opacity(configuration.isPressed ? 0.8 : 1)
-                    : Color.secondary.opacity(0.18),
+                isEnabled ? Color.accentColor : Color.secondary.opacity(0.18),
                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            // Pressed = a uniform dim over fill and label together; both
+            // appearances keep the label comfortably above 4.5:1 through it.
+            .overlay(
+                shape.fill(Color.black.opacity(configuration.isPressed && isEnabled ? 0.15 : 0))
+            )
+            .contentShape(shape)
     }
 }
 
