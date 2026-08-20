@@ -204,7 +204,11 @@ struct SetupCompletenessService {
                     subjectName: debt.displayName
                 ))
             }
-            if debt.originalPrincipal == nil {
+            // V4-01: original principal is a concept only for debt types that
+            // amortize from a fixed starting amount. A revolving card is never
+            // gap-listed on it — `DebtType.usesOriginalPrincipal` is the one
+            // rule the editors, the chips, and this list all consult.
+            if debt.debtType.usesOriginalPrincipal && debt.originalPrincipal == nil {
                 gaps.append(SetupGap(
                     kind: .originalPrincipal,
                     title: "Original amount for \"\(debt.displayName)\"",

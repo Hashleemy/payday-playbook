@@ -1,14 +1,22 @@
 import SwiftUI
 import SwiftData
 
-/// Which fields a debt type asks for (§4.7). Kept beside the form rather
-/// than on the model: these are presentation rules, and the engine's own
-/// requirements live in `ModelValidation`.
+/// Which fields a debt type asks for, and how they are labeled (§4.6/§4.7).
+/// Kept beside the form because these are presentation rules — but every
+/// relevance decision forwards to the `DebtType` semantic predicates, the
+/// same single source `SetupCompletenessService` and the Bills & Debts
+/// chips consult, so the three surfaces cannot disagree (V4-01). Blocking
+/// rules live in `ModelValidation`, unchanged.
 struct DebtFormRules {
     let type: DebtType
 
-    /// Installment debts have a known original principal and a contractual
-    /// payment; cards and medical bills often don't.
+    /// Whether the editor shows an original-principal field at all (V4-01).
+    /// A revolving card has no fixed original amount and is never asked.
+    var showsOriginalPrincipal: Bool { type.usesOriginalPrincipal }
+
+    /// Chip label when the field is shown. The "Required" chip on amortizing
+    /// loans is presentation-only encouragement (§4.6): saving blank never
+    /// blocks, and the review list treats it as an optional gap.
     var originalPrincipal: FieldRequirement {
         switch type {
         case .personalLoan, .autoLoan, .studentLoan: return .required
@@ -21,12 +29,10 @@ struct DebtFormRules {
         type.requiresEnteredMinimum ? .required : .optional
     }
 
-    var dueDay: FieldRequirement {
-        switch type {
-        case .creditCard, .personalLoan, .autoLoan, .studentLoan: return .required
-        case .medicalDebt, .other: return .optional
-        }
-    }
+    /// Due day is an optional gap for every type (§4.6) — the chip says so,
+    /// matching the review list, instead of claiming "Required" for a field
+    /// that never blocks.
+    var dueDay: FieldRequirement { .optional }
 
     var showsCreditLimit: Bool { type.supportsCreditLimit }
 
@@ -206,8 +212,8 @@ private struct SetupDebtRow: View {
         guard let utilization = debt.utilization(currentBalance: debt.startingBalance) else {
             return .secondary
         }
-        if utilization >= Decimal(string: "0.9")! { return .orange }
-        if utilization >= Decimal(string: "0.3")! { return .yellow }
+        if utilization >= UtilizationMath.attentionThreshold { return .orange }
+        if utilization >= UtilizationMath.informationalThreshold { return .yellow }
         return .secondary
     }
 
@@ -365,7 +371,10 @@ struct DebtEditorView: View {
                         fieldIdentifier: "debt.balance"
                     )
 
-                    if rules.originalPrincipal != .optional || originalPrincipal != nil || type != .creditCard {
+                    // V4-01: shown iff the type has the concept — never for a
+                    // credit card, even one carrying a stored value from a
+                    // past type change. The stored value is left untouched.
+                    if rules.showsOriginalPrincipal {
                         SetupMoneyField(
                             title: "Original amount borrowed",
                             value: $originalPrincipal,
@@ -477,7 +486,9 @@ struct DebtEditorView: View {
             SetupMoneyField(
                 title: "Credit limit",
                 value: $creditLimit,
-                requirement: limitUnknown ? .unknown : .required,
+                // §4.6: an optional gap, not a requirement — the review list
+                // says the same. "Marked unknown" stays first-class.
+                requirement: limitUnknown ? .unknown : .optional,
                 help: "Used to show how much of the card is in use. It never changes a payment.",
                 error: creditLimitError,
                 fieldIdentifier: "debt.creditLimit"
@@ -504,12 +515,15 @@ struct DebtEditorView: View {
     }
 
     private var utilizationPreview: String? {
-        guard let creditLimit, creditLimit > 0, let balance else { return nil }
-        let percent = ((balance / creditLimit) * 100).rounded2
+        // R-12/V4-04: the one canonical ratio and the one set of thresholds.
+        guard let balance,
+              let utilization = UtilizationMath.utilization(balance: balance, limit: creditLimit)
+        else { return nil }
+        let percent = (utilization * 100).rounded2
         var text = "\(MoneyFormat.editingString(percent))%"
-        if percent >= 90 {
+        if utilization >= UtilizationMath.attentionThreshold {
             text += " — that's high; paying it down helps your credit score too"
-        } else if percent >= 30 {
+        } else if utilization >= UtilizationMath.informationalThreshold {
             text += " — above 30%"
         }
         return text
@@ -601,8 +615,8 @@ struct DebtEditorView: View {
     private func load() {
         type = target.type
         guard let debt = target.debt else {
-            // A card whose limit hasn't been asked for yet starts "unknown"
-            // only after the user says so — required until then.
+            // A card's limit starts as an open optional ask; "unknown" is a
+            // state the user declares, never a default.
             return
         }
         name = debt.displayName

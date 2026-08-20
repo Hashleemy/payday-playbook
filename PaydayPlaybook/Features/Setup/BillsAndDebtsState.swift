@@ -209,7 +209,9 @@ struct BillsAndDebtsLoader {
         if debt.debtType == .creditCard, debt.creditLimit == nil, !debt.creditLimitMarkedUnknown {
             warnings.append("the credit limit")
         }
-        if debt.originalPrincipal == nil {
+        // V4-01: only debt types with a real original principal are ever told
+        // they still need one — a revolving card has no such concept.
+        if debt.debtType.usesOriginalPrincipal, debt.originalPrincipal == nil {
             warnings.append("the original amount")
         }
         if debt.debtType != .creditCard, debt.prepayment == .unknown {

@@ -8,10 +8,18 @@ struct SettingsView: View {
     @EnvironmentObject private var notificationScheduler: NotificationScheduler
     @Query private var allSettings: [AppSettings]
     @Query(sort: \PlanVersion.createdAt) private var planVersions: [PlanVersion]
+    // Observed so the "Review setup" badge below recounts when any checklist
+    // input changes, not only when this screen happens to re-render (V4-02).
+    @Query private var accounts: [CashAccount]
+    @Query private var debts: [DebtAccount]
+    @Query private var obligations: [RecurringObligation]
+    @Query private var profiles: [UserGoalProfile]
+    @Query private var incomeSchedules: [IncomeSchedule]
 
     /// Count of unresolved setup items, so the row can say how many.
     private var openSetupItems: Int {
-        (try? SetupCompletenessService(context: modelContext).gaps().count) ?? 0
+        _ = (accounts.count, debts.count, obligations.count, profiles.count, incomeSchedules.count)
+        return (try? SetupCompletenessService(context: modelContext).gaps().count) ?? 0
     }
 
     var body: some View {
