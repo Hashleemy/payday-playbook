@@ -236,7 +236,12 @@ Docs: this report.
 
 ## 9. Adversarial review findings
 
-(filled after the review workflow completes)
+Left unfilled at handoff — the branch was handed to integration uncommitted,
+before the review workflow ran. Agent 7 performed the adversarial review of this
+branch at integration instead; its findings (the AvalanchePlanEngine edit
+duplicating Agent 3's, and the onboarding display-convention divergence against
+Agent 2's branch) and their resolutions are recorded in
+`agent-7-integration-qa.md`.
 
 ## 10. Assumptions, risks, handoff
 
@@ -263,4 +268,10 @@ Docs: this report.
 
 ## 11. Commit
 
-(filled at commit time)
+On `feature/v0.4-debt-ui` (base `b71e193`):
+
+- `fc29b23` — fix(debt-ui): whole-percent utilization display and contrast-safe
+  primary actions (19 files: the implementation described above, the two new
+  test suites, and this report). The work was complete but uncommitted at
+  handoff; Agent 7 committed it verbatim from this worktree at integration.
+- (+ one follow-up commit recording this hash, per the release precedent.)
