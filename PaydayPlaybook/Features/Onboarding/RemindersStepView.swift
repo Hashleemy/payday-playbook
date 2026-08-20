@@ -11,6 +11,9 @@ struct RemindersStepView: View {
     @EnvironmentObject private var notificationScheduler: NotificationScheduler
     @Query private var debts: [DebtAccount]
     @Query private var obligations: [RecurringObligation]
+    /// Observed so the payday preview below follows a live income edit
+    /// instead of relying on view recreation for freshness (V4-02).
+    @Query private var schedules: [IncomeSchedule]
 
     let onContinue: () -> Void
     let onBack: () -> Void
@@ -45,10 +48,16 @@ struct RemindersStepView: View {
 
     // MARK: - Generated dates
 
-    private var upcomingPaydays: [Date] {
-        guard let schedule = try? IncomeRepository(context: modelContext).activeSchedule() else {
-            return []
-        }
+    private var previewPaydays: [Date] {
+        guard let schedule = schedules.first(where: { !$0.isArchived }) else { return [] }
+        return Self.upcomingPaydays(for: schedule)
+    }
+
+    /// The next few paydays the live schedule implies — the same derivation
+    /// the plan generator uses, so what this step shows is what the plan
+    /// will do. Static and store-free so tests can pin that an income edit
+    /// changes exactly these dates (V4-02).
+    static func upcomingPaydays(for schedule: IncomeSchedule, count: Int = 6) -> [Date] {
         let snapshot = StoredPlanInput(
             calculationVersion: PlanContract.currentCalculationVersion,
             cadence: schedule.cadence,
@@ -71,7 +80,7 @@ struct RemindersStepView: View {
             return []
         }
         return PayScheduleGenerator.paydays(
-            cadence: cadence, anchor: schedule.anchorPayday, count: 6
+            cadence: cadence, anchor: schedule.anchorPayday, count: count
         )
     }
 
@@ -79,12 +88,12 @@ struct RemindersStepView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Your next paydays")
                 .font(.headline)
-            if upcomingPaydays.isEmpty {
+            if previewPaydays.isEmpty {
                 Text("Add your income to see your paydays.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(upcomingPaydays.enumerated()), id: \.offset) { index, date in
+                ForEach(Array(previewPaydays.enumerated()), id: \.offset) { index, date in
                     SetupSummaryRow(label: "Payday \(index + 1)", value: DateMath.mediumString(date))
                 }
                 Text("They keep going from here on the same rhythm.")

@@ -20,6 +20,14 @@ struct GoalStepView: View {
     /// Suggestions only overwrite fields the user hasn't set themselves.
     @State private var floorTouched = false
     @State private var allowanceTouched = false
+    /// The last programmatically applied suggestions. `onChange` fires for
+    /// those writes too (a render pass after `applySuggestions` returns), so
+    /// "did the user touch this?" is decided by comparing the new value
+    /// against the suggestion just applied — not by the change event alone.
+    /// Without this, the first suggestion marked both fields touched and
+    /// every later posture switch left stale defaults on screen (V4-02).
+    @State private var suggestedFloor: Decimal?
+    @State private var suggestedAllowance: Decimal?
     @State private var loaded = false
     @State private var error: String?
 
@@ -75,7 +83,9 @@ struct GoalStepView: View {
                 error: floorError,
                 fieldIdentifier: "goal.floor"
             )
-            .onChange(of: protectedFloor) { _, _ in floorTouched = true }
+            .onChange(of: protectedFloor) { _, newValue in
+                if newValue != suggestedFloor { floorTouched = true }
+            }
 
             SetupMoneyField(
                 title: "Allowance per paycheck",
@@ -85,7 +95,9 @@ struct GoalStepView: View {
                 error: allowanceError,
                 fieldIdentifier: "goal.allowance"
             )
-            .onChange(of: allowanceCap) { _, _ in allowanceTouched = true }
+            .onChange(of: allowanceCap) { _, newValue in
+                if newValue != suggestedAllowance { allowanceTouched = true }
+            }
 
             if let error {
                 Label(error, systemImage: "exclamationmark.circle")
@@ -154,20 +166,28 @@ struct GoalStepView: View {
         }
     }
 
-    /// R-14 posture suggestions — editable defaults, never enforced, and they
-    /// never overwrite a number the user typed.
-    private func applySuggestions(for posture: PayoffPosture) {
-        let suggestion: (floor: String, allowance: String)
+    /// R-14 posture suggestion table — editable defaults, never enforced.
+    static func suggestedDefaults(for posture: PayoffPosture) -> (floor: Decimal, allowance: Decimal) {
         switch posture {
-        case .fullThrottle: suggestion = ("500.00", "150.00")
-        case .steady: suggestion = ("1000.00", "300.00")
-        case .cushionFirst: suggestion = ("2000.00", "300.00")
+        case .fullThrottle: return (Decimal(string: "500.00")!, Decimal(string: "150.00")!)
+        case .steady: return (Decimal(string: "1000.00")!, Decimal(string: "300.00")!)
+        case .cushionFirst: return (Decimal(string: "2000.00")!, Decimal(string: "300.00")!)
         }
-        if !floorTouched { protectedFloor = Decimal(string: suggestion.floor) }
-        if !allowanceTouched { allowanceCap = Decimal(string: suggestion.allowance) }
-        // Re-arm: a suggestion is not the user touching the field.
-        floorTouched = false
-        allowanceTouched = false
+    }
+
+    /// Applies the R-14 suggestions to fields the user hasn't typed into —
+    /// a suggestion never overwrites a number the user entered themselves,
+    /// and switching posture keeps updating untouched fields.
+    private func applySuggestions(for posture: PayoffPosture) {
+        let suggestion = Self.suggestedDefaults(for: posture)
+        if !floorTouched {
+            suggestedFloor = suggestion.floor
+            protectedFloor = suggestion.floor
+        }
+        if !allowanceTouched {
+            suggestedAllowance = suggestion.allowance
+            allowanceCap = suggestion.allowance
+        }
     }
 
     // MARK: - Validation

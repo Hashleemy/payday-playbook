@@ -15,6 +15,7 @@ struct ReviewSetupView: View {
     @Query private var debts: [DebtAccount]
     @Query private var obligations: [RecurringObligation]
     @Query private var profiles: [UserGoalProfile]
+    @Query private var incomeSchedules: [IncomeSchedule]
 
     @State private var editingDebt: DebtEditorTarget?
     @State private var editingAccount: AccountEditorTarget?
@@ -22,10 +23,11 @@ struct ReviewSetupView: View {
     @State private var showGoals = false
     @State private var showIncome = false
 
-    /// Recomputed on every store change: the queries above exist so that
-    /// resolving an item makes its row disappear immediately.
+    /// Recomputed on every store change: the queries above cover every input
+    /// family the completeness service reads (income included — V4-02), so
+    /// resolving an item anywhere makes its row disappear immediately.
     private var gaps: [SetupGap] {
-        _ = (accounts.count, debts.count, obligations.count, profiles.count)
+        _ = (accounts.count, debts.count, obligations.count, profiles.count, incomeSchedules.count)
         return (try? SetupCompletenessService(context: modelContext).gaps()) ?? []
     }
 

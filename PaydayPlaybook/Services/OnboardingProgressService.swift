@@ -12,6 +12,17 @@ struct OnboardingProgressService {
     let context: ModelContext
     let dateProvider: DateProviding
 
+    /// V4-02 commit-staleness guard failure: the setup inputs changed after
+    /// the plan preview was generated, so persisting it would commit numbers
+    /// the user never reviewed.
+    enum FinishError: LocalizedError, Equatable {
+        case staleInputs
+
+        var errorDescription: String? {
+            "Your answers changed after this plan was worked out. Generate it again and the preview will use your current numbers."
+        }
+    }
+
     init(context: ModelContext, dateProvider: DateProviding = SystemDateProvider()) {
         self.context = context
         self.dateProvider = dateProvider
@@ -52,12 +63,24 @@ struct OnboardingProgressService {
     /// stamps the settings row, and completes the progress row in ONE save.
     /// Running it twice returns the already-persisted plan without inserting
     /// anything — the §4.0 idempotency bar.
+    ///
+    /// Pass `verifying` with the `SetupInputFingerprint` captured when the
+    /// preview was generated (V4-02): if any canonical input changed since,
+    /// this throws `FinishError.staleInputs` before writing anything, making
+    /// a stale-preview commit impossible at the service boundary rather than
+    /// by view-tree accident. `nil` skips the check (regeneration paths that
+    /// rebuild their input in the same call).
     @discardableResult
     func finish(
         planName: String,
         input: StoredPlanInput,
-        result: StoredPlanResult
+        result: StoredPlanResult,
+        verifying expectedInputs: SetupInputFingerprint? = nil
     ) throws -> PlanVersion {
+        if let expectedInputs {
+            let current = try SetupInputFingerprint.capture(context: context)
+            guard current == expectedInputs else { throw FinishError.staleInputs }
+        }
         let now = dateProvider.now
         let persister = PlanPersister(context: context)
         let plan = try persister.insertPlanGraph(
