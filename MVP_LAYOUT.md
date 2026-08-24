@@ -1,10 +1,10 @@
-# Payday Playbook — Product and Technical Layout (v0.3.0)
+# Payday Playbook — Product and Technical Layout (v0.4.0)
 
 ## 1. Build brief
 
-Build a native, offline-first iPhone app named **Payday Playbook** using SwiftUI. The app is a personal execution companion for a debt plan **generated from the user's own situation** — accounts, income, bills, floor, allowance, and debts. v0.3.0 adds a complete cash-account workspace, explainable extra-payment and three-plan payoff scenarios, hardened due-date/calendar behavior, full JSON backup and restore, reusable structure-only templates, a locally generated PDF financial report, a consolidated Bills & Debts setup — and removes all real personal financial data from tracked project artifacts while preserving existing on-device user data through migration.
+Build a native, offline-first iPhone app named **Payday Playbook** using SwiftUI. The app is a personal execution companion for a debt plan **generated from the user's own situation** — accounts, income, bills, floor, allowance, and debts. v0.3.0 added a complete cash-account workspace, explainable extra-payment and three-plan payoff scenarios, hardened due-date/calendar behavior, full JSON backup and restore, reusable structure-only templates, a locally generated PDF financial report, a consolidated Bills & Debts setup — and removed all real personal financial data from tracked project artifacts while preserving existing on-device user data through migration. v0.4.0 (V4-01…V4-08) makes debt validation type-aware, makes every derived setup value reactive to upstream edits, upgrades Balanced (Recommended) into a simulation-proven multi-objective strategy (calculation version 4), fixes credit utilization with one canonical calculation, introduces a semantic primary-action button treatment, generalizes the checking-account adjustment flow, and adds a derived pay-cycle debt-allocation service with a Calendar debt dashboard.
 
-Read `soul.md` first. Its principles and the F-01…F-16, V2-01…V2-18, and V3-01…V3-16 contracts (as amended there) are non-negotiable. The canonical V3 registry is `ALPHA_V0.3.0_MULTI_AGENT_PLAN.md`; the canonical V2 registry is `ALPHA_V0.2.0_MULTI_AGENT_PLAN.md`.
+Read `soul.md` first. Its principles and the F-01…F-16, V2-01…V2-18, V3-01…V3-16, and V4-01…V4-08 contracts (as amended there) are non-negotiable. The canonical V4 registry is `ALPHA_V0.4.0_MULTI_AGENT_PLAN.md`; V3: `ALPHA_V0.3.0_MULTI_AGENT_PLAN.md`; V2: `ALPHA_V0.2.0_MULTI_AGENT_PLAN.md`.
 
 ### Technical baseline
 
@@ -24,16 +24,16 @@ Read `soul.md` first. Its principles and the F-01…F-16, V2-01…V2-18, and V3-
 
 ## 2. Versioning contract
 
-Full detail in `docs/releases/v0.3.0/VERSIONING.md`. Summary, binding for this release:
+Full detail in `docs/releases/v0.4.0/VERSIONING.md` (current cycle; v0.3.0's record stands in `docs/releases/v0.3.0/VERSIONING.md`). Summary, binding for this release:
 
 | Axis | Value | Rule |
 | --- | --- | --- |
-| App version (`MARKETING_VERSION`) | **0.3.0** | Current release is 0.2.0 (alpha.2). Backward-compatible feature release → minor bump. Set by Agent 7 at integration only. |
-| Prerelease tag | **v0.3.0-alpha.1** | Annotated tag created only when the alpha build is actually cut. Never tag intent. |
-| Build number (`CURRENT_PROJECT_VERSION`) | **4** at the next distributed build | Strictly increasing integer, +1 per distributed build, never reset. Current: 3. |
-| Persistence schema (`PlanContract.currentSchemaVersion`, stamped in `AppSettings.seedSchemaVersion`) | **3** (expected) | §6 adds stored fields, so 3 is expected; Agent 2 bumps it only with the lossless, tested §7 migration. |
-| Calculation version (`PlanContract.currentCalculationVersion`, stamped per `PlanVersion`) | **3** for plans generated or applied in 0.3.0 | Mandated by the release plan (scenario + extra-payment behavior is new). Existing stamps never change: the founding baseline stays 1; v0.2.0 plans stay 2. Calc v3 reduces exactly to calc v2 with no scenario constraints and no extra payments (tested). |
-| Export schema (portable envelopes) | **3** (writes 3; imports 1, 2, 3) | The envelope gains `documentKind` (`fullBackup` \| `template`) and validation metadata. CSV columns append-only. |
+| App version (`MARKETING_VERSION`) | **0.4.0** | Current is 0.3.0 (alpha.1, prepared/undistributed). Backward-compatible feature release → minor bump. Set by Agent 7 at integration only. |
+| Prerelease tag | **v0.4.0-alpha.1** | Annotated tag created only when the alpha build is actually cut. Never tag intent; never push without owner authorization (external distribution stays blocked on the history decision). |
+| Build number (`CURRENT_PROJECT_VERSION`) | **5** at the next distributed build | Strictly increasing integer, +1 per distributed build, never reset. Current: 4. |
+| Persistence schema (`PlanContract.currentSchemaVersion`, stamped in `AppSettings.seedSchemaVersion`) | **3** (no bump expected) | v0.4.0 adds no stored field: promotions ride the input snapshot; allocation/dashboard are derived. A genuinely needed bump follows VERSIONING.md §5 — both migration step lists, additive-only, fixture-tested, integrator-ratified. |
+| Calculation version (`PlanContract.currentCalculationVersion`, stamped per `PlanVersion`) | **4** for plans generated, previewed, or applied in 0.4.0 | V4-03 changes calculation semantics (Balanced quick-win promotion input). Existing stamps never change: the founding baseline stays 1; v0.2.0 plans stay 2; v0.3.0 plans stay 3. Calc v4 with no promotions reduces exactly to calc v3 (tested), and onward down the chain. `minimumModernCalculationVersion` stays **2** — the two constants are never collapsed. |
+| Export schema (portable envelopes) | **4** (writes 4; imports 1, 2, 3, 4) | Semantic bump: a 0.4.0 backup can carry calc-4 plans a schema-3 reader cannot faithfully re-dispatch; the envelope refuses newer documents by name rather than guessing. Envelope shape unchanged; CSV columns append-only. |
 | User plan versions | "Plan v1", "Plan v2", … | **Data, not software.** Per-install `PlanVersion` rows, named by `GeneratedPlanService.nextPlanName`. Never conflated with app versions, never renamed to match releases. |
 
 ---
@@ -95,6 +95,30 @@ Migrated installs never see onboarding; they may revisit any step via Settings �
 
 Other steps carry v0.2.0 behavior verbatim (goals/posture with suggested defaults per R-14; accounts with the exactly-one-default-income invariant and the cap of 10 (A-02); income with all four cadences and future-dated changes; review-and-generate's atomic commit per V2-01/V2-10). The notifications step keeps its contextual-permission contract and product defaults: payday play 8:00 AM, incomplete check-in 7:00 PM, due-soon 3 days prior at 9:00 AM, due-today 9:00 AM, weekly summary Sunday 6:00 PM (toggleable), milestone one payday ahead; denial leaves the app fully functional with a path to iOS Settings.
 
+### 4.6 Debt-type field relevance (v0.4.0 — V4-01)
+
+One semantic source, `DebtType` in the model layer, drives what each editor asks, what each chip warns about, and what `SetupCompletenessService` lists. `DebtType.usesOriginalPrincipal` is `false` for `.creditCard` and `true` otherwise; `DebtPresentation.showsOriginalPrincipal` forwards to it. Binding matrix:
+
+| Field | Credit card | Personal / auto / student loan | Medical / other |
+| --- | --- | --- | --- |
+| Current balance / remaining principal | required | required | required |
+| APR | asked; 0%/missing warns, never blocks | asked; warns | asked; warns |
+| Minimum / contractual payment | optional → R-06 estimator + gap | **required (blocker, A-06)** | required (blocker) |
+| Due day | optional gap | optional gap | optional gap |
+| Credit limit | optional gap unless `creditLimitMarkedUnknown` | never asked, never warned | never asked, never warned |
+| Original principal | **never asked, never warned, never gap-listed** | optional gap; editor "required" chip is presentation-only, saving blank never blocks | optional gap |
+| Prepayment eligibility | always `.eligible` | tri-state; `.unknown` warns (R-07) | tri-state; `.unknown` warns |
+
+The three surfaces — editors, Bills & Debts chips, and the completeness service — must agree exactly; disagreement is a defect. The non-blocking philosophy is unchanged: only missing installment minimums and the structural blockers (no account, no income, no default income account) block plan generation.
+
+### 4.7 Setup reactivity (v0.4.0 — V4-02)
+
+**Inputs persist; derivations don't.** Entered setup values are canonical and survive navigation (V2-01). Every derived value — validation lists, summary totals, per-paycheck reserve previews, utilization aggregates, the generated plan preview — is recomputed from the canonical current input state whenever any of its inputs changes:
+
+1. Cached derived state is invalidated by **content** changes (row IDs + `updatedAt` fingerprints), never by row counts alone — an edit that keeps counts equal must still invalidate.
+2. **Commit-staleness guard:** the Review step's Generate captures a content fingerprint of the canonical inputs; Commit re-verifies it and regenerates (or requires re-Generate) on mismatch. Persisting a stale preview is impossible, proven by test.
+3. Back-navigation invalidation is a tested contract, not a view-identity accident: after going backward, editing an upstream value, and proceeding forward, every downstream screen reflects the new values at every step boundary.
+
 ---
 
 ## 5. Calculation rules — calculation version 3
@@ -112,7 +136,7 @@ Calc v3 = calc v2 (R-01…R-16, restated below with fictional examples) **plus**
 - **R-09 Shortfall.** If floor top-up + obligations + minimums exceed take-home: extra → $0, then allowance → toward $0, then flag "needs attention" with the exact gap decomposed (floor / obligations / minimums). Minimums are never silently dropped.
 - **R-10 Termination and outputs.** Stops at all-zero balances or the R-01 cap. Per-paycheck outputs: income, keep-in-spending, transfer-to-reserves, obligation reserves, debt budget, target, per-debt balances after, total after, no-spend ceiling (seeded from the spending account's starting balance, incremented by each paycheck's planned keep amount). Whole-plan outputs: payoff date, paycheck count, total estimated interest, per-debt payoff dates.
 - **R-11 Due-day clamping.** A due day past a month's end clamps to the last day; semimonthly "last day" is stored as day 31 and clamps identically. `PayScheduleGenerator.clampedDate` / `DueDateRule` are the only clamping implementations.
-- **R-12 Utilization.** `balance ÷ limit` when a limit exists; display/insights only; thresholds ≥30% info, ≥90% attention (A-07).
+- **R-12 Utilization** *(amended in v0.4.0 — V4-04)*. One canonical implementation, `UtilizationMath.utilization(balance:limit:)` (Foundation-only, exact `Decimal`): `nil` unless `limit > 0`, else `balance ÷ limit`; values above 1 are legitimate. Unknown or non-positive limits stay **unknown** — never 0% — including `creditLimitMarkedUnknown` cards. Original principal is never an input. Display/insights only; thresholds ≥30% info, ≥90% attention (A-07) are declared once in `UtilizationMath` and consumed everywhere. Display surfaces feed it the derived current balance (`AccountBalanceService.debtBalances()`); percent display rounds to the nearest whole percent and renders "<1%" for small non-zero ratios, never truncating a real ratio to a false 0%. No reimplementation of the ratio or the thresholds may exist anywhere.
 - **R-13 Goal gap.** Display-only smallest additional per-paycheck amount to meet a target date ($1 resolution, A-08).
 - **R-14 Posture suggestions.** Suggested defaults by posture — Full throttle: allowance $150, floor $500; Steady: allowance $300, floor $1,000; Cushion first: allowance $300, floor $2,000. Editable suggestions only; never enforced; affect nothing after generation (A-01; product-tunable without contract change — these are product defaults, definitionally not personal data).
 - **R-15 Three truths (+ previews).** Baselines immutable; actuals only from user entries; reforecasts from authoritative snapshots. v0.3.0 adds: **previews** (scenario or extra-payment results) are a fourth, unpersisted kind — engine outputs never persist or activate themselves (V3-15).
@@ -132,7 +156,22 @@ Calc v3 = calc v2 (R-01…R-16, restated below with fictional examples) **plus**
 - **R-22 Determinism and versioning.** Scenario and insight calculations are pure, deterministic (identical inputs → byte-identical results), stamped calculation version 3, and dispatch by stamp like every predecessor. Ties resolve per R-08. The `PlanEvent` identifier scheme is preserved.
 - **R-23 Cash path.** Every scenario result includes the projected spending-pool path per paycheck and its minimum ("minimum ending cash position"). The engine retains its single-spending-pool model; multi-account structure is collapsed to pool + reserves exactly as v0.2.0 does, and per-account detail lives outside the engine (§6).
 - **R-24 Honest inputs (V3-06).** A scenario or insight requires: debts with balances and APR assumptions, minimums, due dates, bills, pay cadence and next payday, protected cash, and the scenario constraints. Anything missing or estimated is named in the result (`missingInputs` / `assumptions`), following the R-16-comparison precedent: withhold rather than guess.
-- **Applying (V3-15).** Applying a scenario or extra-payment plan requires explicit confirmation and creates a **new future-effective `PlanVersion`** — calculation version 3, `inputSnapshotData` capturing the full inputs including the `StoredScenarioDefinition`, named by `GeneratedPlanService.nextPlanName`, activated through the existing activation path. Baselines and completed history are never rewritten.
+- **Applying (V3-15).** Applying a scenario or extra-payment plan requires explicit confirmation and creates a **new future-effective `PlanVersion`** — stamped with the current calculation version, `inputSnapshotData` capturing the full inputs including the `StoredScenarioDefinition`, named by `GeneratedPlanService.nextPlanName`, activated through the existing activation path. Baselines and completed history are never rewritten.
+
+### New in calc v4 — the Balanced quick-win policy (v0.4.0, V4-03)
+
+Calc v4 = calc v3 (R-01…R-24) **plus** the promotion input and the Balanced selection rules R-25…R-27. With `quickWinPromotions` empty, calc v4 reproduces calc v3 byte-identically (tested), and the reduction chain to v2 and v1 stands. Fastest Safe and More Cushion remain pure R-08 under their constraints; onboarding generation (no scenario) is unchanged in value, so V2-10 holds to the cent. Product constants (named, tunable, in `PlanContract` — modeling policy, not personal data): `balancedQuickWinHorizonPaychecks = 3`, `balancedQuickWinMaxDelayPaychecks = 1`, `balancedQuickWinMaxExtraInterestRate = 0.01`, `balancedQuickWinMaxExtraInterestCap = 50` (A-12).
+
+- **R-25 Candidates.** Baseline **B0** = Balanced constraints, no promotions. For each debt D that is active, `.eligible`, and not B0's first extra target: D is a *pre-candidate* iff `D.balance ≤ Σ over B0's first balancedQuickWinHorizonPaychecks paychecks of (extraTotal + D's minimum payments)` — an interest-ignoring optimistic bound that can only over-include, so it never excludes a true candidate. Each pre-candidate is simulated as **C(D)** = Balanced constraints + `quickWinPromotions = [D]` (single promotion per candidate — A-14). D is a *candidate* iff C(D) retires D within `balancedQuickWinHorizonPaychecks` paychecks of plan start. Promotion mechanics: promoted debts (active, `.eligible` only) sort ahead of the R-08 extra-principal attack order and the assembled payoff order, in list order, until retired; minimums funding, reserves, floor, allowance, and shortfall math are untouched, so all four R-16 identities hold. Promoting an ineligible or inactive debt is a no-op with note `quickWinPromotionIneligible`.
+- **R-26 Guardrails and selection.** C is *admissible* against B0 iff **G1** `C.paycheckCount ≤ B0.paycheckCount + balancedQuickWinMaxDelayPaychecks` and C is not "not payable as configured"; **G2** `C.estimatedTotalInterest − B0.estimatedTotalInterest ≤ min(balancedQuickWinMaxExtraInterestRate × B0.estimatedTotalInterest, balancedQuickWinMaxExtraInterestCap)`; **G3** C's first account payoff date is strictly earlier than B0's (or B0 has none within the horizon and C does). Among admissible candidates, selection is **lexicographic, never weighted scoring**: earliest first-payoff date → lowest estimated total interest → earliest debt-free date → promoted debt earliest in R-08 order at plan start → promoted debt UUID string. No admissible candidate → **B0 is Balanced** (exactly the pre-v0.4.0 behavior). The selector (`BalancedStrategySelector`) is pure and deterministic (R-22 extended); it runs only for `.balanced`; every comparison figure comes from complete engine runs through `PlanGenerationService.engineInput` — no forked payoff algorithm, no third bridge.
+- **R-27 Transparency and reproducibility.** The Balanced `ScenarioResult` carries `balancedRationale: BalancedSelectionRationale?` — what was considered, what was selected, and the engine-proven deltas versus the avalanche baseline (interest delta, payoff delay in paychecks, first-payoff advance, released per-paycheck minimum). A quick win that costs more estimated interest states so (`quickWinCostsMoreInterest`, with the amount); the scenario surface keeps the cross-scenario deltas visible so the Fastest Safe comparison stays honest. No claimed saving unless both compared projections finished and the delta proves it (the R-16 precedent). Reason code `quickWinPromotion` marks promoted payments. **Applying pins the selection**: the persisted snapshot's `quickWinPromotions` carries the concrete promotion, so regeneration re-runs the engine, never the selector — applied plans reproduce forever. Candidate runs may skip the minimum-only comparison projection via an internal engine option that cannot change stamped outputs; Agent 3 benchmarks the end-to-end cost.
+
+### Derived-service rules (v0.4.0, app layer — not part of the engine calc version)
+
+R-28/R-29 are deterministic derived arithmetic over stored plan items and ledger rows. They stamp nothing and are deliberately outside the engine's calculation versioning; changing them never requires a calc bump, and they persist no state (the release mandate: derived over redundant persistence).
+
+- **R-28 Pay-cycle allocation (V4-07).** Cycle boundaries come from the active plan's `PaydayPlanItem` dates (the calendar's `schedulePlan` source): current cycle = `[most recent plan payday ≤ today, next plan payday)`, extended past the last item by the live `IncomeSchedule` cadence (the `ReforecastService` precedent); before the first payday there is no current cycle (the upcoming allocation is shown instead). Exactly one implementation of the boundary rule exists, in `DebtAllocationService`. Allocation becoming available for a cycle = the opening payday's `plannedCardBudget` (the plan track's planned debt payment — *planned allocation*, never actual account cash). Qualifying payments in a cycle = `.cardPayment` ledger rows by `effectiveDate`, minus debt-linked `refundReversal`/`correction` rows; check-in payments are already ledger rows, so `PaydayCheckIn`/`CheckInCardPayment` are never also summed (double-count hazard, pinned by test); transfers never count. Carry-in fold, anchored at the active plan's first payday: `carryIn(first) = 0`; `available(N) = carryIn(N) + allocation(N)`; `carryIn(N+1) = max(0, available(N) − used(N))`. Display: `remaining = max(0, available − used)`; `overage = max(0, used − available)` rendered as "$0 remaining · +$X over planned allocation" — never negative spendable money. Activating a different plan re-anchors the fold. All `Decimal`, `.rounded2` at display boundaries only.
+- **R-29 Monthly debt progress (V4-08).** "Paid toward debts this month" = the R-28 qualifying-payment sum over the calendar month, labeled exactly that — never "paid off" for dollars. "Debts cleared this month" = debts whose derived balance (`AccountBalanceService.debtBalances()`) is zero now and whose earliest zero-reaching event (authoritative snapshot or payment) falls in the month. The Calendar dashboard consumes `DebtAllocationService` only, performs no arithmetic of its own, and refreshes on content changes (row IDs + `updatedAt`), not row counts.
 
 ---
 
@@ -206,6 +245,21 @@ The canonical names below are **the** names. The v0.2.0 lesson is pinned: duplic
 - `TemplatePorting` — `exportTemplate(options:) throws -> URL`; `preview(data:) throws -> TemplatePreview`; `apply(preview:, mode: merge|add)` — never silently replaces actual history.
 - `ReportGenerating` — `generate(_ config: ReportConfiguration) throws -> URL` (local PDF); documented temp-file lifecycle: report files live in a dedicated temp directory, are shared only via the user-invoked share sheet, and are deleted on next launch or when the report screen closes (A-11).
 
+### v0.4.0 additions (binding names — one declaration each; owners per `ALPHA_V0.4.0_MULTI_AGENT_PLAN.md` §4/§6)
+
+**Landed with the contract commit (Agent 1):**
+
+- `UtilizationMath` (`Support/UtilizationMath.swift`, Foundation-only) — `utilization(balance:limit:) -> Decimal?` plus `informationalThreshold` (0.3) and `attentionThreshold` (0.9). The single R-12 implementation.
+- `DebtType.usesOriginalPrincipal` (`Models/DebtAccount.swift`) — the single V4-01 predicate; `DebtPresentation.showsOriginalPrincipal` forwards to it.
+- `PrimaryActionButtonStyle` + `ButtonStyle.primaryAction` (`Components/PrimaryActionButton.swift`) — the semantic V4-05 API; visual refinement and ownership pass to Agent 4.
+
+**Specified here, implemented by the owner:**
+
+- Engine (Agent 3): `PlanCalculationVersion.v4BalancedQuickWin = 4`; `ScenarioInput.quickWinPromotions: [UUID]` and `StoredScenarioDefinition.quickWinPromotions: [UUID]` (optional key, default empty; calc-v2/v3 snapshot bytes unchanged); `BalancedSelectionRationale` (Codable/Equatable/Sendable: `selection` avalanche|quickWin, `promotedDebtID`, `promotedDebtName`, `candidatesConsidered`, `interestDeltaVsAvalanche`, `payoffDelayPaychecks`, `firstPayoffAdvanceDays`, `releasedMinimumPerPaycheck`, `explanations`) attached as `ScenarioResult.balancedRationale`; `ReasonCode.quickWinPromotion`; `PlanningNoteCode.quickWinSelected` / `.quickWinCostsMoreInterest` / `.quickWinPromotionIneligible`; `BalancedStrategySelector` (pure); the four `PlanContract.balancedQuickWin*` constants; `PlanContract.currentCalculationVersion = 4`; `ExportService.backupSchemaVersion = 4` / `importableSchemaVersions = 1...4`.
+- Allocation (Agent 6): `DebtAllocationCalculating` — `currentCycle(asOf:) throws -> PayCycleAllocation?`, `monthlyProgress(month:) throws -> MonthlyDebtProgress`; implemented by `DebtAllocationService` (`ModelContext` + `DateProviding`); `PayCycleAllocation` (`cycleStart`, `nextPayday`, `allocation`, `carryIn`, `available`, `paidThisCycle`, `remaining`, `overage`, `nextAllocation?`, `nextAllocationDate?`); `MonthlyDebtProgress` (`monthStart`, `paidTowardDebts`, `debtsCleared: [ClearedDebt]` with `id`/`name`/`clearedOn`).
+
+No new persisted model fields; schema stays 3 (§2).
+
 ---
 
 ## 7. Migration (schema 2 → 3) — V3-01
@@ -228,6 +282,8 @@ Fresh installs skip everything: schema-3 store, zero plan rows, onboarding is th
 
 **Five tabs (v0.3.0): Today, Calendar, Accounts, Debts, Progress.** Settings stays in the Today navigation bar; the global `+` sheet adds deposit, withdrawal, and transfer alongside payment, balance update, windfall, adjustment, and note. The fifth tab is the presentation change that makes V3-02's workspace first-class; everything else keeps its v0.2.0 place.
 
+**v0.4.0 amendments to this section:** the `+` sheet's adjustment item becomes the generic **"Checking account adjustment"** (§8.10); the Calendar tab gains the debt dashboard (§8.4); the Balanced scenario card gains its rationale (§8.6); primary actions adopt the semantic `.primaryAction` treatment (§8.11).
+
 ### 8.1 Today dashboard — F-02, V2-13
 
 Unchanged, plus: account cards deep-link into the Accounts tab detail; if the active plan is scenario-born, the status header names its scenario kind in one calm line.
@@ -245,9 +301,11 @@ Actions: add, edit, reorder, archive (blocked-or-explained while income routing,
 
 Unchanged from v0.2.0.
 
-### 8.4 Calendar — F-07, V2-12, V3-07
+### 8.4 Calendar — F-07, V2-12, V3-07, V4-08
 
 Unchanged views and markers, plus §9 hardening. Calendar events continue to deep-link to the correct bill/debt/payment/check-in detail with tested missing-entity fallbacks.
+
+**v0.4.0 (V4-08):** a **debt dashboard card** at the top of the tab, consuming `DebtAllocationService` only (R-28/R-29): paid toward debts this month; current cycle's planned allocation, carry-in, used, and remaining (overpayment as "$0 remaining · +$X over planned allocation"); the next payday's upcoming allocation labeled with its availability date; debts fully cleared this month when any. Wording is exact — dollars paid toward debt are never "paid off"; planned allocation is never presented as account cash; future allocations are never spendable today. The card refreshes immediately after any ledger/payment change, including edits that keep row counts equal (content-fingerprint observation), and reads correctly under VoiceOver and at accessibility sizes with meaning carried by text, not color.
 
 ### 8.5 Debts — F-04, V2-04/05, V3-04
 
@@ -260,6 +318,15 @@ Unchanged, plus: **What if I pay extra?** entry points on debt detail and in the
 - **Apply as New Plan** — confirmation step restating what will change and when; creates the future-effective calc-v3 `PlanVersion` (§5); the previous plan and all history remain intact (V3-15).
 - **Extra-payment sheet** — one-time or recurring amount, target debt or automatic, optional source account, effective date; renders the R-20 insight as a non-mutating preview with the same Apply path.
 - Both surfaces consume `ScenarioCalculating`/`ExtraPaymentInsightCalculating` protocols only — no engine math in views, no new store→engine bridge.
+- **v0.4.0 (V4-03):** the Balanced card states its selection rationale in one calm line (quick win chosen and why, or avalanche order kept); the detail comparison renders the full `BalancedSelectionRationale`, including the honest interest tradeoff when a quick win costs more (R-27). Nothing else changes: three cards, Recommended badge, never auto-applied, missing-input behavior intact.
+
+### 8.10 Add Entry — generic checking-account adjustment (v0.4.0 — V4-06)
+
+The `+` sheet's legacy hard-coded "Checking 1 / 2 adjustment" item (seven founding-vocabulary entry kinds) is replaced by **"Checking account adjustment"**, opening one form: account picker (all active checking accounts by user-defined name, preselected when exactly one exists), adjustment type (**Set balance to…** / **Adjust by amount**), amount, effective date, optional note. Both types converge on `CashLedgerService.adjustBalance` — an authoritative `BalanceSnapshot` plus a signed `accountAdjustment` ledger delta written together in one save (provenance `user`), preserving the reconciliation companion-row invariant; "Adjust by amount" routes as stated-balance = current + delta. The legacy `CashAdjustmentView` is retired (soul.md amendment 6): historical legacy-shaped rows remain readable, rendered, and correctly included in every balance derivation forever (byte-for-byte non-mutation fixture test); the zero-amount Note entry is untouched. The Windfall form's "Checking 1"/"Checking 2" labels derive from account roles/names with a legacy fallback — no founding-user terminology survives in the generic flows. Auditability per V3-03: dated events, calm warnings, history never rewritten.
+
+### 8.11 Primary-action treatment (v0.4.0 — V4-05)
+
+`PrimaryActionButtonStyle` (`.primaryAction`) is the one semantic style for primary CTAs: Today's **Add Payment** and **View Full Plan**, debt detail's **Add Payment**, the quick-add forms' submit buttons, and primary onboarding actions. Requirements: text contrast ≥ 4.5:1 in **both** light and dark appearances (`AccentColor` gains a dark-appearance variant); pressed and disabled states visually distinct — an interactive button never resembles a disabled one and vice versa; minimum 44-pt targets; Dynamic Type scaling; VoiceOver labels and traits; safe under Increase Contrast and Reduce Transparency. Secondary and destructive actions keep system styles.
 
 ### 8.7 Insights — V2-14
 
@@ -318,6 +385,11 @@ Concept → canonical owner. **Evolve, never duplicate**: if a v0.3.0 concept ma
 | Plan generation/activation | `PlanGenerationService` (single store→engine conversion), `GeneratedPlanService` (previews, activation, `nextPlanName` authority), `PlanPersister` (atomic insert), `PlanningInputBuilder` | Extended |
 | Migration | `MigrationService` (§7; legacy amounts become store-derived) | Extended |
 | Retired | `PlanSeeder`, `SeedPlan`/`SeedPlanLoader`, `TemplateCatalog`, bundled `OriginalPlanV1.json`, Release-exclusion build machinery | Removed (V3-12) |
+| Utilization (V4-04) | `UtilizationMath` (Support; single R-12 implementation + thresholds) | New (v0.4.0, contract commit) |
+| Balanced selection (V4-03) | `BalancedStrategySelector` via `ScenarioCalculationService`; engine promotion input; **no third bridge, no forked payoff algorithm** | New (v0.4.0, Agent 3) |
+| Pay-cycle allocation (V4-07/V4-08) | `DebtAllocationService` (`DebtAllocationCalculating`); the only cycle-boundary implementation | New (v0.4.0, Agent 6) |
+| Primary CTA (V4-05) | `PrimaryActionButtonStyle` (Components) | New (v0.4.0, contract commit → Agent 4) |
+| Generic adjustment (V4-06) | existing `CashLedgerService.adjustBalance` + `CashAccountRepository`; legacy `CashAdjustmentView` retired | Extended / Removed (v0.4.0, Agent 5) |
 
 Cross-cutting rules: engines import Foundation only; services take `ModelContext` + `DateProviding`; scenario work multiplies the known synchronous main-thread analysis cost — Agent 3 documents benchmark results and Agent 4 must not run calculators in view bodies (async task off the critical path is acceptable scope); `plannedTargetDebtID` remains a plan letter (calendar/notification routes key on it); the persisted `plannedCardBudget` (planned payment) vs. engine `debtBudget` (cash available) semantic split is respected by every new reader.
 
@@ -371,6 +443,19 @@ All sixteen F rows (as amended in `soul.md`) remain binding. The v0.2.0 rows rem
 | V3-15 | Previewing any scenario or insight changes no stored value (verified byte-for-byte); applying creates a new future-effective calc-v3 PlanVersion with a captured input snapshot; baselines and completed history are unchanged after any sequence of previews and applies. |
 | V3-16 | Every new screen passes Dynamic Type (accessibility sizes), VoiceOver, high contrast, Reduce Motion, and focus checks, with real empty/error/loading states; interrupted imports, denied notifications, and failed report generation recover with data intact. |
 
+### v0.4.0 criteria
+
+| ID | v0.4.0 is accepted when… |
+| --- | --- |
+| V4-01 | No surface — editor, chip, Review gap, or Settings checklist — asks a credit card for original principal or lists it as missing; installment debts keep it as an optional gap; the §4.6 matrix holds field-by-field for all six types; the three validation surfaces agree exactly; only installment minimums and the structural blockers block generation; the V2-01 kill/resume matrix stays green. |
+| V4-02 | At every step boundary: go back, change an upstream value (income amount, cadence, floor, allowance, a bill, a debt), proceed forward — every downstream validation, summary, reserve preview, utilization aggregate, and plan preview reflects the new value; an edit that keeps row counts equal still invalidates; committing a plan preview whose inputs changed since Generate is impossible (fingerprint-guarded, tested); no entered input is ever lost by navigation. |
+| V4-03 | Balanced compares B0 plus every R-25 candidate via complete engine runs; guardrails G1–G3 and the lexicographic selection hold on fixture families covering every tie level and the no-admissible-candidate case; identical inputs select identically; the rationale's every figure reconciles to the two engine runs it cites; a costlier quick win is disclosed with its amount; calc v4 with no promotions is byte-identical to calc v3; stamps 1/2/3 never change; new plans stamp 4; `minimumModernCalculationVersion` is still 2 and the dispatch guards pass mutation checks; applied Balanced plans pin their promotion in the snapshot and regenerate identically. |
+| V4-04 | Exactly one utilization implementation exists (`UtilizationMath`); every badge, insight, plan row, and engine result routes through it and its thresholds; a fictional near-limit card shows its true percent on every screen; unknown/zero/unknown-marked limits show "unknown", never 0%; an over-limit balance renders above 100%; display rounding is nearest-whole-percent with "<1%" for small non-zero ratios; the reported 0%-at-high-balance case is root-caused and pinned by a regression test. |
+| V4-05 | The named CTAs and every swept primary action use `.primaryAction`; measured text contrast ≥ 4.5:1 in light and dark appearances; pressed/disabled states are distinct and disabled never mimics enabled; 44-pt targets, Dynamic Type at accessibility sizes, VoiceOver labels verified on the changed screens. |
+| V4-06 | The `+` menu offers exactly "Checking account adjustment"; the form covers account picker, both adjustment types, amount, date, note for 1–10 fictional accounts; "Set balance to…" computes and appends the correct delta with its paired authoritative snapshot in one save; reconciliation still matches companion rows; a migrated fixture's legacy rows remain byte-identical, rendered, and included in derivations; no founding-user vocabulary remains in the generic flows; the Note entry still works. |
+| V4-07 | Cycle boundaries are correct across all four cadences, month-end, leap-year, and DST fixtures; the carry-in fold is deterministic and re-anchors on plan activation; recording, editing, or deleting a payment recomputes immediately; a check-in payment and a quick-add payment on the same day count once each, never twice; overpayment renders "$0 remaining · +$X over planned allocation"; planned allocation, actual cash, and recorded payments are labeled distinctly; future allocations are never shown as spendable today. |
+| V4-08 | The Calendar dashboard shows month-paid, cycle allocation, carry-in, used, remaining, upcoming allocation, and cleared debts, each reconciling to the ledger to the cent; wording never says "paid off" for dollars; the card updates immediately after any ledger change including same-count edits; VoiceOver and accessibility sizes pass. |
+
 ---
 
 ## 12. Parity matrices
@@ -419,6 +504,19 @@ All sixteen F rows (as amended in `soul.md`) remain binding. The v0.2.0 rows rem
 | V3-15 | v0.3 table | §5, §6 PlanVersion, §11 | Apply confirmation flows | `PlanVersion.scenarioKindRaw/effectiveDate`, `GeneratedPlanService` | T-6, T-16 | Agent 3 + Agent 4 | F-06, F-12, V2-15 |
 | V3-16 | v0.3 table | §8, §11 | All new screens | states + recovery paths | T-17, UI suite | Agents 4, 5, 6 + Agent 7 | F-15, V2-18 |
 
+### V4 feature-parity matrix (canonical for the release)
+
+| V4 ID | soul.md | This doc | Screens | Models / services | Tests (§13) | Owner | Related |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| V4-01 | v0.4 table | §4.6, §11 | Bills & Debts editors/chips, Review, Settings checklist | `DebtType.usesOriginalPrincipal`, `SetupCompletenessService`, `DebtFormRules`, `BillsAndDebtsState` | T-18 | Agent 2 | V2-04, V2-05, V3-08 |
+| V4-02 | v0.4 table | §4.7, §11 | Every onboarding/Settings setup step | content fingerprints, Review commit guard | T-19 | Agent 2 | V2-01, V3-08 |
+| V4-03 | v0.4 table | §5 R-25…R-27, §8.6, §11 | Payoff Scenarios, comparison detail | `BalancedStrategySelector`, `quickWinPromotions`, `BalancedSelectionRationale`, `PlanContract` calc/export constants | T-20, CalcV4ReductionTests | Agent 3 (math+versions) + Agent 4 (card UI) | V3-05, V3-06, V3-15 |
+| V4-04 | v0.4 table | §5 R-12, §11 | Debt rows/detail, insights, plan screen, onboarding previews | `UtilizationMath`, `AccountBalanceService.debtBalances` | T-21 | Agent 4 (+ Agent 2 in onboarding files, Agent 3 in engine) | V2-14, F-04 |
+| V4-05 | v0.4 table | §8.11, §11 | Today, Debts, quick-add forms, onboarding CTAs | `PrimaryActionButtonStyle`, `AccentColor` dark variant | T-22, UI suite | Agent 4 (+ Agent 5 adoption in Ledger) | F-15, V2-18, V3-16 |
+| V4-06 | v0.4 table | §8.10, §11 | Add Entry menu, adjustment form | `CashLedgerService.adjustBalance`, `CashAccountRepository`, `LedgerEntry` | T-23 | Agent 5 | F-05, V3-02, V3-03 |
+| V4-07 | v0.4 table | §5 R-28, §11 | (service; surfaced by §8.4) | `DebtAllocationService`, `PayCycleAllocation`, `PaydayPlanItem`, `LedgerEntry` | T-24 | Agent 6 | F-05, F-12, V2-15 |
+| V4-08 | v0.4 table | §5 R-29, §8.4, §11 | Calendar tab dashboard | `DebtAllocationService`, `MonthlyDebtProgress` | T-25 | Agent 6 | F-07, V2-12 |
+
 ---
 
 ## 13. Validation and tests
@@ -454,6 +552,17 @@ All fixtures, previews, golden files, and pinned assertions use **clearly fictio
 16. **T-16 Plan separation:** any sequence of previews and applies leaves baselines and completed history byte-identical; applied plans are future-effective and correctly stamped.
 17. **T-17 Accessibility/recovery:** new screens at accessibility sizes, VoiceOver labels, Reduce Motion; interrupted import, denied notifications, failed report generation.
 
+### Required new tests (v0.4.0)
+
+18. **T-18 Debt-type validation matrix:** per type × field, the §4.6 matrix holds on every surface — a card never sees an original-principal ask, warning, or gap anywhere; loans keep the optional gap; blocking set unchanged; editors, chips, and `SetupCompletenessService` agree on identical fixtures.
+19. **T-19 Reactive setup:** the back-edit-forward matrix at every step boundary; same-count edits invalidate; the Review commit-staleness guard (mutate the store between Generate and Commit — the stale preview must not persist); the V2-01 kill/resume matrix regression-green.
+20. **T-20 Balanced selector:** R-25 enumeration (pre-filter over-inclusion proof, horizon check), G1/G2/G3 edge cases (zero-baseline-interest G2, cap boundary, exact-tie at every lexicographic level, no-admissible-candidate → B0), determinism across repeated runs, promotion mechanics (eligibility no-op + warning, R-16 identities on every promoted run), rationale figures reconciling to their engine runs, `CalcV4ReductionTests` (v4 no-promotions ≡ v3 byte-identical; chain to v2/v1 intact), stamping and dispatch guards (calc-2/3 plans reach the modern engine; calc-1 stays off; new plans stamp 4; both calc-version representations agree), applied-plan snapshot pinning and regeneration.
+21. **T-21 Canonical utilization:** property tests on `UtilizationMath` (nil/zero/negative limit → nil; exact Decimal ratios; >100%; threshold boundaries at 0.30/0.90); display rounding nearest-whole with "<1%"; the 0%-report regression pin; no surviving reimplementation (review gate + targeted assertions on the retired sites).
+22. **T-22 Primary CTA:** style unit coverage (enabled/pressed/disabled distinctness), UI-suite checks for the named CTAs at accessibility sizes in both appearances, contrast evidence recorded in the agent report.
+23. **T-23 Generic adjustment:** menu copy; picker across 1–10 fictional accounts; set-balance delta math (positive/negative/zero-delta = snapshot only); snapshot+row same-save pairing and reconciliation companion matching; migrated-fixture legacy rows byte-identical and still derived; windfall labels role-derived with legacy fallback; Note entry unaffected.
+24. **T-24 Allocation service:** boundaries across all four cadences with month-end/leap/DST fixtures; fold determinism and plan-activation re-anchor; payment record/edit/delete recompute; the double-count guards (check-in + quick-add same day); refund/correction handling; overage display rule; no-cycle-before-first-payday state.
+25. **T-25 Calendar dashboard:** every figure reconciles to the ledger to the cent on fixtures; precise wording assertions ("paid toward", never "paid off" for dollars); same-count-edit refresh; VoiceOver labels; accessibility sizes.
+
 ### Operational rules (unchanged, non-optional)
 
 Per `TESTING.md`: every concurrent checkout gets its own `-derivedDataPath` and its own simulator; the UI suite runs alone with `-parallel-testing-enabled NO`. Device-only checks (notification delivery, provisional auth, lock-screen rendering, DST travel, cold-launch deep links, share-sheet/file-importer behavior) are documented separately and gate distribution, not merge.
@@ -483,14 +592,16 @@ PaydayPlaybook/
 
 ---
 
-## 15. Build sequence for 0.3.0 (dependency waves)
+## 15. Build sequence for 0.4.0 (dependency waves)
 
-1. **Wave 1 — Contract (this branch):** docs, feature IDs, DTO/protocol contracts, versioning, changelog, docs-scope privacy scrub. No feature code.
-2. **Wave 2 — Foundations, parallel:** Agent 2 (privacy sweep of code/fixtures/tests, migration 2→3, seed/template removal, cash ledger foundations) and Agent 3 (calc v3 scenario/extra-payment engine on fictional fixtures). **Reconcile the §6 DTO boundary before Wave 3; the §6 names are binding — do not mint alternatives.**
-3. **Wave 3 — Surfaces, parallel, isolated worktrees:** Agent 4 (Accounts + consolidated setup + scenario UI), Agent 5 (due dates/calendar/notifications), Agent 6 (backup/templates/report).
-4. **Wave 4 — Integration (Agent 7):** merge in order 1→2→3→4→5→6, per-diff PI review, full regression + privacy gates, version/build bump, release recommendation.
+*(The 0.3.0 sequence completed at integration commit `9615c35`/release `a402413`; its record stands in the v0.3.0 plan and reports.)*
 
-Do not skip calculation, migration, or privacy tests to rush visual work. Only an owning agent (or Agent 7) edits a shared file; interface disputes resolve through the §6 contract, not parallel edits.
+1. **Wave 1 — Contract (`feature/v0.4-contract`):** docs, V4 registry, versioning, and the three shared leaf types (`UtilizationMath`, `DebtType.usesOriginalPrincipal`, `PrimaryActionButtonStyle`). No feature code.
+2. **Wave 2 — Foundations, parallel:** Agent 2 (`feature/v0.4-validation-reactivity`: V4-01 relevance matrix, V4-02 reactivity + commit guard) and Agent 3 (`feature/v0.4-balanced-strategy`: calc-v4 promotion input, `BalancedStrategySelector`, rationale DTO, calc/export version bumps with dispatch guards). Disjoint by file; the §6 names are binding — do not mint alternatives.
+3. **Wave 3 — Surfaces, parallel, isolated worktrees:** Agent 4 (`feature/v0.4-utilization-design`: canonical utilization adoption + root-cause, semantic CTA treatment, Balanced rationale card UI), Agent 5 (`feature/v0.4-account-adjustment`: generic adjustment flow), Agent 6 (`feature/v0.4-allocation-calendar`: `DebtAllocationService` + Calendar dashboard).
+4. **Wave 4 — Integration (Agent 7, `release/v0.4.0-alpha.1`):** merge in order 1→2→3→4→5→6, build + unit suite after every merge (the v0.3.0 clean-merge-compile-fail lesson), per-diff PI review, full regression + privacy gates, version/build stamp, truthful changelog, release recommendation.
+
+Do not skip calculation, migration, or privacy tests to rush visual work. Only an owning agent (or Agent 7) edits a shared file; interface disputes resolve through the §6/plan-§4 contract, not parallel edits. Pre-assigned hot spots: onboarding utilization call sites → Agent 2; `QuickAddSheet.swift` (including its `.primaryAction` adoption) → Agent 5; `TodayView.swift` → Agent 4; `CalendarTabView.swift` → Agent 6.
 
 ---
 
@@ -513,6 +624,14 @@ v0.3.0 is done only when:
 - backup v1/v2/v3 import, v3 round-trip, template exclusions, and the PDF report are verified;
 - accessibility and failure-state checks pass, with device-only items documented;
 - `CHANGELOG.md` claims exactly what shipped, nothing more.
+
+### v0.4.0 addendum
+
+v0.4.0 is additionally done only when every §11 v0.4.0 criterion passes, the
+`ALPHA_V0.4.0_MULTI_AGENT_PLAN.md` §10 definition of done holds in full (no stored plan
+changes value; the reduction chain and dispatch guards are mutation-checked; export
+schema 4 round-trips with 1–3 still importing; the pay-cycle figures reconcile to the
+ledger to the cent), and Agent 7 returns `READY FOR ALPHA DEVICE TESTING`.
 
 ---
 

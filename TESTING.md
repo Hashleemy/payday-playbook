@@ -1,6 +1,6 @@
 # Payday Playbook — Testing
 
-Applies to **0.3.0-alpha.1** (app 0.3.0 · build 4 · schema 3 · calc 3 · export schema 3).
+Applies to **0.4.0-alpha.1** (app 0.4.0 · build 5 · schema 3 · calc 4 · export schema 4).
 
 ## Distribution check: no real person's data ships, in any configuration
 
@@ -26,7 +26,7 @@ remains reachable from most refs and both tags. That is an owner decision and is
 ## Running the suites
 
 ```bash
-# Unit suite — 515 tests
+# Unit suite — 677 tests
 xcodebuild -project PaydayPlaybook.xcodeproj -scheme PaydayPlaybook \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -derivedDataPath "$SOMEWHERE_OUTSIDE_DOCUMENTS/dd" \
@@ -63,11 +63,21 @@ TEST_RUNNER_PP_QA_PDF_DIR=/some/dir xcodebuild … \
    as "failed" with no assertion failure and no app crash log, and a *different*
    set failing on each run. Serially, on a quiet machine, the suite is green.
 
-## Unit tests — 515, all passing
+## Unit tests — 677, all passing
 
 | Suite | Tests | Covers |
 | --- | ---: | --- |
 | `ScenarioCalculationTests` | 34 | R-17…R-19: the three scenarios, ordering and deltas, retention, ceiling, cash path, determinism, every missing-input case, income override |
+| `DebtAllocationServiceTests` | 33 | T-24 (V4-07): cycle boundaries across all four cadences with month-end/leap/DST fixtures, the carry-in fold, overpayment overage, edit/delete recompute, check-in/quick-add double-count guards, transfers never counting, refund/correction restoring the allocation, plan-switch re-anchor |
+| `LedgerAdjustmentFlowTests` | 27 | T-23 (V4-06): the generic adjustment menu and form, account picker with 1–10 fictional accounts, set-balance delta math, the snapshot + delta pairing invariant, legacy-row byte-for-byte non-mutation, windfall label derivation |
+| `BalancedStrategySelectorTests` | 20 | T-20 (V4-03): R-25 candidate enumeration, G1–G3 guardrails and every lexicographic tie level, no-admissible-candidate → pure avalanche, determinism, promotion mechanics and R-16 identities, rationale figures reconciling to their engine runs |
+| `CalcV4ReductionTests` | 15 | T-5 extended: calc v4 with no promotions is byte-identical to calc v3 (and onward to v2/v1), stamping at every site, promotion gating on the calc-version stamp |
+| `CalendarDebtDashboardTests` | 14 | T-25 (V4-08): exact honest wording, monthly vs pay-cycle separation, upcoming-allocation labeling, content-fingerprint refresh on same-count edits, before-first-payday state |
+| `ReactiveSetupTests` | 12 | T-19 (V4-02): the back-edit-forward matrix (balance, APR, due day, income), same-count edits invalidating, the Generate/Commit staleness guard, V2-01 kill/resume regression |
+| `UtilizationMathTests` | 11 | T-21 contract pins: unknown/zero/negative limits stay unknown, exact Decimal ratios, over-limit, threshold boundaries, model forwarding |
+| `UtilizationDisplayTests` | 10 | T-21 (V4-04): whole-percent display with "<1%", the near-limit-never-0% regression pin, badge/warning threshold agreement |
+| `DebtTypeValidationMatrixTests` | 9 | T-18 (V4-01): the §4.6 field-relevance matrix per type on every surface; a card is never asked for original principal anywhere |
+| `PrimaryActionContrastTests` | 6 | T-22 (V4-05): WCAG contrast measured from the actual asset catalog in both appearances, the AccentColor dark variant, label/fill pairing |
 | `CalendarRemindersHardeningTests` | 28 | V3-07: prospective due-rule edits, future-vs-history rebuild, deep links, idempotent reconciliation, permission states, identifier privacy, month-end/leap/DST/time-zone cases |
 | `OnboardingSetupTests` | 26 | Resume at every V3-08 boundary incl. retired steps, all six debt types, one-default-income invariant, all four cadences, old-flow rows never re-asked or duplicated |
 | `NotificationSchedulerTests` | 24 | Diff-based reconcile, permission states, rolling window and 60-request cap, no double-fire on upgrade |
@@ -86,7 +96,7 @@ TEST_RUNNER_PP_QA_PDF_DIR=/some/dir xcodebuild … \
 | `DebtCalculationEngineTests` | 12 | Frozen calc-v1 baseline: order, dates, payoffs, headline interest total |
 | `CalcV3ReductionTests` | 12 | T-5: calc v3 is byte-identical to calc v2 without scenario or extras; stamping; R-16 identities on every scenario and insight result |
 | `AvalancheBaselineParityTests` | 12 | Calc v2 reproduces the calc-v1 baseline check by check, derived from the engine rather than transcribed |
-| `ReleaseIntegrationTests` | 10 | **Merge-only defects** — see below |
+| `ReleaseIntegrationTests` | 12 | **Merge-only defects** — see below |
 | `DebtTypeTests` | 10 | Per-type metadata, validation, utilization, principal basis |
 | `ReviewRegressionTests` | 9 | 0.1.x review findings (unfunded payments, double-counting, CSV neutralisation) |
 | `ReconciliationServiceTests` | 9 | Check-in reconciliation, snapshot-vs-baseline separation, invalid input |
@@ -97,11 +107,11 @@ TEST_RUNNER_PP_QA_PDF_DIR=/some/dir xcodebuild … \
 | `SupportingServiceTests` | 7 | Money formatting/parsing, rounding, date math |
 | `SchemaThreeMigrationTests` | 7 | T-1: 2 → 3 routing, every stored row fingerprinted before and after, no re-onboarding, defaults never invented, idempotency, user edits never overwritten |
 | `PlanningContractTests` | 7 | DTO money exactness, deterministic snapshots, R-08 ordering at persistence |
-| `ExportCompatibilityTests` | 7 | Backup round trip, older-schema import through migration, append-only CSV |
+| `ExportCompatibilityTests` | 9 | Backup round trip (schema 4 writes; 1–4 reads), older-schema import through migration, append-only CSV |
 | `DebtPresentationTests` | 7 | Per-type labels/icons, utilization badge, non-colour meaning |
 | `DashboardStateTests` | 7 | Five-second dashboard from the store's own rows, empty/error states |
 | `NotificationDiagnosticsTests` | 6 | The duplicate detector behind the debug diagnostics screen: 0.1.x leftovers, same-copy-same-moment duplicates, no false alarms |
-| `UpgradeChecklistTests` | 5 | Migrated users never re-onboard; a fresh install stores nothing and blocks until setup is done |
+| `UpgradeChecklistTests` | 6 | Migrated users never re-onboard; a fresh install stores nothing and blocks until setup is done |
 | `PrivacyScrubTests` | 5 | T-2/T-15: fresh install stores nothing, no bundled plan resource in any bundle, `PlanContract` carries only generic constants, notification identifiers carry no amounts |
 | `OnboardingProgressTests` | 5 | Step persistence, resume, duplicate-proof finish |
 | `ExportServiceTests` | 5 | JSON round trip, schema rejection, CSV escaping |
@@ -121,6 +131,11 @@ newly generated plan must be stamped 3. The first is the one that matters — ga
 dispatch on `currentCalculationVersion` rather than on `minimumModernCalculationVersion`
 would silently blank reforecast, insights, Today's projection and the plan screen for every
 existing v0.2.0 user on upgrade. It was mutation-checked, not merely written.
+
+v0.4.0 extended the same guards for calc 4: an upgraded calc-3 plan still reaches the
+modern engine, a newly generated plan is stamped 4, and
+`testTheModernBoundaryIsStillTwo` pins `minimumModernCalculationVersion == 2` directly, so
+collapsing the two constants fails a named test rather than a code review.
 
 ## UI tests — 35, all passing
 
@@ -256,6 +271,28 @@ would ship.
 23. **Accounts and scenarios at accessibility sizes on device**, including the two nested
     reorder lists, which are the known-fragile layout at the largest sizes.
 
+### New in v0.4.0 — none of these has run on hardware
+
+24. **Dark Mode primary buttons on a real OLED display.** Text contrast is asserted from
+    the asset catalog by test; on device, walk Today, debt detail, Plan, and the quick-add
+    forms in Dark Mode and confirm every primary button is legible enabled, pressed, and
+    disabled — and that no accent-tinted wash elsewhere became illegible with the new
+    dark-appearance accent.
+25. **The Balanced card's rationale.** With a synthetic multi-debt setup where a small
+    debt qualifies as a quick win, confirm the card states what was selected and why, the
+    quantified tradeoff matches the detail comparison, and VoiceOver reads the rationale
+    in a sensible order.
+26. **Generic checking-account adjustment with VoiceOver.** Add Entry → Checking account
+    adjustment: confirm the account picker names your own accounts, both adjustment types
+    read correctly, and the recorded entry appears in the ledger as a dated delta plus the
+    stated balance — with history above it untouched.
+27. **Calendar debt dashboard at accessibility sizes.** Confirm the card's six figures
+    remain distinct and labeled at the largest sizes, "paid toward debts" wording is
+    intact, and the card refreshes immediately after recording a payment from another tab.
+28. **Utilization on device.** A near-limit synthetic card shows its true whole percent on
+    Debts, debt detail, Insights, and the plan screen; a card with no limit shows unknown
+    everywhere, never 0%.
+
 ## Known behaviours and limitations
 
 - Due days accept 1–31 and clamp to the last valid day of shorter months
@@ -293,4 +330,19 @@ would ship.
 - Balance derivations fetch whole tables and filter in memory — fine at this
   scale, revisit if the app outlives Phase II.
 - Calendar notes are stored as zero-amount Checking 1 adjustments (shown as
-  "Note" in the ledger) and export under that type.
+  "Note" in the ledger) and export under that type. The seven-kind legacy
+  adjustment sheet that wrote such rows is retired in v0.4.0; the Note path and
+  every historical row remain readable and derived forever.
+- The engine still emits its `creditLimitMissing` "worth knowing" note for a card
+  whose limit was explicitly marked unknown — the engine's input DTO does not yet
+  carry the marked-unknown flag. Setup and the editors respect the flag; only the
+  plan's advisory list can nag. Registry item for the next engine cycle.
+- A Balanced preview now costs one engine run per quick-win candidate on top of
+  the baseline (bounded by an interest-ignoring pre-filter; benchmarked at
+  ~0.05 s selector overhead on an 8-debt fixture, larger on long plans). The
+  scenario screen keeps its loading state; the engine remains main-thread.
+- Some dashboard-style screens outside setup (Debts, Progress, Plan overview,
+  Accounts) still refresh on row-count observers rather than content
+  fingerprints; the Calendar dashboard and every setup surface are
+  fingerprint-keyed. An amount edit that keeps counts equal refreshes those
+  screens on reappear rather than instantly.

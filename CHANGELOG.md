@@ -3,12 +3,86 @@
 All notable changes to Payday Playbook are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer 2.0.0](https://semver.org).
 App, build, schema, calculation, export-schema, and user-plan versions are distinct — see
-`docs/releases/v0.3.0/VERSIONING.md` (current cycle) and `docs/releases/v0.2.0/VERSIONING.md`.
+`docs/releases/v0.4.0/VERSIONING.md` (current cycle) and its predecessors.
 
 ## [Unreleased]
 
-Nothing yet. `0.3.0-alpha.1` is prepared but **not tagged and not distributed** — see the
-release note below and `docs/releases/v0.3.0/agent-reports/agent-7-integration-qa.md`.
+Nothing yet. `0.4.0-alpha.1` is prepared but **not tagged and not distributed** — see the
+release note below and `docs/releases/v0.4.0/agent-reports/agent-7-integration-qa.md`.
+
+## [0.4.0-alpha.1] — 2026-08-20
+
+App version **0.4.0** · build **5** · persistence schema **3** (unchanged) · calculation
+version **4** · export schema **4** (reads 1, 2, 3, and 4). 677 unit tests and 35 UI tests
+green in the simulator. The authoritative feature registry is
+`ALPHA_V0.4.0_MULTI_AGENT_PLAN.md` (V4-01…V4-08).
+
+**Not validated on hardware.** The `TESTING.md` device checklist — upgrade rehearsal
+first — still gates distribution, and external distribution additionally remains blocked
+on the owner's Git-history decision.
+
+### Added
+
+- **Balanced (Recommended) now proves its strategy** (V4-03). Balanced compares the pure
+  avalanche baseline against deterministic quick-win candidates — small debts that full
+  engine simulations show can be retired within three paychecks — and promotes one only
+  when it strictly advances the first payoff without materially delaying debt freedom
+  (at most one pay period) or costing material interest (at most the lesser of 1% of
+  baseline interest or $50). The card explains what was considered, what was selected,
+  and the engine-proven tradeoff; a costlier quick win is disclosed with its amount.
+  Applying pins the selection into the stored snapshot, so an applied plan regenerates
+  identically forever. Fastest Safe and More Cushion remain pure avalanche.
+- **Pay-cycle debt allocation** (V4-07). A derived service reports, for the current pay
+  cycle: what carried in from last cycle, the allocation that became available, what has
+  been paid, and what remains. Unused allocation rolls forward; overspending shows
+  "$0 remaining · +$X over planned allocation", never negative money. Recording, editing,
+  or deleting a payment recomputes immediately, and transfers never count as payments
+  while debt-linked refunds and corrections restore the allocation.
+- **Calendar debt dashboard** (V4-08): paid toward debts this month (never called "paid
+  off"), current-cycle allocation with carry-in / used / remaining, the next payday's
+  upcoming allocation labeled with its date, and debts cleared this month. Monthly and
+  pay-cycle figures stay separate concepts, and the card refreshes on content changes,
+  including edits that keep row counts equal.
+- **Calculation version 4** — the quick-win promotion input. With no promotions it
+  reproduces calculation version 3 byte-for-byte (and onward to v2/v1), so no existing
+  plan changes value; stamps 1/2/3 are frozen and dispatch guards are mutation-checked.
+
+### Changed
+
+- **Credit cards are no longer asked for an original loan amount** (V4-01). One semantic
+  rule per debt type drives every validation surface — editors, Bills & Debts warnings,
+  Review gaps, and the Settings checklist now agree exactly. Installment debts keep the
+  optional gap; only missing installment minimums (and the structural blockers) still
+  block generation.
+- **Setup derivations react to every upstream edit** (V4-02). Summaries, previews, and
+  validations are invalidated by content fingerprints rather than row counts, and
+  committing a plan preview whose inputs changed since it was generated is impossible —
+  the Review step verifies the fingerprint and requires a re-generate instead.
+- **One utilization calculation** (V4-04). Every badge, insight, plan row, engine result,
+  and onboarding preview routes through the single canonical implementation and its
+  30% / 90% thresholds. Unknown or zero limits show "unknown", never 0%; over-limit
+  balances render above 100%; display rounds to the nearest whole percent with "<1%"
+  for small non-zero ratios. The reported "0% at a high balance" defect — an integer
+  truncation of non-terminating ratios — is fixed and pinned by regression test.
+- **Primary actions share one accessible button treatment** (V4-05). Add Payment,
+  View Full Plan, and the other primary CTAs use a semantic style with measured ≥ 4.5:1
+  text contrast in light and dark appearances (the accent color gains a dark-appearance
+  variant), distinct pressed/disabled states, and 44-pt minimum targets.
+- **Checking-account adjustment is generic** (V4-06). The Add Entry menu offers exactly
+  "Checking account adjustment": pick any active checking account by its own name, then
+  "Set balance to…" or "Adjust by amount", amount, date, and optional note. Both types
+  append an auditable dated delta with its paired stated-balance snapshot; history is
+  never rewritten. The legacy hard-coded "Checking 1 / 2" sheet is retired; its
+  historical rows remain readable and derived forever.
+
+### Fixed
+
+- A credit card with no entered original principal no longer produces an unresolvable
+  "Still needs the original amount" warning.
+- Near-limit cards no longer show 0% utilization; missing limits no longer show 0%.
+- Primary buttons are readable in Dark Mode, enabled and disabled.
+- The plan screen no longer silently substitutes a debt's starting balance when the
+  current balance cannot be derived — the failure is surfaced instead.
 
 ## [0.3.0-alpha.1] — 2026-08-15
 

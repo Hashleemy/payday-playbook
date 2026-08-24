@@ -14,10 +14,16 @@ import SwiftData
 struct BillsAndDebtsView: View {
     @Environment(\.modelContext) private var modelContext
 
-    /// Observed so a save in a sheet refreshes the page; the displayed values
-    /// come from the loaded state, not from these queries.
+    /// Observed so any store change to an input of the loaded state — a row
+    /// edit as much as an insert or delete — refreshes the page; the
+    /// displayed values come from the loaded state, not from these queries.
+    /// Income and accounts are observed too: the per-paycheck reserve
+    /// preview smooths against the live pay cadence, and rows name their
+    /// linked account (V4-02).
     @Query private var obligations: [RecurringObligation]
     @Query private var debts: [DebtAccount]
+    @Query private var schedules: [IncomeSchedule]
+    @Query private var accounts: [CashAccount]
 
     /// Shown on the Settings surface, hidden inside the onboarding scaffold,
     /// which supplies its own heading.
@@ -86,8 +92,16 @@ struct BillsAndDebtsView: View {
         .task { reload() }
         // Resuming an interrupted setup re-reads the store; the rows the user
         // already saved are simply there, so nothing is ever added twice.
-        .onChange(of: obligations.count) { _, _ in reload() }
-        .onChange(of: debts.count) { _, _ in reload() }
+        //
+        // V4-02: keyed to a content fingerprint, not row counts — an edit
+        // that changes an amount, a cadence, or a due day without changing
+        // how many rows exist must still reload the derived state.
+        .onChange(of: inputFingerprint) { _, _ in reload() }
+    }
+
+    /// Row IDs + `updatedAt` across every input of the loaded state.
+    private var inputFingerprint: String {
+        ((try? SetupInputFingerprint.capture(context: modelContext))?.value) ?? ""
     }
 
     // MARK: - Bills

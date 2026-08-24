@@ -47,7 +47,7 @@ struct ExtraPaymentInsightService: ExtraPaymentInsightCalculating {
 
         let before = try PlanGenerationService.generate(from: snapshot).result
         var withExtra = snapshot
-        withExtra.calculationVersion = PlanCalculationVersion.v3Scenario.rawValue
+        withExtra.calculationVersion = PlanCalculationVersion.v4BalancedQuickWin.rawValue
         withExtra.extraPayments = snapshot.extraPayments + [extra]
         let after = try PlanGenerationService.generate(from: withExtra).result
 

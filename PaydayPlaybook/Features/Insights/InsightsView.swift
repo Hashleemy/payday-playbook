@@ -150,12 +150,11 @@ enum InsightsBuilder {
             return (item, utilization)
         }
         if let highest = utilized.max(by: { $0.1 < $1.1 }) {
-            let percent = (highest.1 * 100) as NSDecimalNumber
             let level = UtilizationDisplayLevel.level(for: highest.1)
             cards.append(InsightCardData(
                 id: "utilization",
                 title: "Card utilization",
-                headline: "\(highest.0.debt.displayName) at \(Int(truncating: percent))% of its limit",
+                headline: "\(highest.0.debt.displayName) at \(UtilizationMath.wholePercentString(highest.1)) of its limit",
                 detail: level == .critical
                     ? "Above 90% — worth attention when you can."
                     : (level == .elevated ? "Above 30%. Utilization is display only; it never changes the plan." : "Comfortably under 30%."),

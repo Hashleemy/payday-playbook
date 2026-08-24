@@ -7,22 +7,39 @@ import SwiftData
 struct ReviewStepView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appEnvironment: AppEnvironment
+    // Every canonical input family is queried so an upstream edit — from any
+    // surface, whether or not it changes a row count — re-renders this step
+    // and re-runs the fingerprint check below (V4-02).
     @Query private var accounts: [CashAccount]
     @Query private var debts: [DebtAccount]
     @Query private var obligations: [RecurringObligation]
+    @Query private var profiles: [UserGoalProfile]
+    @Query private var schedules: [IncomeSchedule]
+    @Query private var incomeChanges: [IncomeChange]
 
     let onBack: () -> Void
     let onFinish: () -> Void
 
     @State private var generated: PlanGenerationService.GeneratedPlan?
+    /// The `SetupInputFingerprint` the preview was generated under. Commit
+    /// verifies it; any input change invalidates the preview instead.
+    @State private var generatedFingerprint: SetupInputFingerprint?
     @State private var generating = false
     @State private var error: String?
+    @State private var staleNotice: String?
     @State private var gaps: [SetupGap] = []
 
     private var activeAccounts: [CashAccount] { accounts.filter { !$0.isArchived } }
     private var activeDebts: [DebtAccount] { debts.filter { !$0.isArchived } }
     private var essentialObligations: [RecurringObligation] {
         obligations.filter { !$0.isArchived && $0.isEssential }
+    }
+    private var activeSchedule: IncomeSchedule? { schedules.first { !$0.isArchived } }
+
+    /// Live content fingerprint of the canonical inputs, re-evaluated on
+    /// every render the queries above trigger.
+    private var inputFingerprint: String {
+        ((try? SetupInputFingerprint.capture(context: modelContext))?.value) ?? ""
     }
 
     var body: some View {
@@ -56,6 +73,14 @@ struct ReviewStepView: View {
                 .accessibilityElement(children: .combine)
             }
 
+            if let staleNotice {
+                Label(staleNotice, systemImage: "arrow.triangle.2.circlepath")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("review.staleNotice")
+            }
+
             if let error {
                 Label(error, systemImage: "exclamationmark.circle")
                     .font(.subheadline)
@@ -65,6 +90,9 @@ struct ReviewStepView: View {
             }
         }
         .task { refreshGaps() }
+        // V4-02: derived state follows the inputs by content, not by view
+        // identity or row counts — a same-count edit still lands here.
+        .onChange(of: inputFingerprint) { _, _ in refreshDerivedState() }
     }
 
     // MARK: - Input summary
@@ -72,7 +100,7 @@ struct ReviewStepView: View {
     private var inputSummary: some View {
         VStack(alignment: .leading, spacing: 16) {
             summaryCard("Money coming in", systemImage: "arrow.down.circle") {
-                if let schedule = try? IncomeRepository(context: modelContext).activeSchedule() {
+                if let schedule = activeSchedule {
                     SetupSummaryRow(label: "Take-home per check", value: MoneyFormat.string(schedule.baseTakeHome))
                     SetupSummaryRow(label: "How often", value: schedule.cadence.displayName)
                     SetupSummaryRow(label: "Next payday", value: DateMath.mediumString(schedule.anchorPayday))
@@ -95,7 +123,10 @@ struct ReviewStepView: View {
             }
 
             summaryCard("Your guardrails", systemImage: "shield") {
-                let profile = try? GoalProfileRepository(context: modelContext).profile()
+                // Render what exists — the review is read-only, and a missing
+                // profile is already a blocker gap, never a row this screen
+                // creates itself.
+                let profile = profiles.first
                 SetupSummaryRow(
                     label: "Protected floor",
                     value: MoneyFormat.string(profile?.protectedFloor ?? .zero)
@@ -111,7 +142,7 @@ struct ReviewStepView: View {
 
             if !essentialObligations.isEmpty {
                 summaryCard("Essential bills", systemImage: "house") {
-                    let cadence = (try? IncomeRepository(context: modelContext).activeSchedule())?.cadence ?? .biweekly
+                    let cadence = activeSchedule?.cadence ?? .biweekly
                     ForEach(essentialObligations) { obligation in
                         SetupSummaryRow(
                             label: obligation.name,
@@ -194,11 +225,14 @@ struct ReviewStepView: View {
     }
 
     private var utilizationText: String {
+        // R-12/V4-04: the aggregate ratio goes through the one canonical
+        // implementation like every per-card figure.
         let limit = cardsWithLimits.compactMap(\.creditLimit).reduce(Decimal.zero, +)
-        guard limit > 0 else { return "—" }
         let balance = cardsWithLimits.reduce(Decimal.zero) { $0 + $1.startingBalance }
-        let percent = ((balance / limit) * 100).rounded2
-        return "\(MoneyFormat.editingString(percent))% used"
+        guard let utilization = UtilizationMath.utilization(balance: balance, limit: limit) else {
+            return "—"
+        }
+        return "\(UtilizationMath.wholePercentString(utilization)) used"
     }
 
     // MARK: - What's missing
@@ -275,14 +309,41 @@ struct ReviewStepView: View {
         gaps = (try? SetupCompletenessService(context: modelContext).gaps()) ?? []
     }
 
+    /// Recomputes everything derived from the inputs, and drops a cached
+    /// preview whose inputs have since changed (V4-02). The preview is
+    /// cleared rather than silently rebuilt: the user confirms numbers they
+    /// have actually seen, never a regeneration behind their back.
+    private func refreshDerivedState() {
+        refreshGaps()
+        guard generated != nil,
+              let captured = generatedFingerprint,
+              let current = try? SetupInputFingerprint.capture(context: modelContext),
+              current != captured
+        else { return }
+        invalidatePreview()
+    }
+
+    private func invalidatePreview() {
+        generated = nil
+        generatedFingerprint = nil
+        staleNotice = "Some of your numbers changed since that preview was made, so it was cleared. Generate the plan again to see the current ones."
+        refreshGaps()
+    }
+
     private func generate() {
         generating = true
         error = nil
+        staleNotice = nil
         do {
+            // Fingerprint first: a mutation landing between the capture and
+            // the engine run reads as a mismatch at commit and regenerates —
+            // never the reverse, which would let a stale preview through.
+            let fingerprint = try SetupInputFingerprint.capture(context: modelContext)
             generated = try PlanGenerationService.generate(
                 context: modelContext,
                 asOf: appEnvironment.dateProvider.now
             )
+            generatedFingerprint = fingerprint
         } catch {
             self.error = error.localizedDescription
             refreshGaps()
@@ -292,17 +353,28 @@ struct ReviewStepView: View {
 
     /// Commits atomically: the plan graph, settings, and progress row all
     /// land in one save, or nothing does and the user can retry (§4.0).
+    /// The service re-verifies the fingerprint captured at Generate, so a
+    /// preview outlived by its inputs can never persist (V4-02).
     private func commit() {
         guard let generated else { return }
+        // A preview without its fingerprint has no provenance — treat it as
+        // stale rather than letting it skip the guard.
+        guard let generatedFingerprint else {
+            invalidatePreview()
+            return
+        }
         do {
             try OnboardingProgressService(
                 context: modelContext, dateProvider: appEnvironment.dateProvider
             ).finish(
                 planName: PlanContract.generatedPlanName,
                 input: generated.input,
-                result: generated.rows
+                result: generated.rows,
+                verifying: generatedFingerprint
             )
             onFinish()
+        } catch OnboardingProgressService.FinishError.staleInputs {
+            invalidatePreview()
         } catch {
             self.error = error.localizedDescription
         }

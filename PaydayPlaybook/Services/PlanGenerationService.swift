@@ -123,10 +123,16 @@ enum PlanGenerationService {
 
         // Calc v3 is stamped when the snapshot asks for it *or* carries
         // scenario/extra-payment data, so a caller can never get v3 inputs
-        // silently modeled as a v2 result.
+        // silently modeled as a v2 result. Calc v4 is stamped only when the
+        // snapshot's version column says so — a v3-or-older snapshot whose
+        // scenario somehow carries promotions keeps its v3 inference and the
+        // engine rejects it (`promotionsRequireCalcV4`), never a silent
+        // upgrade and never a silent ignore.
         let version: PlanCalculationVersion
         if snapshot.calculationVersion == 1 {
             version = .v1LegacyBaseline
+        } else if snapshot.calculationVersion >= PlanCalculationVersion.v4BalancedQuickWin.rawValue {
+            version = .v4BalancedQuickWin
         } else if snapshot.calculationVersion >= 3
                     || snapshot.scenario != nil || !snapshot.extraPayments.isEmpty {
             version = .v3Scenario
@@ -210,7 +216,8 @@ enum PlanGenerationService {
             additionalReserve: definition.additionalReserve,
             extraPaymentCeiling: definition.extraPaymentCeiling,
             zeroAllowanceConfirmedAt: definition.zeroAllowanceConfirmedAt,
-            effectiveDate: definition.effectiveDate
+            effectiveDate: definition.effectiveDate,
+            quickWinPromotions: definition.quickWinPromotions
         )
     }
 

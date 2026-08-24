@@ -17,7 +17,7 @@ final class BackupPortingTests: XCTestCase {
 
     // MARK: - Envelope
 
-    func testExportWritesSchemaThreeEnvelope() throws {
+    func testExportWritesSchemaFourEnvelope() throws {
         let context = try makeContext()
         let setup = try PortabilityFixtures.modernSetup(context)
         try PortabilityFixtures.addHistory(context, setup: setup)
@@ -26,22 +26,22 @@ final class BackupPortingTests: XCTestCase {
         let object = try PortabilityFixtures.XCTUnwrapDictionary(data)
 
         XCTAssertEqual(object["documentKind"] as? String, "fullBackup")
-        XCTAssertEqual(object["schemaVersion"] as? Int, 3)
+        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
         XCTAssertNotNil(object["exportedAt"])
         XCTAssertNotNil(object["appVersion"])
         XCTAssertNotNil(object["calculationVersion"])
         XCTAssertNotNil(object["integrity"])
-        XCTAssertNotNil(object["payload"], "schema 3 nests the payload inside the envelope")
+        XCTAssertNotNil(object["payload"], "schemas 3+ nest the payload inside the envelope")
     }
 
     func testProbeClassifiesEnvelopeAndLegacyDocuments() throws {
         let context = try makeContext()
         try PortabilityFixtures.modernSetup(context)
 
-        let v3 = try ExportService.encodeBackup(try ExportService.buildBackup(context: context))
-        let probe = try PortableDocumentProbe.probe(v3)
+        let current = try ExportService.encodeBackup(try ExportService.buildBackup(context: context))
+        let probe = try PortableDocumentProbe.probe(current)
         XCTAssertEqual(probe.documentKind, .fullBackup)
-        XCTAssertEqual(probe.schemaVersion, 3)
+        XCTAssertEqual(probe.schemaVersion, 4)
 
         // A bare schema-2 object has no documentKind, and absence *means*
         // "legacy full backup" rather than "unknown".
@@ -150,7 +150,7 @@ final class BackupPortingTests: XCTestCase {
                 return XCTFail("expected unsupportedSchema, got \(error)")
             }
             XCTAssertEqual(found, 99)
-            XCTAssertEqual(highest, 3)
+            XCTAssertEqual(highest, 4)
             XCTAssertTrue(
                 error.localizedDescription.contains("newer version"),
                 "a future-format file should tell the user to update, not that their file is broken"

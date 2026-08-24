@@ -63,13 +63,20 @@ final class PrivacyScrubTests: XCTestCase {
         XCTAssertEqual(PlanContract.schemaVersion, 1)
         XCTAssertEqual(PlanContract.calculationVersion, 1)
         XCTAssertEqual(PlanContract.currentSchemaVersion, 3)
-        XCTAssertEqual(PlanContract.currentCalculationVersion, 3)
+        XCTAssertEqual(PlanContract.currentCalculationVersion, 4)
         XCTAssertEqual(PlanContract.minimumModernCalculationVersion, 2)
 
         // The R-06 estimator, which is a published rule, not anyone's balance.
         XCTAssertEqual(PlanContract.minimumPaymentFloor, TestSupport.money("17.50"))
         XCTAssertEqual(PlanContract.minimumPaymentRate, TestSupport.money("0.005"))
         XCTAssertEqual(PlanContract.payFrequencyDays, 14)
+
+        // The R-25/R-26 quick-win policy: named, tunable modeling constants
+        // (A-12) — product policy, definitionally not personal data.
+        XCTAssertEqual(PlanContract.balancedQuickWinHorizonPaychecks, 3)
+        XCTAssertEqual(PlanContract.balancedQuickWinMaxDelayPaychecks, 1)
+        XCTAssertEqual(PlanContract.balancedQuickWinMaxExtraInterestRate, TestSupport.money("0.01"))
+        XCTAssertEqual(PlanContract.balancedQuickWinMaxExtraInterestCap, TestSupport.money("50"))
 
         // Lookup keys, not user data.
         XCTAssertEqual(PlanContract.planName, "Original Plan v1")

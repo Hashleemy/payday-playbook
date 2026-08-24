@@ -166,9 +166,8 @@ struct LedgerEntryEditView: View {
                         save()
                     } label: {
                         Text("Save Changes")
-                            .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.primaryAction)
                 }
                 .listRowBackground(Color.clear)
             }

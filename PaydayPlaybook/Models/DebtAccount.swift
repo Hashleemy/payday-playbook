@@ -31,6 +31,14 @@ enum DebtType: String, Codable, CaseIterable, Identifiable {
 
     /// Only credit cards carry a credit limit (and a utilization display).
     var supportsCreditLimit: Bool { self == .creditCard }
+
+    /// Whether original principal is a meaningful concept for this type
+    /// (V4-01). Revolving credit has no fixed original amount, so a card is
+    /// never asked for one, warned about one, or gap-listed on one;
+    /// installment-style debts amortize from a known starting principal and
+    /// keep it as an optional, never-blocking detail. The single source —
+    /// editors, chips, and `SetupCompletenessService` all consult this.
+    var usesOriginalPrincipal: Bool { self != .creditCard }
 }
 
 /// Lifecycle state of a debt, derived — the paid state comes from balances
@@ -138,9 +146,10 @@ final class DebtAccount {
     }
 
     /// R-12: utilization for display/insights only; nil without a limit.
+    /// Convenience over the one canonical implementation (V4-04).
     func utilization(currentBalance: Decimal) -> Decimal? {
-        guard debtType == .creditCard, let creditLimit, creditLimit > 0 else { return nil }
-        return currentBalance / creditLimit
+        guard debtType == .creditCard else { return nil }
+        return UtilizationMath.utilization(balance: currentBalance, limit: creditLimit)
     }
 
     func status(isPaidOff: Bool) -> DebtStatus {
